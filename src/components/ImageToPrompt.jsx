@@ -297,8 +297,8 @@ function PromptField({ value, onChange }) {
         onChange={(e) => onChange(e.target.value)}
         className="w-full outline-none resize-y"
         style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
+          background: "var(--surface-2)",
+          border: "1px solid var(--glass-border)",
           borderRadius: "0.4rem",
           padding: "0.75rem",
           minHeight: "100px",
@@ -309,7 +309,7 @@ function PromptField({ value, onChange }) {
           lineHeight: "1.5",
         }}
         onFocus={(e) => (e.target.style.borderColor = "var(--primary)")}
-        onBlur={(e) => (e.target.style.borderColor = "rgba(255,255,255,0.08)")}
+        onBlur={(e) => (e.target.style.borderColor = "var(--glass-border)")}
       />
     </div>
   );

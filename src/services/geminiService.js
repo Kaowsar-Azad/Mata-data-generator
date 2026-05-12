@@ -81,10 +81,43 @@ Generate metadata as if you are looking at a vector illustration about "${cleanN
     negInstructions += `\n- The keywords MUST NOT contain any of these words: ${s.negKeywords}.`;
   }
 
+  const targetPlatform = s.exportPlatform || "General";
+  let platformContext = "You must act as a master microstock photographer and keyword expert.";
+  
+  if (targetPlatform === "Adobe Stock") {
+    platformContext += " Your metadata is specifically tailored for Adobe Stock. Adobe Stock algorithms heavily favor conceptual relevance, emotional descriptors, and precise noun phrases.";
+  } else if (targetPlatform === "Shutterstock") {
+    platformContext += " Your metadata is specifically tailored for Shutterstock. Shutterstock favors extremely literal, exact keywords and precise visual subject descriptions over abstract concepts.";
+  } else if (targetPlatform === "FreePik") {
+    platformContext += " Your metadata is specifically tailored for FreePik. FreePik users often search for design elements, editable templates, backgrounds, and colorful vectors for commercial use.";
+  } else if (targetPlatform === "Vecteezy") {
+    platformContext += " Your metadata is specifically tailored for Vecteezy. Vecteezy users search for practical design assets, web banners, user interface elements, and flat design illustrations.";
+  } else if (targetPlatform === "Pond5") {
+    platformContext += " Your metadata is specifically tailored for Pond5. Focus on highly descriptive, literal media asset keywords suitable for media buyers and video editors.";
+  } else if (targetPlatform === "Getty") {
+    platformContext += " Your metadata is specifically tailored for Getty Images. Focus on authentic, editorial-style descriptions and highly relevant, non-spammy keywords.";
+  } else if (targetPlatform === "Depositphotos") {
+    platformContext += " Your metadata is specifically tailored for Depositphotos. Focus on commercial utility and straightforward, accurate keywords.";
+  }
+
+  let mediaHintStr = "";
+  if (s.mediaTypeHint && s.mediaTypeHint !== "None / Auto-detect") {
+    mediaHintStr = `\nMedia Type Hint: The user explicitly notes this image is a "${s.mediaTypeHint}". Incorporate appropriate stylistic keywords.`;
+  }
+
+  let customInstStr = "";
+  if (s.customInstruction && s.customInstruction.trim()) {
+    customInstStr = `\n\nCRITICAL CUSTOM INSTRUCTION FROM USER:\n"${s.customInstruction.trim()}"\nYou MUST follow this instruction carefully when crafting the title, description, and keywords.`;
+  }
+
+  const singleWordRule = s.singleWordKeywords 
+    ? "- STRICT SINGLE WORD RULE: EVERY keyword MUST be a single individual word. NO spaces, NO compound phrases."
+    : "- ONLY SINGLE WORDS or widely accepted compound noun phrases (like \"artificial intelligence\", \"living room\").";
+
   return `${fileContext}
 
 Generate highly commercial, SEO-optimized metadata for this ${isEps ? "vector illustration" : "image"}. 
-You must act as a master microstock photographer and keyword expert for Adobe Stock and Shutterstock.
+${platformContext}${mediaHintStr}${customInstStr}
 
 Follow this mental process before outputting JSON:
 1. Identify the main subjects, objects, and actions.
@@ -104,7 +137,7 @@ CRITICAL RULES FOR KEYWORDS:
 - Order: Place the most literal, important subjects first. Place abstract/conceptual terms last.
 - EVERY keyword MUST accurately describe something clearly visible or conceptually highly relevant to the image.
 - DO NOT use low-value filler words, generic fluff, or full sentences (e.g., "thing", "item", "shape", "object", "picture", "the", "a", "an", "image", "there is", "look").
-- ONLY SINGLE WORDS or widely accepted compound noun phrases (like "artificial intelligence", "living room").
+${singleWordRule}
 - TRADEMARK BAN: NEVER include trademarked names, brand names, or logos (e.g., "Apple", "Nike", "Instagram", "Facebook", "Windows").
 - STOCK BAN: NEVER use words prohibited by stock agencies (e.g., "free", "download", "copyright", "watermark", "vectorization", "cheap").
 - NO SIMILAR/DUPLICATES: Do not use different grammatical forms of the same word (e.g., if you use "color", DO NOT use "colors" or "colored").
@@ -175,7 +208,85 @@ let globalKeyIndex = 0;
  * @param {boolean} [fileInfo.isPlaceholder] - Preview is a generated placeholder
  * @param {string}  [fileInfo.fileName]      - Original file name
  */
-export async function generateMetadata(imageBuffer, mimeType, apiKeys, fileInfo = {}) {
+async function fetchOpenAICompatible(provider, apiKey, prompt, base64Data, mimeType, forceJson = true) {
+  let endpoint = "";
+  let model = "";
+
+  if (provider === "groq") {
+    endpoint = "https://api.groq.com/openai/v1/chat/completions";
+    model = "llama-3.2-90b-vision-preview"; // Groq's main vision model
+  } else if (provider === "openrouter") {
+    endpoint = "https://openrouter.ai/api/v1/chat/completions";
+    model = "google/gemini-2.5-flash"; // Default openrouter vision model
+  } else if (provider === "openai") {
+    endpoint = "https://api.openai.com/v1/chat/completions";
+    model = "gpt-4o-mini"; // Fast vision
+  } else if (provider === "mistral") {
+    endpoint = "https://api.mistral.ai/v1/chat/completions";
+    model = "pixtral-12b-2409"; // Mistral vision
+  }
+
+  const payload = {
+    model: model,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } }
+        ]
+      }
+    ]
+  };
+
+  if (forceJson) {
+    payload.response_format = { type: "json_object" };
+  }
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      ...(provider === "openrouter" ? { "HTTP-Referer": "http://localhost:5173", "X-Title": "Metadata Pro" } : {})
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(`${provider.toUpperCase()} API Error: ${response.status} ${errorData.error?.message || response.statusText}`);
+  }
+
+  const data = await response.json();
+  const text = data.choices[0].message.content;
+
+  if (!forceJson) {
+    return text.trim();
+  }
+
+  const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
+  let parsed;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) parsed = JSON.parse(match[0]);
+    else throw new Error("JSON parse error");
+  }
+  return parsed;
+}
+
+/**
+ * Main function to orchestrate Gemini or OpenAI-compatible generation.
+ *
+ * @param {string} imageBuffer           - Base64 string of the image
+ * @param {string} mimeType              - Mime type of the image
+ * @param {Array<string>} apiKeys        - Array of API keys
+ * @param {string} apiProvider           - ID of the AI provider
+ * @param {object} fileInfo              - Context info
+ */
+export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvider = "gemini", fileInfo = {}) {
   const { isEps = false, isPlaceholder = false, fileName = "file", extractedTextContext = null, promptSettings = {} } = fileInfo;
   const prompt = buildPrompt({ isEps, isPlaceholder, fileName, extractedTextContext, promptSettings });
 
@@ -185,6 +296,26 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, fileInfo 
   for (let k = 0; k < apiKeys.length; k++) {
     const keyIndexToTry = (globalKeyIndex + k) % apiKeys.length;
     const apiKey = apiKeys[keyIndexToTry];
+
+    // Branch to OpenAI compatible providers if not Gemini
+    if (apiProvider !== "gemini") {
+      try {
+        console.log(`[Attempt] Provider: ${apiProvider}`);
+        const parsed = await fetchOpenAICompatible(apiProvider, apiKey, prompt, imageBuffer, mimeType);
+        console.log(`[Success] Metadata generated using ${apiProvider}!`);
+        return postProcessMetadata(parsed, promptSettings);
+      } catch (error) {
+        console.warn(`[Fail] ${apiProvider}: ${error.message}`);
+        lastError = error;
+        if (error.message.includes("401") || error.message.includes("403") || error.message.includes("429")) {
+          globalKeyIndex = (globalKeyIndex + 1) % apiKeys.length;
+          continue; // Try next key
+        }
+        throw error; // Other errors abort immediately
+      }
+    }
+
+    // Gemini branch
     const genAI = new GoogleGenerativeAI(apiKey);
     console.log(`[System] Initializing with key ${apiKey.substring(0, 8)}...`);
 
@@ -281,7 +412,7 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, fileInfo 
 /**
  * Generate a detailed prompt from an image.
  */
-export async function generatePromptFromImage(imageBuffer, mimeType, apiKeys) {
+export async function generatePromptFromImage(imageBuffer, mimeType, apiKeys, apiProvider = "gemini") {
   const prompt = `Analyze this image in extreme detail and create a highly comprehensive, descriptive prompt that could be used to recreate this exact image in a text-to-image AI model like Midjourney or Stable Diffusion.
 
 Focus on:
@@ -298,8 +429,25 @@ Return ONLY the raw prompt text. Do not include introductory text, quotes, or ma
   for (let k = 0; k < apiKeys.length; k++) {
     const keyIndexToTry = (globalKeyIndex + k) % apiKeys.length;
     const apiKey = apiKeys[keyIndexToTry];
-    const genAI = new GoogleGenerativeAI(apiKey);
 
+    // OpenAI Compatible Route
+    if (apiProvider !== "gemini") {
+      try {
+        console.log(`[Attempt] Provider: ${apiProvider} (Image to Prompt)`);
+        const text = await fetchOpenAICompatible(apiProvider, apiKey, prompt, imageBuffer, mimeType, false);
+        return text;
+      } catch (error) {
+        lastError = error;
+        if (error.message.includes("401") || error.message.includes("403") || error.message.includes("429")) {
+          globalKeyIndex = (globalKeyIndex + 1) % apiKeys.length;
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    // Gemini Route
+    const genAI = new GoogleGenerativeAI(apiKey);
     let modelsToAttempt = [...modelsToTry];
 
     for (let i = 0; i < modelsToAttempt.length; i++) {
@@ -343,7 +491,7 @@ Return ONLY the raw prompt text. Do not include introductory text, quotes, or ma
 
   throw (
     lastError ||
-    new Error("Critical: Could not connect to any Gemini model. Please check your API key.")
+    new Error(`Critical: Could not connect to any ${apiProvider} model. Please check your API key.`)
   );
 }
 

@@ -264,20 +264,44 @@ export function ImageWorkflow({ apiKeys, promptSettings }) {
     const doneImages = images.filter((img) => img.status === "done");
     if (doneImages.length === 0) return;
 
-    let content = "Filename,Title,Description,Keywords\n";
+    const platform = promptSettings?.exportPlatform || 'General';
+    const safe = (s) => `"${String(s || '').replace(/"/g, '""')}"`;
+
+    let headers = [];
+    let rows = [];
 
     doneImages.forEach((img) => {
       const { title = "", description = "", keywords = "" } = img.result || {};
-      const safe = (s) => `"${String(s).replace(/"/g, '""')}"`;
-      
-      content += `${safe(img.file.name)},${safe(title)},${safe(description)},${safe(keywords)}\n`;
+      const filename = img.file.name;
+
+      let row = [];
+      if (platform === 'Pond5') {
+        headers = ["originalfilename", "title", "description", "keywords", "city", "region", "country", "location", "specifysource", "modelreleased", "propertyreleased", "release"];
+        row = [filename, title, description, keywords, "", "", "", "", "", "", "", ""];
+      } else if (platform === 'Getty') {
+        headers = ["file name", "created date", "description", "country", "brief code", "title", "keywords"];
+        row = [filename, new Date().toISOString().split('T')[0], description, "", "", title, keywords];
+      } else if (platform === 'Depositphotos') {
+        headers = ["Filename", "description", "Keywords", "Nudity", "Editorial"];
+        row = [filename, description, keywords, "No", "No"];
+      } else if (platform === 'Extended metadata') {
+        headers = ["Filename", "Title", "Description", "Keywords", "Categories", "Releases"];
+        row = [filename, title, description, keywords, "", ""];
+      } else {
+        // General / Adobe Stock / Shutterstock / FreePik / Vecteezy
+        headers = ["Filename", "Title", "Description", "Keywords"];
+        row = [filename, title, description, keywords];
+      }
+      rows.push(row.map(safe).join(","));
     });
+
+    const content = headers.join(",") + "\n" + rows.join("\n");
 
     const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.setAttribute("download", `adobe_stock_metadata_${Date.now()}.csv`);
+    link.setAttribute("download", `${platform.replace(/\s+/g, '_').toLowerCase()}_metadata_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -581,8 +605,8 @@ function MetaField({ label, value, onChange, isTextArea }) {
           onChange={(e) => onChange(e.target.value)}
           className="meta-value w-full outline-none resize-y"
           style={{
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.08)',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--glass-border)',
             borderRadius: '0.4rem',
             padding: '0.5rem',
             minHeight: label === 'Keywords' ? '85px' : '60px',
@@ -592,7 +616,7 @@ function MetaField({ label, value, onChange, isTextArea }) {
             fontSize: '0.85rem'
           }}
           onFocus={(e) => e.target.style.borderColor = 'var(--primary)'}
-          onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.08)'}
+          onBlur={(e) => e.target.style.borderColor = 'var(--glass-border)'}
         />
       ) : (
         <input
@@ -601,8 +625,8 @@ function MetaField({ label, value, onChange, isTextArea }) {
           onChange={(e) => onChange(e.target.value)}
           className="meta-value w-full outline-none"
           style={{
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.08)',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--glass-border)',
             borderRadius: '0.4rem',
             padding: '0.4rem 0.5rem',
             color: 'var(--text-1)',
@@ -611,7 +635,7 @@ function MetaField({ label, value, onChange, isTextArea }) {
             fontSize: '0.85rem'
           }}
           onFocus={(e) => e.target.style.borderColor = 'var(--primary)'}
-          onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.08)'}
+          onBlur={(e) => e.target.style.borderColor = 'var(--glass-border)'}
         />
       )}
     </div>

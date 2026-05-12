@@ -174,7 +174,7 @@ export function ImageWorkflow({ apiKeys, promptSettings }) {
       reader.onerror = reject;
     });
 
-  const processBatch = async () => {
+  const processBatch = async (onlyErrors = false) => {
     if (apiKeys.length === 0) {
       alert("Please add at least one Gemini API key first.");
       return;
@@ -185,6 +185,8 @@ export function ImageWorkflow({ apiKeys, promptSettings }) {
     for (let i = 0; i < images.length; i++) {
       const img = images[i];
       if (img.status === "done") continue;
+      // If we only want to retry errors, skip files that are pending
+      if (onlyErrors && img.status !== "error") continue;
 
       setImages((prev) =>
         prev.map((item) =>
@@ -283,6 +285,8 @@ export function ImageWorkflow({ apiKeys, promptSettings }) {
   };
 
   const doneCount = images.filter((i) => i.status === "done").length;
+  const errorCount = images.filter((i) => i.status === "error").length;
+  const pendingCount = images.filter((i) => i.status === "pending").length;
   const epsCount = images.filter((i) => i.isEps).length;
 
   // ---------- Metadata Editing ----------
@@ -335,31 +339,72 @@ export function ImageWorkflow({ apiKeys, promptSettings }) {
         </div>
       </div>
 
+      {/* ERROR BANNER - Shows at the very top when there are failed files */}
+      {errorCount > 0 && (
+        <div className="glass card animate-fade-in" style={{ borderLeft: '4px solid var(--danger)', background: 'rgba(248,113,113,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ color: 'var(--danger)', fontSize: '1.05rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <RefreshCw className="w-4 h-4" /> 
+              {errorCount} File{errorCount !== 1 ? 's' : ''} Failed to Generate
+            </h3>
+            <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
+              Some metadata generation failed (likely due to API rate limits). You can retry exclusively for these files.
+            </p>
+          </div>
+          <button
+            className="btn-primary shrink-0"
+            style={{ background: 'var(--danger)', boxShadow: '0 4px 15px rgba(248,113,113,0.3)' }}
+            disabled={isProcessing}
+            onClick={() => processBatch(true)}
+          >
+            {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {isProcessing ? 'Retrying...' : 'Retry Failed Files'}
+          </button>
+        </div>
+      )}
+
       {/* Control Bar */}
       {images.length > 0 && (
         <div className="control-bar">
-          <div className="flex items-center gap-3">
-            <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>
-              {images.length} file{images.length !== 1 ? 's' : ''} selected
-            </span>
-            {epsCount > 0 && (
-              <span className="eps-badge" style={{ fontSize: '0.7rem', padding: '2px 8px' }}>
-                {epsCount} EPS
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-1)' }}>
+                {images.length} File{images.length !== 1 ? 's' : ''}
               </span>
-            )}
-            <button className="btn-outline" style={{ color: 'var(--danger)', fontSize: '0.8rem', padding: '0.45rem 0.9rem' }} onClick={clearAll}>
-              <Trash2 className="w-4 h-4" /> Clear All
+              {epsCount > 0 && (
+                <span className="eps-badge" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>
+                  {epsCount} EPS
+                </span>
+              )}
+            </div>
+
+            {/* Stats Separator */}
+            <div style={{ width: '1px', height: '1.2rem', background: 'var(--glass-border)' }}></div>
+
+            {/* Detailed Stats */}
+            <div className="flex gap-3 text-sm font-semibold">
+              <span className="text-muted" title="Waiting to process">⏳ {pendingCount}</span>
+              <span style={{ color: 'var(--success)' }} title="Successfully generated">✔ {doneCount}</span>
+              {errorCount > 0 && (
+                <span style={{ color: 'var(--danger)' }} title="Failed (Rate limit or error)">✖ {errorCount}</span>
+              )}
+            </div>
+
+            {/* Clear Button */}
+            <button className="btn-outline" style={{ color: 'var(--danger)', fontSize: '0.75rem', padding: '0.3rem 0.6rem', marginLeft: 'auto' }} onClick={clearAll}>
+              <Trash2 className="w-3 h-3" /> Clear All
             </button>
           </div>
-          <div className="flex gap-2 flex-wrap">
+
+          <div className="flex gap-2 flex-wrap mt-3 sm:mt-0">
             <button
               className="btn-primary"
               disabled={isProcessing || images.every(img => img.status === 'done')}
-              onClick={processBatch}
+              onClick={() => processBatch(false)}
               title="Keyboard shortcut: Enter"
             >
               {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-              {isProcessing ? 'Generating...' : 'Generate AI (Enter)'}
+              {isProcessing ? 'Generating...' : (images.every(img => img.status === 'done') ? 'All Done!' : 'Generate AI (Enter)')}
             </button>
             <button
               className="btn-outline"

@@ -102,13 +102,12 @@ Generate the metadata strictly as a JSON object:
 CRITICAL RULES FOR KEYWORDS:
 - Use ONLY highly relevant, commercial microstock keywords.
 - Order: Place the most literal, important subjects first. Place abstract/conceptual terms last.
-- Include base tags: ${isEps ? '"illustration", "eps", "scalable", "graphic", "design", "flat", "vector", ' : '"image", "photo", "photography", '}
-- Include visual traits: Colors, shapes, lighting (e.g., "blue", "white", "modern", "clean", "minimalist").
-- DO NOT use low-value filler words or generic fluff (e.g., "thing", "item", "shape", "object", "picture", "the", "a", "an", "image").
+- EVERY keyword MUST accurately describe something clearly visible or conceptually highly relevant to the image.
+- DO NOT use low-value filler words, generic fluff, or full sentences (e.g., "thing", "item", "shape", "object", "picture", "the", "a", "an", "image", "there is", "look").
+- ONLY SINGLE WORDS or widely accepted compound noun phrases (like "artificial intelligence", "living room").
 - TRADEMARK BAN: NEVER include trademarked names, brand names, or logos (e.g., "Apple", "Nike", "Instagram", "Facebook", "Windows").
 - STOCK BAN: NEVER use words prohibited by stock agencies (e.g., "free", "download", "copyright", "watermark", "vectorization", "cheap").
 - NO SIMILAR/DUPLICATES: Do not use different grammatical forms of the same word (e.g., if you use "color", DO NOT use "colors" or "colored").
-- NO SPAM: Every keyword MUST accurately describe something clearly visible or conceptually relevant to the image.
 - DO NOT use hashtags.
 - Ensure EXACTLY ${s.keywordCount} keywords. This is a strict requirement.${negInstructions}
 
@@ -163,6 +162,8 @@ function postProcessMetadata(metadata, promptSettings) {
   return result;
 }
 
+let globalKeyIndex = 0;
+
 /**
  * Generate metadata for an image or EPS file.
  *
@@ -180,7 +181,10 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, fileInfo 
 
   let lastError = null;
 
-  for (const apiKey of apiKeys) {
+  // Try each API key, starting from the globalKeyIndex so we don't repeatedly hit exhausted keys
+  for (let k = 0; k < apiKeys.length; k++) {
+    const keyIndexToTry = (globalKeyIndex + k) % apiKeys.length;
+    const apiKey = apiKeys[keyIndexToTry];
     const genAI = new GoogleGenerativeAI(apiKey);
     console.log(`[System] Initializing with key ${apiKey.substring(0, 8)}...`);
 
@@ -233,7 +237,9 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, fileInfo 
           error.message.includes("quota")
         ) {
           console.warn(`[API Key Exhausted/Invalid] Switching to next key if available. Error: ${error.message}`);
-          break; // Skip to next API key
+          // Permanently shift the global pointer to the next key for subsequent image requests
+          globalKeyIndex = (globalKeyIndex + 1) % apiKeys.length;
+          break; // Skip to next API key in the outer loop
         }
 
         if (error.message.includes("400")) {
@@ -269,6 +275,75 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, fileInfo 
     new Error(
       "Critical: Could not connect to any Gemini model. Please check your API key."
     )
+  );
+}
+
+/**
+ * Generate a detailed prompt from an image.
+ */
+export async function generatePromptFromImage(imageBuffer, mimeType, apiKeys) {
+  const prompt = `Analyze this image in extreme detail and create a highly comprehensive, descriptive prompt that could be used to recreate this exact image in a text-to-image AI model like Midjourney or Stable Diffusion.
+
+Focus on:
+1. The main subject, actions, and positioning.
+2. The exact lighting, camera angles, and depth of field.
+3. The mood, atmosphere, and color grading.
+4. The artistic style, medium, or render engine (e.g., cinematic photography, vector illustration, Unreal Engine 5 render, oil painting, etc.).
+5. Tiny background details or textures.
+
+Return ONLY the raw prompt text. Do not include introductory text, quotes, or markdown formatting.`;
+
+  let lastError = null;
+
+  for (let k = 0; k < apiKeys.length; k++) {
+    const keyIndexToTry = (globalKeyIndex + k) % apiKeys.length;
+    const apiKey = apiKeys[keyIndexToTry];
+    const genAI = new GoogleGenerativeAI(apiKey);
+
+    let modelsToAttempt = [...modelsToTry];
+
+    for (let i = 0; i < modelsToAttempt.length; i++) {
+      const modelName = modelsToAttempt[i];
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent([
+          {
+            inlineData: {
+              data: imageBuffer,
+              mimeType: mimeType,
+            },
+          },
+          { text: prompt },
+        ]);
+
+        const response = await result.response;
+        return response.text().trim();
+      } catch (error) {
+        lastError = error;
+
+        if (
+          error.message.includes("API_KEY_INVALID") ||
+          error.message.includes("403") ||
+          error.message.includes("429") ||
+          error.message.includes("quota")
+        ) {
+          globalKeyIndex = (globalKeyIndex + 1) % apiKeys.length;
+          break; // Skip to next API key
+        }
+
+        if (error.message.includes("400")) continue;
+        if (error.message.includes("404")) continue;
+      }
+    }
+  }
+
+  if (lastError && (lastError.message.includes("429") || lastError.message.includes("quota"))) {
+    throw new Error("API Rate Limit Reached (429). Please wait 30 seconds before generating again, or add another API Key in settings.");
+  }
+
+  throw (
+    lastError ||
+    new Error("Critical: Could not connect to any Gemini model. Please check your API key.")
   );
 }
 

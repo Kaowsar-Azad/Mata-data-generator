@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { ApiKeyManager } from './components/ApiKeyManager'
 import { ImageWorkflow } from './components/ImageWorkflow'
 import { PromptSettings } from './components/PromptSettings'
-import { Sparkles, Zap } from 'lucide-react'
+import { ImageToPrompt } from './components/ImageToPrompt'
+import { Sparkles, Zap, Image as ImageIcon } from 'lucide-react'
 
 function App() {
   const [apiKeys, setApiKeys] = useState([])
@@ -19,6 +20,7 @@ function App() {
     negKeywordsEnabled: false,
     negKeywords: ''
   })
+  const [activeTab, setActiveTab] = useState('metadata')
 
   return (
     <div style={{ minHeight: '100vh' }}>
@@ -83,23 +85,81 @@ function App() {
       {/* ─── MAIN CONTENT ─── */}
       <main style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
-        {/* API Keys */}
+        {/* API Keys (Global) */}
         <ApiKeyManager onKeysChange={setApiKeys} />
 
-        {/* Metadata Settings */}
-        <PromptSettings settings={promptSettings} setSettings={setPromptSettings} />
+        {/* Tab Navigation */}
+        <div className="flex gap-4 mb-4 border-b border-white/10 pb-2">
+          <button
+            onClick={() => setActiveTab('metadata')}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: '0.5rem 1rem',
+              color: activeTab === 'metadata' ? 'var(--primary-light)' : 'var(--text-3)',
+              borderBottom: activeTab === 'metadata' ? '2px solid var(--primary-light)' : '2px solid transparent',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: '1.05rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              transition: 'all 0.2s'
+            }}
+          >
+            <Zap className="w-4 h-4" /> Metadata Generator
+          </button>
+          <button
+            onClick={() => setActiveTab('prompt')}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: '0.5rem 1rem',
+              color: activeTab === 'prompt' ? 'var(--accent)' : 'var(--text-3)',
+              borderBottom: activeTab === 'prompt' ? '2px solid var(--accent)' : '2px solid transparent',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: '1.05rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              transition: 'all 0.2s'
+            }}
+          >
+            <ImageIcon className="w-4 h-4" /> Image to Prompt
+          </button>
+        </div>
 
-        {/* Workspace */}
-        <section>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '0.5rem',
-            marginBottom: '1rem'
-          }}>
-            <Zap style={{ width: '1.1rem', height: '1.1rem', color: 'var(--secondary)' }} />
-            <h2 style={{ margin: 0 }}>Image Workspace</h2>
-          </div>
-          <ImageWorkflow apiKeys={apiKeys} promptSettings={promptSettings} />
-        </section>
+        {/* Dynamic Content based on Tab */}
+        {activeTab === 'metadata' ? (
+          <>
+            {/* Metadata Settings */}
+            <PromptSettings settings={promptSettings} setSettings={setPromptSettings} />
+
+            {/* Workspace */}
+            <section>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '0.5rem',
+                marginBottom: '1rem'
+              }}>
+                <Zap style={{ width: '1.1rem', height: '1.1rem', color: 'var(--secondary)' }} />
+                <h2 style={{ margin: 0 }}>Image Workspace</h2>
+              </div>
+              <ImageWorkflow apiKeys={apiKeys} promptSettings={promptSettings} />
+            </section>
+          </>
+        ) : (
+          <section>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '0.5rem',
+              marginBottom: '1rem'
+            }}>
+              <ImageIcon style={{ width: '1.1rem', height: '1.1rem', color: 'var(--accent)' }} />
+              <h2 style={{ margin: 0 }}>Image to Prompt Converter</h2>
+            </div>
+            <ImageToPrompt apiKeys={apiKeys} />
+          </section>
+        )}
 
       </main>
 

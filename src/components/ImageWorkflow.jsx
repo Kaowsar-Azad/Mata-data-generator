@@ -19,7 +19,7 @@ const ACCEPTED_TYPES =
   "image/jpeg,image/png,image/webp,image/gif,image/svg+xml," +
   "application/postscript,application/eps,image/eps,application/x-eps,.eps,.epsf,.epsi";
 
-export function ImageWorkflow({ apiKeys, promptSettings }) {
+export function ImageWorkflow({ apiKeys, apiProvider, promptSettings }) {
   const [images, setImages] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef(null);
@@ -229,7 +229,7 @@ export function ImageWorkflow({ apiKeys, promptSettings }) {
           promptSettings: promptSettings
         };
 
-        const metadata = await generateMetadata(base64, mimeType, apiKeys, fileInfo);
+        const metadata = await generateMetadata(base64, mimeType, apiKeys, apiProvider || "gemini", fileInfo);
 
         setImages((prev) =>
           prev.map((item) =>
@@ -239,9 +239,9 @@ export function ImageWorkflow({ apiKeys, promptSettings }) {
           )
         );
 
-        // Add a 2.5-second delay between requests to avoid hitting the 15 RPM Free Tier limit
+        // Add a 4.5-second delay between requests to avoid hitting the 15 RPM Free Tier limit
         if (i < images.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 2500));
+          await new Promise(resolve => setTimeout(resolve, 4500));
         }
 
       } catch (err) {

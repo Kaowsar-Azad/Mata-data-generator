@@ -4,7 +4,7 @@ import { generatePromptFromImage } from "../services/geminiService";
 
 const ACCEPTED_TYPES = "image/jpeg,image/png,image/webp,image/gif";
 
-export function ImageToPrompt({ apiKeys }) {
+export function ImageToPrompt({ apiKeys, apiProvider }) {
   const [images, setImages] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef(null);
@@ -68,7 +68,7 @@ export function ImageToPrompt({ apiKeys }) {
         const base64 = dataUrl.split(",")[1];
         const mimeType = img.file.type;
 
-        const generatedPrompt = await generatePromptFromImage(base64, mimeType, apiKeys);
+        const generatedPrompt = await generatePromptFromImage(base64, mimeType, apiKeys, apiProvider || "gemini");
 
         setImages((prev) =>
           prev.map((item) =>
@@ -77,7 +77,7 @@ export function ImageToPrompt({ apiKeys }) {
         );
 
         if (i < images.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 2500));
+          await new Promise((resolve) => setTimeout(resolve, 4500));
         }
       } catch (err) {
         setImages((prev) =>

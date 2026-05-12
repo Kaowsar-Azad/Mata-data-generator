@@ -82,69 +82,112 @@ Generate metadata as if you are looking at a vector illustration about "${cleanN
   }
 
   const targetPlatform = s.exportPlatform || "General";
-  let platformContext = "You must act as a master microstock photographer and keyword expert.";
+  let platformContext = "";
   
   if (targetPlatform === "Adobe Stock") {
-    platformContext += " Your metadata is specifically tailored for Adobe Stock. Adobe Stock algorithms heavily favor conceptual relevance, emotional descriptors, and precise noun phrases.";
+    platformContext = "Platform: Adobe Stock. Buyers here search with conceptual and emotional terms alongside literal ones.";
   } else if (targetPlatform === "Shutterstock") {
-    platformContext += " Your metadata is specifically tailored for Shutterstock. Shutterstock favors extremely literal, exact keywords and precise visual subject descriptions over abstract concepts.";
+    platformContext = "Platform: Shutterstock. Buyers here use very literal and specific search terms. Keep title and description precise and factual.";
   } else if (targetPlatform === "FreePik") {
-    platformContext += " Your metadata is specifically tailored for FreePik. FreePik users often search for design elements, editable templates, backgrounds, and colorful vectors for commercial use.";
+    platformContext = "Platform: FreePik. Buyers look for design elements, templates, and vectors. Mention editability and design utility where relevant.";
   } else if (targetPlatform === "Vecteezy") {
-    platformContext += " Your metadata is specifically tailored for Vecteezy. Vecteezy users search for practical design assets, web banners, user interface elements, and flat design illustrations.";
+    platformContext = "Platform: Vecteezy. Buyers search for practical design assets and flat design illustrations.";
   } else if (targetPlatform === "Pond5") {
-    platformContext += " Your metadata is specifically tailored for Pond5. Focus on highly descriptive, literal media asset keywords suitable for media buyers and video editors.";
+    platformContext = "Platform: Pond5. Buyers are media professionals. Be very literal and descriptive.";
   } else if (targetPlatform === "Getty") {
-    platformContext += " Your metadata is specifically tailored for Getty Images. Focus on authentic, editorial-style descriptions and highly relevant, non-spammy keywords.";
+    platformContext = "Platform: Getty Images. Keep an authentic, editorial tone. No marketing language.";
   } else if (targetPlatform === "Depositphotos") {
-    platformContext += " Your metadata is specifically tailored for Depositphotos. Focus on commercial utility and straightforward, accurate keywords.";
+    platformContext = "Platform: Depositphotos. Be straightforward and commercially focused.";
+  } else {
+    platformContext = "Platform: General stock sites.";
   }
 
   let mediaHintStr = "";
   if (s.mediaTypeHint && s.mediaTypeHint !== "None / Auto-detect") {
-    mediaHintStr = `\nMedia Type Hint: The user explicitly notes this image is a "${s.mediaTypeHint}". Incorporate appropriate stylistic keywords.`;
+    mediaHintStr = `\nNote: This file is a "${s.mediaTypeHint}".`;
   }
 
   let customInstStr = "";
   if (s.customInstruction && s.customInstruction.trim()) {
-    customInstStr = `\n\nCRITICAL CUSTOM INSTRUCTION FROM USER:\n"${s.customInstruction.trim()}"\nYou MUST follow this instruction carefully when crafting the title, description, and keywords.`;
+    customInstStr = `\n\nUSER INSTRUCTION (follow strictly):\n"${s.customInstruction.trim()}"`;
   }
 
   const singleWordRule = s.singleWordKeywords 
-    ? "- STRICT SINGLE WORD RULE: EVERY keyword MUST be a single individual word. NO spaces, NO compound phrases."
-    : "- ONLY SINGLE WORDS or widely accepted compound noun phrases (like \"artificial intelligence\", \"living room\").";
+    ? "- STRICT: Every keyword must be a single word. No phrases."
+    : "- Single words preferred. Widely-used 2-word phrases (e.g., \"coffee cup\", \"social media\") are allowed.";
 
   return `${fileContext}
 
-Generate highly commercial, SEO-optimized metadata for this ${isEps ? "vector illustration" : "image"}. 
+You are a senior stock media contributor with 12+ years of experience selling on Adobe Stock, Shutterstock, and Getty Images. You have personally written metadata for over 50,000 stock assets. Your titles and descriptions always rank high and get sales because they match exactly how real buyers search.
 ${platformContext}${mediaHintStr}${customInstStr}
 
-Follow this mental process before outputting JSON:
-1. Identify the main subjects, objects, and actions.
-2. Analyze the visual style, colors, composition, and lighting.
-3. Determine the emotional tone and conceptual meaning (e.g., success, teamwork, futuristic, vintage).
-4. Identify the potential commercial use-case (e.g., background, banner, editorial, technology article).
+Analyze the image carefully. Look at: main subject, objects, colors, style, background, composition, mood, and potential commercial use.
 
-Generate the metadata strictly as a JSON object:
-{
-  "title": "A highly descriptive, commercially viable title. MUST be under ${s.titleMaxChars} characters total.",
-  "description": "A detailed description. MUST be under ${s.descMaxChars} characters total. Mention the subject, style, and commercial utility.",
-  "keywords": "A comma-separated list of EXACTLY ${s.keywordCount} lowercase keywords."
-}
+─────────────────────────────────────
+TITLE FORMULA: [Main Subject] + [Key Detail] + [Context/Setting]
+─────────────────────────────────────
+Follow this formula strictly:
+• Slot 1 — Main subject (the most important thing in the image)
+• Slot 2 — Key detail (color, action, style, number, or material)
+• Slot 3 — Context or setting (background, environment, or use)
 
-CRITICAL RULES FOR KEYWORDS:
-- Use ONLY highly relevant, commercial microstock keywords.
-- Order: Place the most literal, important subjects first. Place abstract/conceptual terms last.
-- EVERY keyword MUST accurately describe something clearly visible or conceptually highly relevant to the image.
-- DO NOT use low-value filler words, generic fluff, or full sentences (e.g., "thing", "item", "shape", "object", "picture", "the", "a", "an", "image", "there is", "look").
+Real examples of GREAT titles:
+  ✓ "Hand holding coffee cup on wooden desk"
+  ✓ "20% discount stamp icon on white background"
+  ✓ "Young woman working on laptop in home office"
+  ✓ "Blue abstract wave background for web design"
+  ✓ "Christmas tree with gold ornaments isolated"
+  ✓ "Smiling businessman in suit pointing at camera"
+
+Real examples of BAD titles (never write like this):
+  ✗ "A stunning, vibrant illustration of a beautiful red apple"
+  ✗ "Highly detailed vector showcasing captivating design"
+  ✗ "Meticulously crafted premium image for commercial use"
+
+Title rules:
+- Start directly with the main subject noun. NEVER start with "A", "An", "The", or adjectives.
+- Write exactly as a buyer would search — clear, direct, factual.
+- Include specific details: colors, materials, numbers, actions, style when relevant.
+- COMPLETELY FORBIDDEN words: stunning, vibrant, captivating, breathtaking, mesmerizing, exquisite, meticulously, seamlessly, showcasing, featuring, beautifully, crafted, rendered, premium, perfect, dynamic, amazing, incredible, gorgeous, elegant (unless it is literally an elegant design style).
+- Max ${s.titleMaxChars} characters.${s.negTitleEnabled && s.negTitleWords ? `\n- Also forbidden: ${s.negTitleWords}.` : ""}
+
+─────────────────────────────────────
+DESCRIPTION FORMULA: Sentence 1 + Sentence 2
+─────────────────────────────────────
+• Sentence 1: Factual description — what is shown, style, key visual elements.
+• Sentence 2: Practical use — where a buyer can use this (web, print, social media, etc.).
+
+Real examples of GREAT descriptions:
+  ✓ "Flat vector icon of a 20% discount stamp in black and white with a circular border. Perfect for e-commerce sale banners, retail promotions, and discount labels."
+  ✓ "Top view of a cup of black coffee and an open notebook on a white table. Ideal for blog headers, business presentations, and morning routine content."
+  ✓ "Hand-drawn style wreath made of green leaves and red berries on a transparent background. Suitable for Christmas card designs, holiday invitations, and festive decorations."
+
+Rules:
+- Sentence 1: Be specific. Mention style (flat, 3D, realistic, watercolor, minimal, etc.), colors, and what exactly is depicted.
+- Sentence 2: Mention 2-3 specific real use-cases buyers actually use (e.g., "website banner", "social media post", "product label", "book cover").
+- Write in active, plain language. No passive voice.
+- Completely forbidden: "stunning", "breathtaking", "beautifully crafted", "meticulously", "showcasing", "featuring", "perfectly designed".
+- Max ${s.descMaxChars} characters.
+
+─────────────────────────────────────
+KEYWORDS
+─────────────────────────────────────
+- Order: most specific literal subjects first → style/color/mood → use-case concepts last.
+- Every keyword must be directly relevant to what is visually present or commercially implied.
+- No filler: "thing", "item", "shape", "object", "image", "picture", "look", "nice".
 ${singleWordRule}
-- TRADEMARK BAN: NEVER include trademarked names, brand names, or logos (e.g., "Apple", "Nike", "Instagram", "Facebook", "Windows").
-- STOCK BAN: NEVER use words prohibited by stock agencies (e.g., "free", "download", "copyright", "watermark", "vectorization", "cheap").
-- NO SIMILAR/DUPLICATES: Do not use different grammatical forms of the same word (e.g., if you use "color", DO NOT use "colors" or "colored").
-- DO NOT use hashtags.
-- Ensure EXACTLY ${s.keywordCount} keywords. This is a strict requirement.${negInstructions}
+- No brand/trademark names.
+- No banned words: "free", "download", "copyright", "watermark".
+- No duplicate root words (not both "color" and "colors").
+- No hashtags.
+- Exactly ${s.keywordCount} keywords.${negInstructions}
 
-Return ONLY the valid JSON block. No markdown formatting, no explanations, no backticks.`;
+Output ONLY this JSON. No markdown, no backticks, no extra text:
+{
+  "title": "...",
+  "description": "...",
+  "keywords": "..."
+}`;
 }
 
 /**
@@ -291,25 +334,27 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
   const prompt = buildPrompt({ isEps, isPlaceholder, fileName, extractedTextContext, promptSettings });
 
   let lastError = null;
+  const startKeyIndex = globalKeyIndex;
 
-  // Try each API key, starting from the globalKeyIndex so we don't repeatedly hit exhausted keys
+  // Try each API key precisely once for this specific file request if needed
   for (let k = 0; k < apiKeys.length; k++) {
-    const keyIndexToTry = (globalKeyIndex + k) % apiKeys.length;
-    const apiKey = apiKeys[keyIndexToTry];
+    const currentKeyIndex = (startKeyIndex + k) % apiKeys.length;
+    const apiKey = apiKeys[currentKeyIndex];
 
     // Branch to OpenAI compatible providers if not Gemini
     if (apiProvider !== "gemini") {
       try {
-        console.log(`[Attempt] Provider: ${apiProvider}`);
+        console.log(`[Attempt] Provider: ${apiProvider} using key index ${currentKeyIndex}`);
         const parsed = await fetchOpenAICompatible(apiProvider, apiKey, prompt, imageBuffer, mimeType);
         console.log(`[Success] Metadata generated using ${apiProvider}!`);
+        // Rotate global key index for the NEXT file request to achieve perfect Round-Robin load balancing
+        globalKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
         return postProcessMetadata(parsed, promptSettings);
       } catch (error) {
-        console.warn(`[Fail] ${apiProvider}: ${error.message}`);
+        console.warn(`[Fail] ${apiProvider} (key ${currentKeyIndex}): ${error.message}`);
         lastError = error;
         if (error.message.includes("401") || error.message.includes("403") || error.message.includes("429")) {
-          globalKeyIndex = (globalKeyIndex + 1) % apiKeys.length;
-          continue; // Try next key
+          continue; // Try next key gracefully
         }
         throw error; // Other errors abort immediately
       }
@@ -317,16 +362,16 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
 
     // Gemini branch
     const genAI = new GoogleGenerativeAI(apiKey);
-    console.log(`[System] Initializing with key ${apiKey.substring(0, 8)}...`);
+    console.log(`[System] Initializing Gemini with key index ${currentKeyIndex} (${apiKey.substring(0, 8)})...`);
 
-    // First try our hardcoded priority list
     let modelsToAttempt = [...modelsToTry];
+    let keyHitRateLimit = false;
 
-    // Try everything in the list
+    // Try available models for this specific key
     for (let i = 0; i < modelsToAttempt.length; i++) {
       const modelName = modelsToAttempt[i];
       try {
-        console.log(`[Attempt] Model: ${modelName}`);
+        console.log(`[Attempt] Model: ${modelName} on key ${currentKeyIndex}`);
         const model = genAI.getGenerativeModel({ model: modelName });
 
         const result = await model.generateContent([
@@ -342,7 +387,10 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
         const response = await result.response;
         const text = response.text();
 
-        console.log(`[Success] Metadata generated using ${modelName}!`);
+        console.log(`[Success] Metadata generated using ${modelName} on key index ${currentKeyIndex}!`);
+
+        // Rotate global key index for the NEXT file request (Round-Robin load balancing)
+        globalKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
 
         const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
         let parsed;
@@ -354,11 +402,10 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
           else throw new Error("JSON parse error");
         }
 
-        // Apply post-processing (prefix, suffix, negative words, char limits)
         return postProcessMetadata(parsed, promptSettings);
 
       } catch (error) {
-        console.warn(`[Fail] ${modelName}: ${error.message}`);
+        console.warn(`[Fail] ${modelName} on key ${currentKeyIndex}: ${error.message}`);
         lastError = error;
 
         if (
@@ -367,26 +414,19 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
           error.message.includes("429") ||
           error.message.includes("quota")
         ) {
-          console.warn(`[API Key Exhausted/Invalid] Switching to next key if available. Error: ${error.message}`);
-          // Permanently shift the global pointer to the next key for subsequent image requests
-          globalKeyIndex = (globalKeyIndex + 1) % apiKeys.length;
-          break; // Skip to next API key in the outer loop
+          console.warn(`[Rate Limit/Quota] Key index ${currentKeyIndex} exhausted. Switching to next backup key.`);
+          keyHitRateLimit = true;
+          break; // Break model loop to test the NEXT API key in the outer loop
         }
 
         if (error.message.includes("400")) {
-          console.warn(`[400 Error] from ${modelName}:`, error.message);
-          // Don't throw immediately, let it try other models or fallback!
           continue;
         }
 
         if (error.message.includes("404")) {
-          // If we exhausted our hardcoded list and still got 404s, let's dynamically fetch available models!
           if (i === modelsToAttempt.length - 1) {
-            console.log(`[System] All static models failed with 404. Fetching available models for this API key dynamically...`);
             const dynamicModels = await getAvailableModels(apiKey);
             if (dynamicModels.length > 0) {
-              console.log(`[System] Found dynamic models:`, dynamicModels);
-              // Add dynamic models that we haven't tried yet
               const newModels = dynamicModels.filter(m => !modelsToAttempt.includes(m));
               modelsToAttempt = [...modelsToAttempt, ...newModels];
             }
@@ -395,17 +435,17 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
         }
       }
     }
+
+    // Outer loop naturally proceeds to test the next API key if inner loop broke
   }
 
   if (lastError && (lastError.message.includes("429") || lastError.message.includes("quota"))) {
-    throw new Error("API Rate Limit Reached (429). Please wait 30 seconds before generating again, or add another API Key in settings.");
+    throw new Error(`API Rate Limit Reached on all ${apiKeys.length} keys. Please wait 30 seconds before generating again.`);
   }
 
   throw (
     lastError ||
-    new Error(
-      "Critical: Could not connect to any Gemini model. Please check your API key."
-    )
+    new Error("Critical: Could not connect to any Gemini model. Please check your API keys.")
   );
 }
 
@@ -425,22 +465,24 @@ Focus on:
 Return ONLY the raw prompt text. Do not include introductory text, quotes, or markdown formatting.`;
 
   let lastError = null;
+  const startKeyIndex = globalKeyIndex;
 
   for (let k = 0; k < apiKeys.length; k++) {
-    const keyIndexToTry = (globalKeyIndex + k) % apiKeys.length;
-    const apiKey = apiKeys[keyIndexToTry];
+    const currentKeyIndex = (startKeyIndex + k) % apiKeys.length;
+    const apiKey = apiKeys[currentKeyIndex];
 
     // OpenAI Compatible Route
     if (apiProvider !== "gemini") {
       try {
-        console.log(`[Attempt] Provider: ${apiProvider} (Image to Prompt)`);
+        console.log(`[Attempt] Provider: ${apiProvider} (Image to Prompt) using key index ${currentKeyIndex}`);
         const text = await fetchOpenAICompatible(apiProvider, apiKey, prompt, imageBuffer, mimeType, false);
+        // Rotate global key index for the NEXT file request (perfect Round-Robin)
+        globalKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
         return text;
       } catch (error) {
         lastError = error;
         if (error.message.includes("401") || error.message.includes("403") || error.message.includes("429")) {
-          globalKeyIndex = (globalKeyIndex + 1) % apiKeys.length;
-          continue;
+          continue; // Try next key smoothly
         }
         throw error;
       }
@@ -465,6 +507,8 @@ Return ONLY the raw prompt text. Do not include introductory text, quotes, or ma
         ]);
 
         const response = await result.response;
+        // Success! Rotate global key index for the NEXT file request (Round-Robin load balancing)
+        globalKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
         return response.text().trim();
       } catch (error) {
         lastError = error;
@@ -475,8 +519,7 @@ Return ONLY the raw prompt text. Do not include introductory text, quotes, or ma
           error.message.includes("429") ||
           error.message.includes("quota")
         ) {
-          globalKeyIndex = (globalKeyIndex + 1) % apiKeys.length;
-          break; // Skip to next API key
+          break; // Break inner model loop to smoothly test the NEXT API key in the outer loop
         }
 
         if (error.message.includes("400")) continue;
@@ -486,12 +529,12 @@ Return ONLY the raw prompt text. Do not include introductory text, quotes, or ma
   }
 
   if (lastError && (lastError.message.includes("429") || lastError.message.includes("quota"))) {
-    throw new Error("API Rate Limit Reached (429). Please wait 30 seconds before generating again, or add another API Key in settings.");
+    throw new Error(`API Rate Limit Reached on all ${apiKeys.length} keys. Please wait 30 seconds before generating again.`);
   }
 
   throw (
     lastError ||
-    new Error(`Critical: Could not connect to any ${apiProvider} model. Please check your API key.`)
+    new Error(`Critical: Could not connect to any ${apiProvider} model. Please check your API keys.`)
   );
 }
 

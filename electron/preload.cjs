@@ -1,5 +1,21 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  processEps: (filePath) => ipcRenderer.invoke('process-eps', filePath)
+  processEps: (filePath) => ipcRenderer.invoke('process-eps', filePath),
+  removeBgLocal: (filePath) => ipcRenderer.invoke('remove-bg-local', filePath),
+  removeBgApi: (filePath, apiKey) => ipcRenderer.invoke('remove-bg-api', filePath, apiKey),
+  removeBgHf: (filePath, token) => ipcRenderer.invoke('remove-bg-hf', filePath, token),
+  saveKey: (provider, key, index) => ipcRenderer.invoke('save-key', provider, key, index),
+  getKey: (provider, index) => ipcRenderer.invoke('get-key', provider, index),
+  deleteKey: (provider, index) => ipcRenderer.invoke('delete-key', provider, index),
+  saveAllKeys: (allKeys) => ipcRenderer.invoke('save-all-keys', allKeys),
+  loadAllKeys: () => ipcRenderer.invoke('load-all-keys'),
+  writeMetadata: (filePath, title, description, keywords, categories) => ipcRenderer.invoke('write-metadata', filePath, title, description, keywords, categories),
+  saveFtpConfig: (config) => ipcRenderer.invoke('save-ftp-config', config),
+  getFtpConfig: () => ipcRenderer.invoke('get-ftp-config'),
+  testFtp: (config) => ipcRenderer.invoke('test-ftp', config),
+  uploadFtp: (config, filePaths) => ipcRenderer.invoke('upload-ftp', config, filePaths),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  generateEpsJpg: (filePath, addWhiteBgToPng) => ipcRenderer.invoke('generate-eps-jpg', filePath, addWhiteBgToPng)
 });
+

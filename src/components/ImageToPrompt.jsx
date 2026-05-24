@@ -4,9 +4,10 @@ import { generatePromptFromImage } from "../services/geminiService";
 
 const ACCEPTED_TYPES = "image/jpeg,image/png,image/webp,image/gif";
 
-export function ImageToPrompt({ apiKeys, apiProvider }) {
+export function ImageToPrompt({ apiKeys, apiProvider, promptSettings }) {
   const [images, setImages] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
   const fileInputRef = useRef(null);
 
   const isAccepted = (file) => file.type.startsWith("image/");
@@ -53,42 +54,62 @@ export function ImageToPrompt({ apiKeys, apiProvider }) {
     }
 
     setIsProcessing(true);
+    setProgress(0);
 
-    for (let i = 0; i < images.length; i++) {
-      const img = images[i];
-      if (img.status === "done") continue;
-      if (onlyErrors && img.status !== "error") continue;
+    const toProcess = images.filter((img) => {
+      if (img.status === "done") return false;
+      if (onlyErrors && img.status !== "error") return false;
+      return true;
+    });
 
+    const limit = promptSettings?.concurrentLimit || 2;
+    let processed = 0;
+
+    for (let i = 0; i < toProcess.length; i += limit) {
+      const chunk = toProcess.slice(i, i + limit);
+
+      // Set status to processing for all in this chunk
       setImages((prev) =>
-        prev.map((item) => (item.id === img.id ? { ...item, status: "processing" } : item))
+        prev.map((item) =>
+          chunk.some((ci) => ci.id === item.id) ? { ...item, status: "processing" } : item
+        )
       );
 
-      try {
-        const dataUrl = await toBase64(img.file);
-        const base64 = dataUrl.split(",")[1];
-        const mimeType = img.file.type;
+      // Process chunk concurrently
+      await Promise.all(
+        chunk.map(async (img) => {
+          try {
+            const dataUrl = await toBase64(img.file);
+            const base64 = dataUrl.split(",")[1];
+            const mimeType = img.file.type;
 
-        const generatedPrompt = await generatePromptFromImage(base64, mimeType, apiKeys, apiProvider || "gemini");
+            const generatedPrompt = await generatePromptFromImage(base64, mimeType, apiKeys, apiProvider || "gemini", promptSettings);
 
-        setImages((prev) =>
-          prev.map((item) =>
-            item.id === img.id ? { ...item, status: "done", result: generatedPrompt } : item
-          )
-        );
+            setImages((prev) =>
+              prev.map((item) =>
+                item.id === img.id ? { ...item, status: "done", result: generatedPrompt } : item
+              )
+            );
+          } catch (err) {
+            setImages((prev) =>
+              prev.map((item) =>
+                item.id === img.id ? { ...item, status: "error", error: err.message } : item
+              )
+            );
+          }
+          processed++;
+          setProgress(Math.round((processed / toProcess.length) * 100));
+        })
+      );
 
-        if (i < images.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 4500));
-        }
-      } catch (err) {
-        setImages((prev) =>
-          prev.map((item) =>
-            item.id === img.id ? { ...item, status: "error", error: err.message } : item
-          )
-        );
+      // Add delay between chunks
+      if (i + limit < toProcess.length) {
+        await new Promise((resolve) => setTimeout(resolve, 4500));
       }
     }
 
     setIsProcessing(false);
+    setTimeout(() => setProgress(0), 1000);
   };
 
   const handlePromptChange = (id, value) => {
@@ -154,6 +175,16 @@ export function ImageToPrompt({ apiKeys, apiProvider }) {
             {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             {isProcessing ? 'Retrying...' : 'Retry Failed Files'}
           </button>
+        </div>
+      )}
+
+      {/* Progress Bar */}
+      {isProcessing && progress > 0 && (
+        <div style={{ width: '100%', margin: '10px 0' }}>
+          <div style={{ height: '8px', background: 'var(--surface-3)', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--glass-border)' }}>
+            <div style={{ width: `${progress}%`, height: '100%', background: 'linear-gradient(90deg, var(--primary), var(--secondary))', transition: 'width 0.3s' }} />
+          </div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-3)', marginTop: '4px', textAlign: 'right', fontWeight: 600 }}>{progress}%</div>
         </div>
       )}
 

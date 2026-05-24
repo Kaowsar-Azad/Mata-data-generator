@@ -103,9 +103,40 @@ body {
     top: 0.75rem;
     height: calc(100vh - 1.5rem);
     overflow-y: auto;
-    scrollbar-width: none;
+    scrollbar-width: thin;
+    scrollbar-color: var(--glass-border) transparent;
   }
-  .dashboard-sidebar::-webkit-scrollbar { display: none; }
+  .dashboard-sidebar::-webkit-scrollbar {
+    width: 5px;
+  }
+  .dashboard-sidebar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .dashboard-sidebar::-webkit-scrollbar-thumb {
+    background: var(--glass-border);
+    border-radius: 999px;
+    transition: background 0.2s;
+  }
+  .dashboard-sidebar::-webkit-scrollbar-thumb:hover {
+    background: var(--text-3);
+  }
+}
+
+/* Sidebar Section Layouts */
+.sidebar-top-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* Bottom Section Layout */
+.sidebar-bottom-section {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex-shrink: 0;
 }
 
 .dashboard-main {

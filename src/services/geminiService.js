@@ -1,20 +1,16 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { recordApiUsage } from "./apiUsageTracker.js";
 
 /**
  * Super Robust Gemini Service with Multi-Version and Multi-Model fallbacks
  * Supports both raster images and EPS files (via extracted/placeholder previews)
  */
 
-// Expanded list of models, from oldest to newest stable, to ensure backward compatibility
 const modelsToTry = [
-  "gemini-2.5-flash",
   "gemini-2.0-flash",
-  "gemini-2.0-flash-lite-preview-02-05",
+  "gemini-2.0-flash-lite",
   "gemini-1.5-flash",
-  "gemini-1.5-flash-8b",
-  "gemini-1.5-pro",
-  "gemini-pro-vision",
-  "gemini-pro"
+  "gemini-1.5-pro"
 ];
 
 // Fallback dynamic fetch
@@ -45,8 +41,14 @@ async function getAvailableModels(apiKey) {
  */
 function buildPrompt({ isEps, isPlaceholder, fileName, extractedTextContext, promptSettings }) {
   // Clean up filename (remove extension, replace dashes/underscores with spaces)
-  const cleanName = fileName.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+  let cleanName = fileName.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
   
+  // If the filename looks like a hash or random string (e.g. c35f75d7...), ignore it
+  const isHash = /^[a-f0-9]{20,}$/i.test(cleanName) || cleanName.length > 30 && !cleanName.includes(" ");
+  if (isHash) {
+    cleanName = "a professional illustration";
+  }
+
   // Default settings fallback
   const s = promptSettings || {
     titleMaxChars: 70,
@@ -70,6 +72,9 @@ Generate metadata as if you are looking at a vector illustration about "${cleanN
     } else {
       fileContext = `This is a preview extracted from a stock vector illustration in EPS format. The file name is "${cleanName}". Please describe the actual illustration shown in the image.`;
     }
+  } else {
+    // Standard raster file
+    fileContext = `The file name is "${cleanName}". Please describe the image.`;
   }
 
   // Build negative words instruction
@@ -112,16 +117,64 @@ Generate metadata as if you are looking at a vector illustration about "${cleanN
     customInstStr = `\n\nUSER INSTRUCTION (follow strictly):\n"${s.customInstruction.trim()}"`;
   }
 
+  let categoryList = "";
+  if (targetPlatform === "Adobe Stock") {
+    categoryList = `["Animals", "Buildings and Architecture", "Business", "Drinks", "The Environment", "States of Mind", "Food", "Graphic Resources", "Hobbies and Leisure", "Industry", "Landscapes", "Lifestyle", "People", "Plants and Flowers", "Culture and Religion", "Science", "Social Issues", "Sports", "Technology", "Transport", "Travel"]`;
+  } else if (targetPlatform === "Shutterstock") {
+    categoryList = `["Abstract", "Animals/Wildlife", "Backgrounds/Textures", "Beauty/Fashion", "Buildings/Landmarks", "Business/Finance", "Education", "Food and Drink", "Healthcare/Medical", "Holidays", "Illustrations/Clip-Art", "Industrial", "Interiors", "Miscellaneous", "Nature", "Objects", "Parks/Outdoor", "People", "Religion", "Science", "Signs/Symbols", "Sports/Recreation", "Technology", "Transportation", "Vintage"]`;
+  } else if (targetPlatform === "General") {
+    // Universal hybrid list of broad categories compatible across all platforms
+    categoryList = `["Abstract & Textures", "Animals & Wildlife", "Architecture & Buildings", "Business & Finance", "Education & Science", "Food & Drink", "Healthcare & Medical", "Holidays & Celebrations", "Illustrations & Clipart", "Industry & Technology", "Landscapes & Nature", "Lifestyle & People", "Objects & Concepts", "Sports & Recreation", "Transportation & Travel"]`;
+  } else {
+    // Fallback/Others (Pond5, Getty, Depositphotos, etc.) - use Shutterstock list as it is highly detailed
+    categoryList = `["Abstract", "Animals/Wildlife", "Backgrounds/Textures", "Beauty/Fashion", "Buildings/Landmarks", "Business/Finance", "Education", "Food and Drink", "Healthcare/Medical", "Holidays", "Illustrations/Clip-Art", "Industrial", "Interiors", "Miscellaneous", "Nature", "Objects", "Parks/Outdoor", "People", "Religion", "Science", "Signs/Symbols", "Sports/Recreation", "Technology", "Transportation", "Vintage"]`;
+  }
+
   const singleWordRule = s.singleWordKeywords 
     ? "- STRICT: Every keyword must be a single word. No phrases."
     : "- Single words preferred. Widely-used 2-word phrases (e.g., \"coffee cup\", \"social media\") are allowed.";
 
+  // Build keyword instructions
+  let keywordEmphasis = "";
+  if (s.smartMode) {
+    keywordEmphasis = `
+KEYWORDS GENERATION (SMART MODE - CRITICAL):
+Generate ONLY the most highly relevant, precise keywords necessary for this specific image based on SEO and market analysis.
+Do NOT pad the list with unnecessary, generic, or vaguely related words just to increase the count. Quality over quantity.
+Provide as many as necessary to accurately describe the image for buyers, but not a single word more. Ensure no filler words are used.`;
+  } else {
+    keywordEmphasis = `
+KEYWORDS GENERATION (CRITICAL - THIS IS YOUR PRIMARY TASK):
+You MUST create EXACTLY ${s.keywordCount} keywords. Not fewer. Not approximately. EXACTLY ${s.keywordCount}.
+
+Strategy for reaching ${s.keywordCount} keywords:
+  Phase 1: List all direct, literal objects/elements visible (5-15 keywords)
+  Phase 2: Add colors, materials, textures (3-5 keywords)
+  Phase 3: Add styles, genres, artistic movements (3-5 keywords)
+  Phase 4: Add moods, emotions, atmospheres (3-5 keywords)
+  Phase 5: Add use-cases, applications, contexts (5-8 keywords)
+  Phase 6: Add technical/industry terms, synonyms, related concepts (fill remaining to reach ${s.keywordCount})
+  
+If you run out of obvious terms, use these exhaustion strategies:
+- Broader category terms (if you have "stethoscope", also add "medical", "healthcare", "equipment")
+- Opposite/complementary concepts (if "indoor" appears, consider "professional space", "clinical setting")
+- Related professions/industries (if "doctor", add "medical professional", "physician", "clinician")
+- Visual descriptors (colors, lighting, composition style)
+- Market segments (business, education, healthcare, creative, etc.)
+
+COUNT VERIFICATION: Before you output your JSON, COUNT your keywords. Write the count in your mind. If you have fewer than ${s.keywordCount}, add more until you reach exactly ${s.keywordCount}.
+
+UNDER NO CIRCUMSTANCES should your keyword list have fewer than ${s.keywordCount} keywords.`;
+  }
+
   return `${fileContext}
 
 You are a senior stock media contributor with 12+ years of experience selling on Adobe Stock, Shutterstock, and Getty Images. You have personally written metadata for over 50,000 stock assets. Your titles and descriptions always rank high and get sales because they match exactly how real buyers search.
+
+CRITICAL MULTILINGUAL INSTRUCTION: The user may provide file names, hidden context, or USER INSTRUCTIONS in non-English languages (e.g., Bengali, Spanish, French). You MUST understand and translate their intent seamlessly. However, ALL of your generated output (Title, Description, and Keywords) MUST be exclusively in high-quality, industry-standard English. Do NOT output metadata in any language other than English.
 ${platformContext}${mediaHintStr}${customInstStr}
 
-Analyze the image carefully. Look at: main subject, objects, colors, style, background, composition, mood, and potential commercial use.
+ Analyze the image carefully. Look at: main subject, objects, colors, style, background, composition, mood, and potential commercial use.
 
 ─────────────────────────────────────
 TITLE FORMULA: [Main Subject] + [Key Detail] + [Context/Setting]
@@ -149,7 +202,7 @@ Title rules:
 - Write exactly as a buyer would search — clear, direct, factual.
 - Include specific details: colors, materials, numbers, actions, style when relevant.
 - COMPLETELY FORBIDDEN words: stunning, vibrant, captivating, breathtaking, mesmerizing, exquisite, meticulously, seamlessly, showcasing, featuring, beautifully, crafted, rendered, premium, perfect, dynamic, amazing, incredible, gorgeous, elegant (unless it is literally an elegant design style).
-- Max ${s.titleMaxChars} characters.${s.negTitleEnabled && s.negTitleWords ? `\n- Also forbidden: ${s.negTitleWords}.` : ""}
+${s.smartMode ? `- LENGTH: Write a concise, natural, and highly descriptive SEO-optimized title without artificial padding.` : `- REQUIRED LENGTH: Make the title comprehensive and highly descriptive, fully utilizing between ${s.titleMinChars || 70} and ${s.titleMaxChars} characters. Your title should use nearly all available space.`}${s.negTitleEnabled && s.negTitleWords ? `\n- Also forbidden: ${s.negTitleWords}.` : ""}
 
 ─────────────────────────────────────
 DESCRIPTION FORMULA: Sentence 1 + Sentence 2
@@ -167,11 +220,12 @@ Rules:
 - Sentence 2: Mention 2-3 specific real use-cases buyers actually use (e.g., "website banner", "social media post", "product label", "book cover").
 - Write in active, plain language. No passive voice.
 - Completely forbidden: "stunning", "breathtaking", "beautifully crafted", "meticulously", "showcasing", "featuring", "perfectly designed".
-- Max ${s.descMaxChars} characters.
+${s.smartMode ? `- LENGTH: Write a natural, concise, and highly effective SEO description without forcing a specific character count.` : `- REQUIRED LENGTH: Write a rich and detailed description utilizing between ${s.descMinChars || 110} and ${s.descMaxChars} characters. Use nearly the full space available.`}
 
 ─────────────────────────────────────
-KEYWORDS
-─────────────────────────────────────
+${keywordEmphasis}
+
+Additional keyword rules:
 - Order: most specific literal subjects first → style/color/mood → use-case concepts last.
 - Every keyword must be directly relevant to what is visually present or commercially implied.
 - No filler: "thing", "item", "shape", "object", "image", "picture", "look", "nice".
@@ -179,15 +233,89 @@ ${singleWordRule}
 - No brand/trademark names.
 - No banned words: "free", "download", "copyright", "watermark".
 - No duplicate root words (not both "color" and "colors").
-- No hashtags.
-- Exactly ${s.keywordCount} keywords.${negInstructions}
+- No hashtags.${negInstructions}
+
+CATEGORY SELECTION:
+Based on the image content, select 1 or 2 of the most appropriate stock agency categories from this exact list:
+${categoryList}
 
 Output ONLY this JSON. No markdown, no backticks, no extra text:
 {
-  "title": "...",
-  "description": "...",
-  "keywords": "..."
+  "title": "A highly descriptive title...",
+  "description": "A descriptive explanation of the image...",
+  "keywords": "keyword1, keyword2, keyword3, keyword4, keyword5, ... ${s.smartMode ? "(only relevant keywords)" : `(at least ${s.keywordCount} keywords)`}",
+  "categories": ["Selected Category 1", "Selected Category 2"]
 }`;
+}
+
+
+const BRAND_REPLACEMENTS = {
+  "iphone": "smartphone",
+  "ipad": "tablet",
+  "macbook": "laptop",
+  "imac": "desktop computer",
+  "apple watch": "smartwatch",
+  "airpods": "wireless earbuds",
+  "android": "smartphone",
+  "pixel": "smartphone",
+  "chromebook": "laptop",
+  "windows": "operating system",
+  "xbox": "gaming console",
+  "playstation": "gaming console",
+  "nintendo switch": "gaming console",
+  "wii": "gaming console",
+  "facebook": "social media",
+  "instagram": "social media",
+  "twitter": "social media",
+  "tiktok": "social media",
+  "whatsapp": "messaging app",
+  "snapchat": "social media",
+  "youtube": "video platform",
+  "linkedin": "social network",
+  "netflix": "streaming service",
+  "coca-cola": "cola",
+  "pepsi": "cola",
+  "red bull": "energy drink",
+  "starbucks": "coffee shop",
+  "mcdonalds": "fast food",
+  "mcdonald's": "fast food",
+  "nike": "sports brand",
+  "adidas": "sports brand",
+  "tesla": "electric car",
+  "lego": "building blocks",
+  "dji": "drone",
+  "gopro": "action camera",
+  "canon": "camera",
+  "nikon": "camera",
+  "rolex": "luxury watch"
+};
+
+const FORBIDDEN_BRANDS = [
+  "apple", "google", "microsoft", "meta", "amazon", "disney", "marvel", 
+  "toyota", "honda", "ford", "bmw", "mercedes", "audi", "porsche", 
+  "ferrari", "lamborghini", "sony", "samsung", "lg", "panasonic",
+  "gucci", "louis vuitton", "prada", "chanel", "dior", "hermes"
+];
+
+function sanitizeText(text) {
+  if (!text) return text;
+  let sanitized = text;
+  
+  // Replace specific product names with generic terms
+  for (const [brand, replacement] of Object.entries(BRAND_REPLACEMENTS)) {
+    const regex = new RegExp(`\\b${brand}\\b`, 'gi');
+    sanitized = sanitized.replace(regex, replacement);
+  }
+
+  // Remove other forbidden brands entirely
+  for (const brand of FORBIDDEN_BRANDS) {
+    const regex = new RegExp(`\\b${brand}\\b`, 'gi');
+    sanitized = sanitized.replace(regex, '');
+  }
+
+  // Clean up double spaces and isolated punctuation
+  sanitized = sanitized.replace(/\s{2,}/g, ' ').replace(/\s+([.,;:!])/g, '$1').trim();
+  return sanitized;
 }
 
 /**
@@ -196,6 +324,17 @@ Output ONLY this JSON. No markdown, no backticks, no extra text:
 function postProcessMetadata(metadata, promptSettings) {
   const s = promptSettings || {};
   let result = { ...metadata };
+
+  // --- BRAND & TRADEMARK SAFETY SCANNER ---
+  if (result.title) result.title = sanitizeText(result.title);
+  if (result.description) result.description = sanitizeText(result.description);
+  if (result.keywords) {
+    result.keywords = result.keywords.split(',')
+      .map(k => sanitizeText(k.trim()))
+      .filter(k => k.length > 0)
+      .join(', ');
+  }
+  // ----------------------------------------
 
   // Apply prefix/suffix to title
   let title = result.title || "";
@@ -207,14 +346,22 @@ function postProcessMetadata(metadata, promptSettings) {
   }
 
   // Enforce title max chars
-  if (s.titleMaxChars && title.length > s.titleMaxChars) {
+  if (!s.smartMode && s.titleMaxChars && title.length > s.titleMaxChars) {
     title = title.substring(0, s.titleMaxChars).replace(/\s+\S*$/, "");
+  }
+  // Enforce minimum title length
+  if (!s.smartMode && s.titleMinChars && title.length < s.titleMinChars) {
+    title = title.padEnd(s.titleMinChars, ' ');
   }
   result.title = title;
 
   // Enforce description max chars
-  if (s.descMaxChars && result.description && result.description.length > s.descMaxChars) {
+  if (!s.smartMode && s.descMaxChars && result.description && result.description.length > s.descMaxChars) {
     result.description = result.description.substring(0, s.descMaxChars).replace(/\s+\S*$/, "") + ".";
+  }
+  // Enforce minimum description length
+  if (!s.smartMode && s.descMinChars && result.description && result.description.length < s.descMinChars) {
+    result.description = result.description.padEnd(s.descMinChars, ' ');
   }
 
   // Remove negative keywords and STRICTLY enforce count
@@ -227,9 +374,33 @@ function postProcessMetadata(metadata, promptSettings) {
       kws = kws.filter(k => !banned.includes(k.toLowerCase()));
     }
 
-    // 2. STRICTLY enforce the count requested by the user
-    if (s.keywordCount && kws.length > s.keywordCount) {
-      kws = kws.slice(0, s.keywordCount);
+    // 2. STRICTLY enforce the count - if too many, slice; if too few, add intelligent fallbacks
+    if (!s.smartMode && s.keywordCount) {
+      if (kws.length > s.keywordCount) {
+        kws = kws.slice(0, s.keywordCount);
+      } else if (kws.length < s.keywordCount) {
+        // Add intelligent fallback keywords based on common stock photo categories
+        const fallbackKeywords = [
+          "professional", "business", "concept", "background", "abstract", "modern",
+          "design", "creative", "illustration", "digital", "graphic", "visual",
+          "web", "online", "internet", "technology", "communication", "social",
+          "corporate", "commercial", "marketing", "advertising", "promotional",
+          "icon", "symbol", "element", "asset", "template", "mockup",
+          "render", "artwork", "composition", "scene", "object", "lifestyle",
+          "people", "person", "human", "figure", "portrait", "close-up",
+          "detail", "macro", "texture", "pattern", "surface", "material",
+          "color", "vibrant", "bright", "dark", "light", "neutral",
+          "minimalist", "clean", "simple", "complex", "detailed", "stylized"
+        ];
+        
+        while (kws.length < s.keywordCount && fallbackKeywords.length > 0) {
+          const randomIdx = Math.floor(Math.random() * fallbackKeywords.length);
+          const fallback = fallbackKeywords.splice(randomIdx, 1)[0];
+          if (!kws.map(k => k.toLowerCase()).includes(fallback.toLowerCase())) {
+            kws.push(fallback);
+          }
+        }
+      }
     }
     
     result.keywords = kws.join(", ");
@@ -253,56 +424,94 @@ let globalKeyIndex = 0;
  */
 async function fetchOpenAICompatible(provider, apiKey, prompt, base64Data, mimeType, forceJson = true) {
   let endpoint = "";
-  let model = "";
+  let models = [];
 
   if (provider === "groq") {
     endpoint = "https://api.groq.com/openai/v1/chat/completions";
-    model = "llama-3.2-90b-vision-preview"; // Groq's main vision model
+    // Primary: Llama 4 Scout (current production vision model on Groq)
+    // Fallback: Legacy model strings in case Groq changes naming
+    models = [
+      "meta-llama/llama-4-scout-17b-16e-instruct",
+      "llama-4-scout-17b-16e-instruct",
+      "llama-3.2-90b-vision-preview",
+      "llama-3.2-11b-vision-preview"
+    ];
   } else if (provider === "openrouter") {
     endpoint = "https://openrouter.ai/api/v1/chat/completions";
-    model = "google/gemini-2.5-flash"; // Default openrouter vision model
+    models = ["google/gemini-2.5-flash"];
   } else if (provider === "openai") {
     endpoint = "https://api.openai.com/v1/chat/completions";
-    model = "gpt-4o-mini"; // Fast vision
+    models = ["gpt-4o-mini"];
   } else if (provider === "mistral") {
     endpoint = "https://api.mistral.ai/v1/chat/completions";
-    model = "pixtral-12b-2409"; // Mistral vision
+    models = ["pixtral-12b-2409"];
   }
 
-  const payload = {
-    model: model,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: prompt },
-          { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } }
-        ]
+  let lastResponseText = null;
+  let lastError = null;
+
+  for (let i = 0; i < models.length; i++) {
+    const currentModel = models[i];
+    const payload = {
+      model: currentModel,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } }
+          ]
+        }
+      ]
+    };
+
+    if (forceJson) {
+      payload.response_format = { type: "json_object" };
+    }
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          ...(provider === "openrouter" ? { "HTTP-Referer": "http://localhost:5173", "X-Title": "Metadata Pro" } : {})
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errMsg = errorData.error?.message || response.statusText;
+        throw new Error(`${provider.toUpperCase()} API Error: ${response.status} ${errMsg}`);
       }
-    ]
-  };
 
-  if (forceJson) {
-    payload.response_format = { type: "json_object" };
+      const data = await response.json();
+      lastResponseText = data.choices[0].message.content;
+      const tok = data.usage?.total_tokens;
+      recordApiUsage(provider, apiKey, {
+        totalTokens: typeof tok === "number" ? tok : 0,
+        requests: 1,
+      });
+      console.log(`[Success] Successfully generated using model string: ${currentModel}`);
+      break; // Successfully got response!
+    } catch (err) {
+      lastError = err;
+      // If model is decommissioned, deprecated, or not found (usually 400 or 404), try next model candidate smoothly!
+      if (err.message.includes("400") || err.message.includes("decommissioned") || err.message.includes("not found") || err.message.includes("404")) {
+        console.warn(`[Fallback] Model ${currentModel} failed on ${provider}: ${err.message}. Trying next candidate...`);
+        continue;
+      }
+      // Otherwise break/rethrow immediately (e.g. 401 Unauthorized, 429 Rate Limit)
+      throw err;
+    }
   }
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      ...(provider === "openrouter" ? { "HTTP-Referer": "http://localhost:5173", "X-Title": "Metadata Pro" } : {})
-    },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(`${provider.toUpperCase()} API Error: ${response.status} ${errorData.error?.message || response.statusText}`);
+  if (lastResponseText === null) {
+    throw lastError || new Error(`${provider.toUpperCase()} API Error: All model candidates failed.`);
   }
 
-  const data = await response.json();
-  const text = data.choices[0].message.content;
+  const text = lastResponseText;
 
   if (!forceJson) {
     return text.trim();
@@ -334,24 +543,32 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
   const prompt = buildPrompt({ isEps, isPlaceholder, fileName, extractedTextContext, promptSettings });
 
   let lastError = null;
+  
+  // Atomically claim the current key index and immediately advance globalKeyIndex
+  // so concurrent calls receive distinct API keys!
   const startKeyIndex = globalKeyIndex;
+  if (apiKeys && apiKeys.length > 0) {
+    globalKeyIndex = (globalKeyIndex + 1) % apiKeys.length;
+  }
 
   // Try each API key precisely once for this specific file request if needed
   for (let k = 0; k < apiKeys.length; k++) {
     const currentKeyIndex = (startKeyIndex + k) % apiKeys.length;
-    const apiKey = apiKeys[currentKeyIndex];
+    const keyItem = apiKeys[currentKeyIndex];
+    
+    // Support both new {provider, key} object format and legacy string format
+    const currentProvider = typeof keyItem === 'object' ? keyItem.provider : apiProvider;
+    const apiKey = typeof keyItem === 'object' ? keyItem.key : keyItem;
 
     // Branch to OpenAI compatible providers if not Gemini
-    if (apiProvider !== "gemini") {
+    if (currentProvider !== "gemini") {
       try {
-        console.log(`[Attempt] Provider: ${apiProvider} using key index ${currentKeyIndex}`);
-        const parsed = await fetchOpenAICompatible(apiProvider, apiKey, prompt, imageBuffer, mimeType);
-        console.log(`[Success] Metadata generated using ${apiProvider}!`);
-        // Rotate global key index for the NEXT file request to achieve perfect Round-Robin load balancing
-        globalKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
+        console.log(`[Attempt] Provider: ${currentProvider} using key index ${currentKeyIndex}`);
+        const parsed = await fetchOpenAICompatible(currentProvider, apiKey, prompt, imageBuffer, mimeType);
+        console.log(`[Success] Metadata generated using ${currentProvider}!`);
         return postProcessMetadata(parsed, promptSettings);
       } catch (error) {
-        console.warn(`[Fail] ${apiProvider} (key ${currentKeyIndex}): ${error.message}`);
+        console.warn(`[Fail] ${currentProvider} (key ${currentKeyIndex}): ${error.message}`);
         lastError = error;
         if (error.message.includes("401") || error.message.includes("403") || error.message.includes("429")) {
           continue; // Try next key gracefully
@@ -387,10 +604,16 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
         const response = await result.response;
         const text = response.text();
 
-        console.log(`[Success] Metadata generated using ${modelName} on key index ${currentKeyIndex}!`);
+        let totalTokens = 0;
+        try {
+          const um = response.usageMetadata;
+          if (um && typeof um.totalTokenCount === "number") totalTokens = um.totalTokenCount;
+        } catch {
+          /* ignore */
+        }
+        recordApiUsage("gemini", apiKey, { totalTokens, requests: 1 });
 
-        // Rotate global key index for the NEXT file request (Round-Robin load balancing)
-        globalKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
+        console.log(`[Success] Metadata generated using ${modelName} on key index ${currentKeyIndex}!`);
 
         const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
         let parsed;
@@ -414,9 +637,9 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
           error.message.includes("429") ||
           error.message.includes("quota")
         ) {
-          console.warn(`[Rate Limit/Quota] Key index ${currentKeyIndex} exhausted. Switching to next backup key.`);
+          console.warn(`[Rate Limit/Quota] Model ${modelName} on key ${currentKeyIndex} exhausted. Trying next model...`);
           keyHitRateLimit = true;
-          break; // Break model loop to test the NEXT API key in the outer loop
+          continue; // Try next model instead of breaking the loop
         }
 
         if (error.message.includes("400")) {
@@ -452,32 +675,58 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
 /**
  * Generate a detailed prompt from an image.
  */
-export async function generatePromptFromImage(imageBuffer, mimeType, apiKeys, apiProvider = "gemini") {
-  const prompt = `Analyze this image in extreme detail and create a highly comprehensive, descriptive prompt that could be used to recreate this exact image in a text-to-image AI model like Midjourney or Stable Diffusion.
+export async function generatePromptFromImage(imageBuffer, mimeType, apiKeys, apiProvider = "gemini", promptSettings = {}) {
+  const mode = promptSettings.promptSimilarityMode || 'Exact Match';
+  
+  let modeInstruction = "";
+  if (mode === "Unique Variation") {
+    modeInstruction = `\n- UNIQUE VARIATION MODE (CRITICAL): DO NOT create an exact match of this image. Instead, slightly alter the subjects, camera angles, colors, or background details so the resulting image will be a UNIQUE but thematically similar variation. This is to avoid duplicate content on stock sites. Describe a related concept but make it visually distinct.`;
+  } else {
+    modeInstruction = `\n- EXACT MATCH MODE: Create a prompt that will recreate this exact image as closely and accurately as possible.`;
+  }
+
+  const prompt = `Analyze this image in detail and create a comprehensive, descriptive prompt that could be used to recreate this image in an AI model like Midjourney or Stable Diffusion.
 
 Focus on:
-1. The main subject, actions, and positioning.
-2. The exact lighting, camera angles, and depth of field.
-3. The mood, atmosphere, and color grading.
-4. The artistic style, medium, or render engine (e.g., cinematic photography, vector illustration, Unreal Engine 5 render, oil painting, etc.).
-5. Tiny background details or textures.
+1. Main subject, actions, and positioning.
+2. Lighting, camera angles, and atmosphere.
+3. Artistic style, medium, and color palette.
+4. Essential background details.
+5. HUMAN ANATOMY (If humans are present): Describe the facial features, gaze direction, eyes, pupils, exact hand/finger placement, and skin texture in extreme detail to ensure flawless anatomical generation.
 
-Return ONLY the raw prompt text. Do not include introductory text, quotes, or markdown formatting.`;
+CRITICAL RULES:
+- HUMAN SUBJECTS: If humans are in the image, use terms that encourage perfect anatomy (e.g., "perfectly detailed eyes", "correctly proportioned hands", "5 fingers", "cinematic lighting on face", "sharp focus on pupils").
+- EXCLUDE ANY WATERMARKS: Completely ignore any watermarks, logos, or copyright text present in the image. Do not mention them in the prompt.
+- SAFETY COMPLIANCE: Do not include any violent, explicit, offensive, or risky words that might trigger safety filters in AI image generators. Keep the language completely safe and policy-compliant.${modeInstruction}
+- Output the entire prompt as a SINGLE, continuous paragraph. 
+- DO NOT use multiple paragraphs, sections, bullet points, or line breaks.
+- Avoid being excessively wordy; keep it descriptive but focused.
+- Return ONLY the raw prompt text. No introductory text, quotes, or markdown.`;
 
   let lastError = null;
   const startKeyIndex = globalKeyIndex;
+  if (apiKeys && apiKeys.length > 0) {
+    globalKeyIndex = (globalKeyIndex + 1) % apiKeys.length;
+  }
 
   for (let k = 0; k < apiKeys.length; k++) {
     const currentKeyIndex = (startKeyIndex + k) % apiKeys.length;
     const apiKey = apiKeys[currentKeyIndex];
 
-    // OpenAI Compatible Route
+    // OpenAI Compatible Route (Groq, etc.)
     if (apiProvider !== "gemini") {
       try {
+        const enrichedPrompt = `You are an Expert AI Prompt Engineer specialized in Midjourney and Stable Diffusion. 
+Your task is to analyze the attached image and write a MASTERPIECE prompt.
+
+${prompt}
+
+ADVICE FOR EXCELLENCE: 
+Use professional photography terms (e.g. "85mm lens", "soft bokeh", "rim lighting", "high dynamic range"). 
+Be vivid and poetic but stay within a single paragraph.`;
+
         console.log(`[Attempt] Provider: ${apiProvider} (Image to Prompt) using key index ${currentKeyIndex}`);
-        const text = await fetchOpenAICompatible(apiProvider, apiKey, prompt, imageBuffer, mimeType, false);
-        // Rotate global key index for the NEXT file request (perfect Round-Robin)
-        globalKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
+        const text = await fetchOpenAICompatible(apiProvider, apiKey, enrichedPrompt, imageBuffer, mimeType, false);
         return text;
       } catch (error) {
         lastError = error;
@@ -507,9 +756,18 @@ Return ONLY the raw prompt text. Do not include introductory text, quotes, or ma
         ]);
 
         const response = await result.response;
-        // Success! Rotate global key index for the NEXT file request (Round-Robin load balancing)
-        globalKeyIndex = (currentKeyIndex + 1) % apiKeys.length;
-        return response.text().trim();
+        const out = response.text().trim();
+
+        let totalTokens = 0;
+        try {
+          const um = response.usageMetadata;
+          if (um && typeof um.totalTokenCount === "number") totalTokens = um.totalTokenCount;
+        } catch {
+          /* ignore */
+        }
+        recordApiUsage("gemini", apiKey, { totalTokens, requests: 1 });
+
+        return out;
       } catch (error) {
         lastError = error;
 

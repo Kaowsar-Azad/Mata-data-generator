@@ -8,11 +8,18 @@ import { VectorMagic } from './components/VectorMagic'
 import { FtpUploader } from './components/FtpUploader'
 import { FtpConfigManager } from './components/FtpConfigManager'
 import { EpsPreviewGenerator } from './components/EpsPreviewGenerator'
-import { Sparkles, Zap, Image as ImageIcon, Eraser, Box, ChevronLeft, ChevronRight, Server, Key, Camera } from 'lucide-react'
+import { ImageUpscaler } from './components/ImageUpscaler'
+import { Sparkles, Zap, Image as ImageIcon, Eraser, Box, ChevronLeft, ChevronRight, Server, Key, Camera, Maximize } from 'lucide-react'
 
 function App() {
   const [apiKeys, setApiKeys] = useState([])
-  const [apiProvider, setApiProvider] = useState(['gemini'])
+  const [apiProvider, setApiProvider] = useState(() => {
+    try {
+      const saved = localStorage.getItem("selected_api_providers");
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return ['gemini'];
+  });
   const [ftpConfigs, setFtpConfigs] = useState([])
   const [promptSettings, setPromptSettings] = useState({
     smartMode: false,
@@ -51,6 +58,10 @@ function App() {
       });
     }
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("selected_api_providers", JSON.stringify(apiProvider));
+  }, [apiProvider]);
 
   return (
     <div className="dashboard-layout">
@@ -133,6 +144,7 @@ function App() {
               { id: 'epspreview', icon: Camera, label: 'Auto EPS Preview' },
               { id: 'removebg', icon: Eraser, label: 'Background Remover' },
               { id: 'vector', icon: Box, label: 'Vector Magic' },
+              { id: 'upscale', icon: Maximize, label: 'AI Image Upscaler' },
               { id: 'ftp', icon: Server, label: 'FTP Upload System' },
             ].map(tab => (
               <button
@@ -235,6 +247,9 @@ function App() {
         </div>
         <div style={{ display: activeTab === 'vector' ? 'block' : 'none', width: '100%', height: '100%' }}>
           <VectorMagic />
+        </div>
+        <div style={{ display: activeTab === 'upscale' ? 'block' : 'none', width: '100%', height: '100%' }}>
+          <ImageUpscaler />
         </div>
         <div style={{ display: activeTab === 'epspreview' ? 'block' : 'none', width: '100%', height: '100%' }}>
           <EpsPreviewGenerator />

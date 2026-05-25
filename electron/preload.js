@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   testFtp: (config) => ipcRenderer.invoke('test-ftp', config),
   uploadFtp: (config, filePaths) => ipcRenderer.invoke('upload-ftp', config, filePaths),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
-  generateEpsJpg: (filePath, addWhiteBgToPng) => ipcRenderer.invoke('generate-eps-jpg', filePath, addWhiteBgToPng)
+  generateEpsJpg: (filePath, addWhiteBgToPng) => ipcRenderer.invoke('generate-eps-jpg', filePath, addWhiteBgToPng),
+  selectFolder: () => ipcRenderer.invoke('select-folder'),
+  selectFiles: (options) => ipcRenderer.invoke('select-files', options),
+  saveFile: (filePath, bufferArray) => ipcRenderer.invoke('save-file', filePath, bufferArray)
 });
 

@@ -10,6 +10,9 @@ const PROVIDERS = [
 ];
 
 export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProviderChange }) {
+  const activeProviders = Array.isArray(provider) ? provider : [provider].filter(Boolean);
+  const [viewedProvider, setViewedProvider] = useState(activeProviders[0] || 'gemini');
+
   const [allKeys, setAllKeys] = useState(() => {
     const saved = localStorage.getItem("all_api_keys");
     if (saved) return JSON.parse(saved);
@@ -22,27 +25,41 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
 
   const [newKey, setNewKey] = useState("");
 
-  const activeKeys = allKeys[provider] || [];
+  const activeKeys = allKeys[viewedProvider] || [];
 
   useEffect(() => {
     localStorage.setItem("all_api_keys", JSON.stringify(allKeys));
-    onKeysChange(activeKeys);
-  }, [allKeys, provider]);
+    
+    const combinedKeys = [];
+    activeProviders.forEach(p => {
+      (allKeys[p] || []).forEach(k => {
+        combinedKeys.push({ provider: p, key: k });
+      });
+    });
+    
+    if (combinedKeys.length === 0 && viewedProvider) {
+      (allKeys[viewedProvider] || []).forEach(k => {
+        combinedKeys.push({ provider: viewedProvider, key: k });
+      });
+    }
+    
+    onKeysChange(combinedKeys);
+  }, [allKeys, activeProviders, viewedProvider]);
 
   if (!isOpen) return null;
 
   const addKey = () => {
     const trimmed = newKey.trim();
     if (trimmed && !activeKeys.includes(trimmed)) {
-      setAllKeys(prev => ({ ...prev, [provider]: [...(prev[provider] || []), trimmed] }));
+      setAllKeys(prev => ({ ...prev, [viewedProvider]: [...(prev[viewedProvider] || []), trimmed] }));
       setNewKey("");
     }
   };
 
   const removeKey = (index) =>
-    setAllKeys(prev => ({ ...prev, [provider]: prev[provider].filter((_, i) => i !== index) }));
+    setAllKeys(prev => ({ ...prev, [viewedProvider]: prev[viewedProvider].filter((_, i) => i !== index) }));
 
-  const currentProvider = PROVIDERS.find(p => p.id === provider);
+  const currentProvider = PROVIDERS.find(p => p.id === viewedProvider);
 
   return (
     <div style={{
@@ -121,36 +138,59 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
               PROVIDERS
             </div>
             {PROVIDERS.map(p => {
-              const isActive = provider === p.id;
+              const isViewed = viewedProvider === p.id;
+              const isActive = activeProviders.includes(p.id);
+              
               return (
-                <button
+                <div
                   key={p.id}
-                  onClick={() => onProviderChange(p.id)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.6rem',
                     padding: '0.75rem 1.25rem',
-                    background: isActive ? 'var(--primary-glow)' : 'transparent',
-                    border: 'none',
-                    borderLeft: `3px solid ${isActive ? 'var(--primary)' : 'transparent'}`,
-                    color: isActive ? 'var(--text-1)' : 'var(--text-2)',
-                    fontWeight: isActive ? 700 : 500,
-                    fontSize: '0.85rem',
+                    background: isViewed ? 'var(--primary-glow)' : 'transparent',
+                    borderLeft: `3px solid ${isViewed ? 'var(--primary)' : 'transparent'}`,
                     cursor: 'pointer',
-                    textAlign: 'left',
                     transition: 'all 0.15s'
                   }}
+                  onClick={() => setViewedProvider(p.id)}
                   onMouseOver={(e) => {
-                    if (!isActive) e.currentTarget.style.background = 'var(--surface-3)';
+                    if (!isViewed) e.currentTarget.style.background = 'var(--surface-3)';
                   }}
                   onMouseOut={(e) => {
-                    if (!isActive) e.currentTarget.style.background = 'transparent';
+                    if (!isViewed) e.currentTarget.style.background = 'transparent';
                   }}
                 >
-                  <span style={{ fontSize: '1rem', opacity: isActive ? 1 : 0.7 }}>{p.icon}</span>
-                  {p.label}
-                </button>
+                  <input
+                    type="checkbox"
+                    checked={isActive}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      if (e.target.checked) {
+                        onProviderChange([...activeProviders, p.id]);
+                      } else {
+                        onProviderChange(activeProviders.filter(id => id !== p.id));
+                      }
+                    }}
+                    style={{
+                      width: '1.1rem',
+                      height: '1.1rem',
+                      cursor: 'pointer',
+                      accentColor: 'var(--primary)',
+                      flexShrink: 0
+                    }}
+                    title="Enable this provider for metadata generation"
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', opacity: isViewed ? 1 : 0.7 }}>
+                    <span style={{ fontSize: '1rem' }}>{p.icon}</span>
+                    <span style={{
+                      color: isViewed ? 'var(--text-1)' : 'var(--text-2)',
+                      fontWeight: isViewed ? 700 : 500,
+                      fontSize: '0.85rem'
+                    }}>{p.label}</span>
+                  </div>
+                </div>
               )
             })}
 

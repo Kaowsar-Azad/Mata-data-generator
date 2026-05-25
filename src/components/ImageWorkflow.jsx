@@ -27,7 +27,17 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, ftpConfigs
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [autoEmbed, setAutoEmbed] = useState(() => localStorage.getItem("autoEmbed") === "true");
   const [isEmbedding, setIsEmbedding] = useState(false);
+  const [autoUpscale, setAutoUpscale] = useState(() => localStorage.getItem("autoUpscale") === "true");
+  const [upscaleScale, setUpscaleScale] = useState(() => parseInt(localStorage.getItem("upscaleScale")) || 2);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    localStorage.setItem("autoUpscale", autoUpscale.toString());
+  }, [autoUpscale]);
+
+  useEffect(() => {
+    localStorage.setItem("upscaleScale", upscaleScale.toString());
+  }, [upscaleScale]);
 
   // ---------- Keyboard Shortcuts ----------
   useEffect(() => {
@@ -89,7 +99,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, ftpConfigs
 
     const newEntries = [];
 
-    for (const [baseName, group] of Object.entries(fileGroups)) {
+    for (const [_baseName, group] of Object.entries(fileGroups)) {
       if (group.eps && group.raster) {
         // Paired! Use raster for preview/Gemini, but keep EPS for CSV name.
         newEntries.push({
@@ -221,32 +231,133 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, ftpConfigs
           try {
             let base64, mimeType;
             let isPlaceholder = false;
+            let upscaledPath = null;
+            let upscaledName = null;
 
-            if (img.visualFile) {
-              const dataUrl = await toBase64(img.visualFile);
-              base64 = dataUrl.split(",")[1];
-              mimeType = img.visualFile.type;
-            } else if (img.isEps) {
-              let epsData = img.epsData;
-              if (!epsData) {
-                epsData = await processEpsFile(img.file);
+            // 1. Auto-Upscale (Electron only, if enabled)
+            const targetPath = img.visualFile?.path || (!img.isEps ? img.file?.path : null);
+            if (autoUpscale && window.electronAPI && targetPath) {
+              try {
                 setImages((prev) =>
                   prev.map((item) =>
                     item.id === img.id
-                      ? { ...item, epsData, preview: epsData.dataUrl }
+                      ? { ...item, status: "upscaling" }
                       : item
                   )
                 );
+
+                const formData = new FormData();
+                formData.append('scale', upscaleScale);
+                formData.append('filePath', targetPath);
+
+                const upscaleRes = await fetch('http://127.0.0.1:3002/api/upscale', {
+                  method: 'POST',
+                  body: formData
+                });
+
+                if (!upscaleRes.ok) {
+                  const errData = await upscaleRes.json().catch(() => ({}));
+                  throw new Error(errData.error || upscaleRes.statusText);
+                }
+
+                const arrayBuffer = await upscaleRes.arrayBuffer();
+
+                const lastSeparator = targetPath.lastIndexOf('\\') !== -1 ? targetPath.lastIndexOf('\\') : targetPath.lastIndexOf('/');
+                const folderPath = targetPath.substring(0, lastSeparator);
+                const originalFileName = targetPath.substring(lastSeparator + 1);
+                const lastDot = originalFileName.lastIndexOf('.');
+                const baseName = lastDot > -1 ? originalFileName.substring(0, lastDot) : originalFileName;
+                const ext = lastDot > -1 ? originalFileName.substring(lastDot) : '.jpg';
+                const pathSeparator = targetPath.includes('\\') ? '\\' : '/';
+                
+                // Save inside a subfolder named 'Upscaled'
+                const upscaleFolder = `${folderPath}${pathSeparator}Upscaled`;
+                const savePath = `${upscaleFolder}${pathSeparator}${baseName}_${upscaleScale}x${ext}`;
+
+                const saveRes = await window.electronAPI.saveFile(savePath, arrayBuffer);
+                if (!saveRes.success) throw new Error(saveRes.error);
+
+                upscaledPath = savePath;
+                upscaledName = `${baseName}_${upscaleScale}x${ext}`;
+
+                // Convert buffer to base64 for Gemini
+                const uint8 = new Uint8Array(arrayBuffer);
+                let binary = '';
+                const len = uint8.byteLength;
+                for (let j = 0; j < len; j++) {
+                  binary += String.fromCharCode(uint8[j]);
+                }
+                base64 = btoa(binary);
+                mimeType = ext.toLowerCase().endsWith('png') ? 'image/png' : 'image/jpeg';
+
+                setImages((prev) =>
+                  prev.map((item) => {
+                    if (item.id === img.id) {
+                      const updatedItem = { ...item };
+                      if (item.isEps) {
+                        updatedItem.renamedVisualPath = upscaledPath;
+                      } else {
+                        updatedItem.file = {
+                          ...item.file,
+                          path: upscaledPath,
+                          name: upscaledName
+                        };
+                        updatedItem.visualFile = {
+                          ...item.visualFile,
+                          path: upscaledPath,
+                          name: upscaledName
+                        };
+                      }
+                      const blob = new Blob([arrayBuffer], { type: mimeType });
+                      updatedItem.preview = URL.createObjectURL(blob);
+                      return updatedItem;
+                    }
+                    return item;
+                  })
+                );
+              } catch (upscaleErr) {
+                console.error("Upscale error:", upscaleErr);
+                throw new Error(`Auto-Upscale failed: ${upscaleErr.message}`);
               }
-              base64 = epsData.base64;
-              mimeType = epsData.mimeType;
-              isPlaceholder = epsData.isPlaceholder ?? false;
+            }
+
+            // Set images status to processing for metadata generation
+            setImages((prev) =>
+              prev.map((item) =>
+                item.id === img.id
+                  ? { ...item, status: "processing" }
+                  : item
+              )
+            );
+
+            // 2. Load base64 if not already loaded by upscaler
+            if (!base64) {
+              if (img.visualFile) {
+                const dataUrl = await toBase64(img.visualFile);
+                base64 = dataUrl.split(",")[1];
+                mimeType = img.visualFile.type;
+              } else if (img.isEps) {
+                let epsData = img.epsData;
+                if (!epsData) {
+                  epsData = await processEpsFile(img.file);
+                  setImages((prev) =>
+                    prev.map((item) =>
+                      item.id === img.id
+                        ? { ...item, epsData, preview: epsData.dataUrl }
+                        : item
+                    )
+                  );
+                }
+                base64 = epsData.base64;
+                mimeType = epsData.mimeType;
+                isPlaceholder = epsData.isPlaceholder ?? false;
+              }
             }
 
             const fileInfo = {
               isEps: img.isEps,
               isPlaceholder: isPlaceholder,
-              fileName: img.file.name,
+              fileName: upscaledName || img.file.name,
               extractedTextContext: img.epsData?.extractedTextContext || null,
               promptSettings: promptSettings,
             };
@@ -460,6 +571,13 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, ftpConfigs
     setIsEmbedding(false);
   };
   
+  const retryEmbedAndUpload = () => {
+    const failedImages = images.filter(img => img.embeddingStatus === "error");
+    if (failedImages.length > 0) {
+      embedMetadataToFiles(failedImages);
+    }
+  };
+
   const handleAutoEmbedChange = (e) => {
     const checked = e.target.checked;
     setAutoEmbed(checked);
@@ -521,6 +639,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, ftpConfigs
   const errorCount = images.filter((i) => i.status === "error").length;
   const pendingCount = images.filter((i) => i.status === "pending").length;
   const epsCount = images.filter((i) => i.isEps).length;
+
+  const embeddingSuccessCount = images.filter((i) => i.embeddingStatus === "success").length;
+  const embeddingErrorCount = images.filter((i) => i.embeddingStatus === "error").length;
 
   // ---------- Metadata Editing ----------
   const handleMetaChange = (id, field, value) => {
@@ -608,6 +729,30 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, ftpConfigs
         </div>
       )}
 
+      {/* UPLOAD ERROR BANNER */}
+      {embeddingErrorCount > 0 && (
+        <div className="glass card animate-fade-in mt-4" style={{ borderLeft: '4px solid var(--danger)', background: 'rgba(248,113,113,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ color: 'var(--danger)', fontSize: '1.05rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <RefreshCw className="w-4 h-4" /> 
+              {embeddingErrorCount} File{embeddingErrorCount !== 1 ? 's' : ''} Failed to Upload/Embed
+            </h3>
+            <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
+              কিছু ফাইল আপলোড বা এম্বেড হতে ব্যর্থ হয়েছে (সম্ভবত নেটওয়ার্ক বা সার্ভার সমস্যার কারণে)। শুধু ব্যর্থ ফাইলগুলো পুনরায় চেষ্টা করুন।
+            </p>
+          </div>
+          <button
+            className="btn-primary shrink-0"
+            style={{ background: 'var(--danger)', boxShadow: '0 4px 15px rgba(248,113,113,0.3)' }}
+            disabled={isEmbedding}
+            onClick={() => retryEmbedAndUpload()}
+          >
+            {isEmbedding ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {isEmbedding ? 'Retrying...' : 'Retry Failed Uploads'}
+          </button>
+        </div>
+      )}
+
       {/* Progress Bar */}
       {isProcessing && progress > 0 && (
         <div style={{ width: '100%', margin: '10px 0' }}>
@@ -643,6 +788,12 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, ftpConfigs
               {errorCount > 0 && (
                 <span style={{ color: 'var(--danger)' }} title="Failed (Rate limit or error)">✖ {errorCount}</span>
               )}
+              {embeddingSuccessCount > 0 && (
+                <span style={{ color: '#10b981', marginLeft: '0.5rem' }} title="Successfully Uploaded/Embedded">🚀 {embeddingSuccessCount} Uploaded</span>
+              )}
+              {embeddingErrorCount > 0 && (
+                <span style={{ color: '#ef4444' }} title="Failed Upload/Embed">✖ {embeddingErrorCount} Failed Upload</span>
+              )}
             </div>
 
             {/* Clear Button */}
@@ -652,21 +803,62 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, ftpConfigs
           </div>
 
           <div className="flex gap-2 flex-wrap mt-3 sm:mt-0 items-center">
-            {/* Auto Embed Toggle */}
             {window.electronAPI && (
-              <label 
-                className="flex items-center gap-2 text-sm cursor-pointer mr-2 select-none"
-                title="Automatically embed metadata and upload to FTP when generation finishes"
-                style={{ color: autoEmbed ? 'var(--accent)' : 'var(--text-3)', transition: 'color 0.2s' }}
-              >
-                <input 
-                  type="checkbox" 
-                  checked={autoEmbed} 
-                  onChange={handleAutoEmbedChange}
-                  style={{ accentColor: 'var(--accent)', width: '1.1rem', height: '1.1rem', cursor: 'pointer' }}
-                />
-                <span style={{ fontWeight: autoEmbed ? 600 : 500 }}>Auto Embed & Upload</span>
-              </label>
+              <>
+                <label 
+                  className="flex items-center gap-2 text-sm cursor-pointer mr-2 select-none"
+                  title="Automatically embed metadata and upload to FTP when generation finishes"
+                  style={{ color: autoEmbed ? 'var(--accent)' : 'var(--text-3)', transition: 'color 0.2s' }}
+                >
+                  <input 
+                    type="checkbox" 
+                    checked={autoEmbed} 
+                    onChange={handleAutoEmbedChange}
+                    style={{ accentColor: 'var(--accent)', width: '1.1rem', height: '1.1rem', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontWeight: autoEmbed ? 600 : 500 }}>Auto Embed & Upload</span>
+                </label>
+                
+                <label 
+                  className="flex items-center gap-2 text-sm cursor-pointer mr-2 select-none"
+                  title="Automatically upscale images before generating metadata"
+                  style={{ color: autoUpscale ? 'var(--accent)' : 'var(--text-3)', transition: 'color 0.2s' }}
+                >
+                  <input 
+                    type="checkbox" 
+                    checked={autoUpscale} 
+                    onChange={(e) => setAutoUpscale(e.target.checked)}
+                    style={{ accentColor: 'var(--accent)', width: '1.1rem', height: '1.1rem', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontWeight: autoUpscale ? 600 : 500 }}>Auto Upscale</span>
+                </label>
+                
+                {autoUpscale && (
+                  <select
+                    value={upscaleScale}
+                    onChange={(e) => setUpscaleScale(parseInt(e.target.value) || 2)}
+                    style={{
+                      padding: '0.2rem 0.5rem',
+                      borderRadius: '0.4rem',
+                      background: 'var(--surface-2)',
+                      color: 'var(--text-1)',
+                      border: '1px solid var(--glass-border)',
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                      marginRight: '0.75rem',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="2">2x</option>
+                    <option value="3">3x</option>
+                    <option value="4">4x</option>
+                    <option value="5">5x</option>
+                    <option value="6">6x</option>
+                    <option value="8">8x</option>
+                    <option value="10">10x</option>
+                  </select>
+                )}
+              </>
             )}
 
             <button
@@ -839,6 +1031,12 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, ftpConfigs
                 </p>
               )}
 
+              {img.status === "upscaling" && (
+                <p className="text-xs text-indigo-400 animate-pulse mt-2">
+                  ✨ Auto-Upscaling image to {upscaleScale}x...
+                </p>
+              )}
+
               {img.status === "processing" && (
                 <p className="text-xs text-primary animate-pulse mt-2">
                   🤖 Generating metadata with {activeProviderName} AI...
@@ -938,6 +1136,7 @@ function StatusBadge({ status }) {
   const map = {
     done: "bg-green-500/20 text-green-400",
     processing: "bg-primary/20 text-primary animate-pulse",
+    upscaling: "bg-indigo-500/20 text-indigo-400 animate-pulse",
     error: "bg-red-500/20 text-red-500",
     pending: "bg-surface text-muted",
   };

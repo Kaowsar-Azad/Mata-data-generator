@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Server, ShieldCheck, Loader2, Save, Upload, Trash2, CheckCircle2, X, ExternalLink, Info } from "lucide-react";
+import { Server, ShieldCheck, Loader2, Save, Upload, Trash2, CheckCircle2, X, ExternalLink, Info, RefreshCw } from "lucide-react";
 
 const POPULAR_AGENCIES = [
   { 
@@ -419,6 +419,11 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
               <span style={{ fontSize: '0.8rem', color: 'var(--success)', fontWeight: 600 }}>
                 ✓ {files.filter(f => f.status === 'success').length} Uploaded
               </span>
+              {files.some(f => f.status === 'error') && (
+                <span style={{ fontSize: '0.8rem', color: 'var(--danger)', fontWeight: 600 }}>
+                  ✖ {files.filter(f => f.status === 'error').length} Failed
+                </span>
+              )}
               <button 
                 onClick={clearAll} 
                 className="btn-outline"
@@ -428,18 +433,34 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
               </button>
             </div>
             
-            <button 
-              className="btn-primary" 
-              onClick={uploadFiles} 
-              disabled={isUploading || files.length === 0 || activeConfigs.length === 0}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'linear-gradient(135deg, var(--accent), var(--primary))', padding: '0.5rem 1.25rem' }}
-            >
-              {isUploading ? (
-                <><Loader2 style={{ width: '1rem', height: '1rem', animation: 'spin 1s linear infinite' }} /> Uploading...</>
-              ) : (
-                <><Upload style={{ width: '1rem', height: '1rem' }} /> Start Upload</>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              {files.some(f => f.status === 'error') && (
+                <button 
+                  className="btn-outline" 
+                  onClick={uploadFiles} 
+                  disabled={isUploading || activeConfigs.length === 0}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderColor: 'rgba(239, 68, 68, 0.4)', color: 'var(--danger)', padding: '0.5rem 1.25rem', background: 'rgba(239, 68, 68, 0.05)' }}
+                >
+                  {isUploading ? (
+                    <><Loader2 style={{ width: '1rem', height: '1rem', animation: 'spin 1s linear infinite' }} /> Retrying...</>
+                  ) : (
+                    <><RefreshCw style={{ width: '1rem', height: '1rem' }} /> Retry Failed</>
+                  )}
+                </button>
               )}
-            </button>
+              <button 
+                className="btn-primary" 
+                onClick={uploadFiles} 
+                disabled={isUploading || files.length === 0 || activeConfigs.length === 0}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'linear-gradient(135deg, var(--accent), var(--primary))', padding: '0.5rem 1.25rem' }}
+              >
+                {isUploading ? (
+                  <><Loader2 style={{ width: '1rem', height: '1rem', animation: 'spin 1s linear infinite' }} /> Uploading...</>
+                ) : (
+                  <><Upload style={{ width: '1rem', height: '1rem' }} /> Start Upload</>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Files List */}

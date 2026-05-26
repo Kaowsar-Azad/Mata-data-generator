@@ -41,6 +41,8 @@ function App() {
     customInstruction: '',
     titleMinChars: 70, // New minimum title length
     descMinChars: 110, // New minimum description length
+    securityScanEnabled: false,
+    promptSimilarityMode: 'Exact Match',
   })
   const [activeTab, setActiveTab] = useState('metadata')
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -192,7 +194,14 @@ function App() {
 
         {/* METADATA SETTINGS */}
         {sidebarOpen && (activeTab === 'metadata' || activeTab === 'prompt') && (
-          <PromptSettings settings={promptSettings} setSettings={setPromptSettings} activeTab={activeTab} />
+          <PromptSettings 
+            settings={promptSettings} 
+            setSettings={setPromptSettings} 
+            activeTab={activeTab} 
+            ftpConfigs={ftpConfigs}
+            setEditingFtpConfig={setEditingFtpConfig}
+            setActiveTab={setActiveTab}
+          />
         )}
 
         {/* BOTTOM SECTION (Fixed/Static) */}
@@ -229,15 +238,21 @@ function App() {
       {/* ─── MAIN WORKSPACE ─── */}
       <main className="dashboard-main">
         <div style={{ display: activeTab === 'metadata' ? 'block' : 'none', width: '100%', height: '100%' }}>
-          <ImageWorkflow apiKeys={apiKeys} apiProvider={apiProvider} promptSettings={promptSettings} ftpConfigs={ftpConfigs} />
+          <ImageWorkflow 
+            apiKeys={apiKeys} 
+            apiProvider={apiProvider} 
+            promptSettings={promptSettings} 
+            setPromptSettings={setPromptSettings} 
+            ftpConfigs={ftpConfigs} 
+          />
         </div>
         <div style={{ display: activeTab === 'prompt' ? 'block' : 'none', width: '100%', height: '100%' }}>
-          <ImageToPrompt apiKeys={apiKeys} apiProvider={apiProvider} promptSettings={promptSettings} />
+          <ImageToPrompt apiKeys={apiKeys} apiProvider={apiProvider} promptSettings={promptSettings} setPromptSettings={setPromptSettings} />
         </div>
         <div style={{ display: activeTab === 'removebg' ? 'block' : 'none', width: '100%', height: '100%' }}>
           <BackgroundRemover />
         </div>
-        <div style={{ display: activeTab === 'ftp' ? 'block' : 'none', width: '100%', height: '100%' }}>
+        <div style={{ display: activeTab === 'ftp' ? 'flex' : 'none', flexDirection: 'column', width: '100%', height: '100%', overflowY: 'auto', padding: '1rem' }}>
           <FtpUploader 
             ftpConfigs={ftpConfigs} 
             setFtpConfigs={setFtpConfigs}
@@ -245,6 +260,7 @@ function App() {
             setEditingConfig={setEditingFtpConfig}
           />
         </div>
+
         <div style={{ display: activeTab === 'vector' ? 'block' : 'none', width: '100%', height: '100%' }}>
           <VectorMagic />
         </div>

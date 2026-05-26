@@ -44,7 +44,7 @@ describe('ImageWorkflow Component', () => {
         promptSettings={mockPromptSettings}
       />
     );
-    expect(screen.getByText(/Upload Images or EPS Files/i)).toBeInTheDocument();
+    expect(screen.getByText(/Upload Media, EPS or Video Files/i)).toBeInTheDocument();
   });
 
   it('shows error message when no API keys are provided', async () => {

@@ -4,6 +4,10 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const sharp = require('sharp');
+const { Transform } = require('stream');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegStatic = require('ffmpeg-static');
+if (ffmpegStatic) { ffmpeg.setFfmpegPath(ffmpegStatic); }
 
 const LOG_FILE = path.join(os.tmpdir(), 'imagemetadata_electron.log');
 function fileLog(...args) {
@@ -141,6 +145,104 @@ ipcMain.handle('process-eps', async (event, inputPath) => {
       });
     });
   } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC Handler for extracting a representative frame from a video file
+ipcMain.handle('extract-video-frame', async (event, videoPath) => {
+  try {
+    if (!fs.existsSync(videoPath)) {
+      throw new Error(`Video file not found: ${videoPath}`);
+    }
+
+    // Get video duration
+    const duration = await new Promise((resolve) => {
+      ffmpeg.ffprobe(videoPath, (err, metadata) => {
+        if (err) {
+          fileLog('[extract-video-frame] ffprobe failed:', err.message);
+        }
+        resolve(metadata?.format?.duration || 10); // default to 10 seconds if probe fails
+      });
+    });
+
+    const offsets = [
+      Math.max(duration * 0.2, 0.5),
+      Math.max(duration * 0.5, 1.0),
+      Math.max(duration * 0.8, 1.5)
+    ];
+
+    fileLog(`[extract-video-frame] Probing duration: ${duration}s. Sampling offsets:`, offsets);
+
+    // Extract frames in parallel
+    const extractPromises = offsets.map((offset, idx) => {
+      return new Promise((resolve) => {
+        const outPath = path.join(os.tmpdir(), `video_frame_${Date.now()}_${idx}.jpg`);
+        const offsetStr = offset.toFixed(2);
+        
+        ffmpeg(videoPath)
+          .inputOptions([`-ss ${offsetStr}`])
+          .outputOptions(['-frames:v 1', '-vf scale=1280:-1', '-q:v 3'])
+          .output(outPath)
+          .on('end', () => {
+            try {
+              if (fs.existsSync(outPath)) {
+                const buffer = fs.readFileSync(outPath);
+                fs.unlinkSync(outPath);
+                resolve(buffer.toString('base64'));
+              } else {
+                resolve(null);
+              }
+            } catch (e) {
+              resolve(null);
+            }
+          })
+          .on('error', () => {
+            // Fallback: try at 0s
+            ffmpeg(videoPath)
+              .inputOptions(['-ss 0'])
+              .outputOptions(['-frames:v 1', '-vf scale=1280:-1', '-q:v 3'])
+              .output(outPath)
+              .on('end', () => {
+                try {
+                  if (fs.existsSync(outPath)) {
+                    const buffer = fs.readFileSync(outPath);
+                    fs.unlinkSync(outPath);
+                    resolve(buffer.toString('base64'));
+                  } else {
+                    resolve(null);
+                  }
+                } catch (_) {
+                  resolve(null);
+                }
+              })
+              .on('error', () => resolve(null))
+              .run();
+          })
+          .run();
+      });
+    });
+
+    const frames = await Promise.all(extractPromises);
+    const validFrames = frames.filter(Boolean);
+
+    if (validFrames.length === 0) {
+      throw new Error("FFmpeg failed to extract any frames from the video.");
+    }
+
+    // middle frame (index 1 if available, otherwise index 0)
+    const middleIndex = validFrames.length >= 2 ? 1 : 0;
+    const primaryFrame = validFrames[middleIndex];
+
+    fileLog(`[extract-video-frame] Extracted ${validFrames.length} frames successfully`);
+    return {
+      success: true,
+      base64: primaryFrame,
+      base64Array: validFrames,
+      mimeType: 'image/jpeg'
+    };
+  } catch (error) {
+    fileLog('[extract-video-frame] Error:', error.message);
     return { success: false, error: error.message };
   }
 });
@@ -435,8 +537,8 @@ ipcMain.handle('write-metadata', async (event, filePath, title, description, key
       ? categories
       : (categories || '').split(',').map(c => c.trim()).filter(Boolean);
       
-    // Append categories to keywords for maximum stock compatibility
-    const finalKeywordsArray = [...new Set([...keywordsArray, ...categoriesArray])];
+    // Append categories to keywords for maximum stock compatibility and limit to 49 for Adobe Stock
+    const finalKeywordsArray = [...new Set([...keywordsArray, ...categoriesArray])].slice(0, 49);
       
     const tags = {
       "XMP-dc:Title": title,
@@ -707,65 +809,371 @@ ipcMain.handle('test-ftp', async (event, config) => {
   }
 });
 
-ipcMain.handle('upload-ftp', async (event, config, filePaths) => {
-  const isSftp = parseInt(config.port) === 22 || config.host?.toLowerCase().includes('sftp');
-  
-  if (isSftp) {
-    const Client = require('ssh2-sftp-client');
-    const sftp = new Client();
-    try {
-      await sftp.connect({
-        host: config.host?.trim(),
-        username: config.user?.trim(),
-        password: config.password?.trim(),
-        port: parseInt(config.port) || 22,
-        readyTimeout: 30000,
-      });
-      for (const filePath of filePaths) {
-        if (fs.existsSync(filePath)) {
-          const fileName = path.basename(filePath);
-          await sftp.put(filePath, `/${fileName}`);
-          fileLog(`[upload-sftp] Successfully uploaded ${fileName} to SFTP`);
-        }
-      }
-      await sftp.end();
-      return { success: true };
-    } catch (err) {
-      fileLog(`[upload-sftp] Error: ${err.message}`);
-      return { success: false, error: 'SFTP Error: ' + err.message };
+// ─── FTP / SFTP PERSISTENT CONNECTION POOL ────────────────────────────────────
+//
+// Problem with previous approach: every upload call created N new TLS connections
+// to the server. For Adobe Stock (US servers), each TLS handshake takes 300-500 ms
+// from Asia. With 8 connections per upload that's 2.4–4 seconds of PURE OVERHEAD
+// before the first byte of data is sent — for EVERY image.
+//
+// Solution: Keep a pool of warm connections per server. Once established they are
+// reused for ALL subsequent uploads. Connections are closed only after 60 s of
+// inactivity. This means the TLS cost is paid ONCE per session, not once per image.
+//
+// Adobe Stock note: their servers reject >4 simultaneous connections per account.
+// We detect the host and cap at 3 workers for Adobe Stock.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const FTP_STREAM_HWM = 4 * 1024 * 1024; // 4 MB read-buffer per stream
+const POOL_IDLE_TTL  = 60_000;           // close pool after 60 s of inactivity
+
+// pool: Map<cacheKey, { type, clients: Client[], idleTimer, busy }>
+const ftpPool = new Map();
+
+// track jobs that the user has cancelled
+global.cancelledFtpJobs = new Set();
+
+// ── server-specific settings ─────────────────────────────────────────────────
+
+function getWorkerLimit(host) {
+  const h = (host || '').toLowerCase();
+  // Adobe Stock / Contributor portal - highly sensitive to parallel uploads, can cause SFTP _fast errors or disconnects
+  if (h.includes('adobe') || h.includes('adobestock') || h.includes('contributor.stock')) return 1;
+  // Dreamstime limits connections per user, can cause 550 High-end error
+  if (h.includes('dreamstime')) return 1;
+  // Shutterstock, Getty, Freepik etc.
+  return 3; // Reduced from 6 to 3 to be safe and avoid rate limits across all platforms
+}
+
+// ── client factories ──────────────────────────────────────────────────────────
+
+async function createFtpClient(config) {
+  const ftp    = require('basic-ftp');
+  const client = new ftp.Client();
+  client.ftp.timeout = 300000;
+  await client.access({
+    host:          config.host?.trim(),
+    user:          config.user?.trim(),
+    password:      config.password?.trim(),
+    port:          parseInt(config.port) || 21,
+    secure:        config.secure === true,
+    secureOptions: { rejectUnauthorized: false }
+  });
+  // Force binary mode once – avoids per-file TYPE I round-trip
+  await client.send('TYPE I');
+  // Disable Nagle so small control frames go out immediately
+  try { client.ftp.socket.setNoDelay(true); } catch (_) {}
+  return client;
+}
+
+async function createSftpClient(config) {
+  const Client = require('ssh2-sftp-client');
+  const client = new Client();
+  await client.connect({
+    host:         config.host?.trim(),
+    username:     config.user?.trim(),
+    password:     config.password?.trim(),
+    port:         parseInt(config.port) || 22,
+    readyTimeout: 30000,
+    algorithms: {
+      kex:    ['ecdh-sha2-nistp256', 'diffie-hellman-group14-sha256'],
+      cipher: ['aes128-gcm@openssh.com', 'aes256-gcm@openssh.com', 'aes128-ctr'],
+      hmac:   ['hmac-sha2-256', 'hmac-sha1'],
     }
-  } else {
-    const ftp = require('basic-ftp');
-    const client = new ftp.Client();
-    client.ftp.log = fileLog;
-    try {
-      await client.access({
-        host: config.host?.trim(),
-        user: config.user?.trim(),
-        password: config.password?.trim(),
-        port: parseInt(config.port) || 21,
-        secure: config.secure === true ? true : false,
-        secureOptions: {
-          rejectUnauthorized: false,
-          minVersion: 'TLSv1.2',
-          maxVersion: 'TLSv1.2'
-        }
-      });
-      for (const filePath of filePaths) {
-        if (fs.existsSync(filePath)) {
-          const fileName = path.basename(filePath);
-          await client.uploadFrom(filePath, fileName);
-          fileLog(`[upload-ftp] Successfully uploaded ${fileName} to FTP`);
-        }
+  });
+  return client;
+}
+
+// ── pool management ───────────────────────────────────────────────────────────
+//
+// Each pool entry has SLOTS. A slot = { client, inUse }.
+// Before using a connection a worker must ACQUIRE its slot (sets inUse=true).
+// After finishing it RELEASES the slot (sets inUse=false) and wakes the next waiter.
+// This guarantees a connection is NEVER used by two concurrent operations.
+//
+// Multiple concurrent upload-ftp IPC calls (from auto-embed) all share the same
+// pool — they simply queue behind busy slots instead of crashing basic-ftp.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function poolKey(config, type) {
+  return `${type}|${config.host?.trim()}|${config.user?.trim()}`;
+}
+
+function resetIdleTimer(entry, key) {
+  if (entry.idleTimer) clearTimeout(entry.idleTimer);
+  entry.idleTimer = setTimeout(async () => {
+    // Check if any slot is in use
+    const anyInUse = entry.slots && entry.slots.some(s => s.inUse);
+    if (anyInUse) {
+      fileLog(`[pool] Rescheduling idle pool close for ${key} because connections are in use`);
+      resetIdleTimer(entry, key);
+      return;
+    }
+    fileLog(`[pool] Closing idle pool for ${key}`);
+    await closePool(key);
+  }, POOL_IDLE_TTL);
+}
+
+async function closePool(key) {
+  const entry = ftpPool.get(key);
+  if (!entry) return;
+  if (entry.idleTimer) clearTimeout(entry.idleTimer);
+  ftpPool.delete(key);
+  await Promise.allSettled(entry.slots.map(s =>
+    entry.type === 'sftp' ? s.client.end() : Promise.resolve(s.client.close())
+  ));
+  fileLog(`[pool] Pool closed for ${key}`);
+}
+
+// Acquire a free slot; waits if all are busy
+function acquireSlot(entry) {
+  return new Promise((resolve) => {
+    const tryGet = () => {
+      const slot = entry.slots.find(s => !s.inUse);
+      if (slot) {
+        slot.inUse = true;
+        resolve(slot);
+      } else {
+        entry.waiters.push(tryGet); // put ourselves in the wait queue
       }
-      client.close();
-      return { success: true };
-    } catch (err) {
-      client.close();
-      fileLog(`[upload-ftp] Error: ${err.message}`);
-      return { success: false, error: 'FTP Error: ' + err.message };
+    };
+    tryGet();
+  });
+}
+
+// Release a slot back to the pool and wake the next waiter if any
+function releaseSlot(entry, slot) {
+  slot.inUse = false;
+  if (entry.waiters.length > 0) {
+    const next = entry.waiters.shift();
+    next(); // let the waiter try again immediately
+  }
+}
+
+const poolLocks = new Map();
+
+async function getPool(config, type, key) {
+  // Wait if another concurrent request is currently building this pool
+  while (poolLocks.get(key)) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+
+  if (ftpPool.has(key)) {
+    const entry = ftpPool.get(key);
+    // Check for dead connections (basic-ftp sets .closed = true)
+    const deadCount = entry.slots.filter(s => type === 'ftp' && s.client.closed).length;
+    if (deadCount > 0) {
+      fileLog(`[pool] ${deadCount} dead slot(s), rebuilding pool...`);
+      await closePool(key);
+    } else {
+      fileLog(`[pool] ♻️  Reusing ${entry.slots.length}-slot pool for ${config.host}`);
+      resetIdleTimer(entry, key);
+      return entry;
     }
   }
+
+  // Lock this key so concurrent callers wait
+  poolLocks.set(key, true);
+  
+  try {
+    // Build new pool
+    const limit = getWorkerLimit(config.host);
+    fileLog(`[pool] 🔌 Opening ${limit} ${type.toUpperCase()} connections to ${config.host}...`);
+    const t0 = Date.now();
+
+    const clients = await Promise.all(
+      Array.from({ length: limit }, () =>
+        type === 'sftp' ? createSftpClient(config) : createFtpClient(config)
+      )
+    );
+    fileLog(`[pool] ✅ Pool ready in ${Date.now() - t0}ms (${limit} slots)`);
+
+    const entry = {
+      type,
+      slots:   clients.map(client => ({ client, inUse: false })),
+      waiters: [],
+      idleTimer: null,
+    };
+    ftpPool.set(key, entry);
+    resetIdleTimer(entry, key);
+    return entry;
+  } finally {
+    poolLocks.set(key, false);
+  }
+}
+
+// ── work-stealing uploader ────────────────────────────────────────────────────
+//
+// All files go into a shared queue. Multiple concurrent callers share the same
+// pool. Each file is uploaded by acquiring a free slot, uploading, then releasing.
+// If no slot is free the caller waits — basic-ftp is NEVER asked to run two
+// operations simultaneously on the same connection.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class ProgressTransform extends Transform {
+  constructor(totalBytes, onProgress) {
+    super();
+    this.totalBytes = totalBytes;
+    this.transferred = 0;
+    this.onProgress = onProgress;
+  }
+
+  _transform(chunk, encoding, callback) {
+    this.transferred += chunk.length;
+    if (this.totalBytes > 0) {
+      const p = Math.round((this.transferred / this.totalBytes) * 100);
+      this.onProgress(p);
+    }
+    this.push(chunk);
+    callback();
+  }
+}
+
+async function uploadFilesParallel(config, filePaths, type, jobId, event) {
+  const validPaths = filePaths.filter(p => fs.existsSync(p));
+  if (validPaths.length === 0) return;
+
+  const key   = poolKey(config, type);
+  const entry = await getPool(config, type, key);
+
+  fileLog(`[upload-${type}] ${validPaths.length} file(s) queued into ${entry.slots.length}-slot pool`);
+
+  // Upload each file: acquire a free slot → upload → release
+  await Promise.all(validPaths.map(async (filePath) => {
+    const fileName = path.basename(filePath);
+    
+    // Check before acquiring slot
+    if (jobId && global.cancelledFtpJobs.has(jobId)) {
+       fileLog(`[upload-${type}] ⛔ Skipped ${fileName} (Job Cancelled)`);
+       return; // skip
+    }
+
+    const slot = await acquireSlot(entry); // blocks until a connection is free
+
+    try {
+      // Re-check after acquiring
+      if (jobId && global.cancelledFtpJobs.has(jobId)) {
+        throw new Error('Cancelled by user');
+      }
+
+      if (type === 'sftp') {
+        const isAdobe = config.host && (
+          config.host.toLowerCase().includes('adobe') ||
+          config.host.toLowerCase().includes('adobestock') ||
+          config.host.toLowerCase().includes('contributor.stock')
+        );
+
+        if (isAdobe) {
+          // For Adobe Stock, fastPut is rejected by the server (throws "fastPut: _fast..." error).
+          // Switching to standard put with a manual read stream to track progress.
+          const readStream = fs.createReadStream(filePath);
+          const stats = fs.statSync(filePath);
+          let total_transferred = 0;
+          
+          readStream.on('data', (chunk) => {
+            if (jobId && global.cancelledFtpJobs.has(jobId)) {
+               readStream.destroy(new Error('Cancelled by user'));
+               return;
+            }
+            total_transferred += chunk.length;
+            if (stats.size > 0 && event) {
+               const p = Math.round((total_transferred / stats.size) * 100);
+               event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
+            }
+          });
+
+          try {
+            await slot.client.put(readStream, `/${fileName}`);
+          } catch (err) {
+            if (jobId && global.cancelledFtpJobs.has(jobId)) {
+               slot.client.end();
+               throw new Error('Cancelled by user');
+            }
+            throw err;
+          }
+        } else {
+          // Super-fast parallel chunk upload for all other stock servers
+          await slot.client.fastPut(filePath, `/${fileName}`, {
+            concurrency: 32, // High concurrency to saturate the user's internet bandwidth
+            chunkSize: 1024 * 1024,
+            step: function(total_transferred, chunk, total) {
+              if (jobId && global.cancelledFtpJobs.has(jobId)) {
+                 slot.client.end();
+                 throw new Error('Cancelled by user');
+              }
+              if (total > 0 && event) {
+                 const p = Math.round((total_transferred / total) * 100);
+                 event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
+              }
+            }
+          });
+        }
+      } else {
+        const stream = fs.createReadStream(filePath, { highWaterMark: FTP_STREAM_HWM });
+        
+        stream.on('data', () => {
+           if (jobId && global.cancelledFtpJobs.has(jobId)) {
+               stream.destroy(new Error('Cancelled by user'));
+           }
+        });
+
+        slot.client.trackProgress(info => {
+           if (info.bytesOverall > 0 && event) {
+               const p = Math.round((info.bytes / info.bytesOverall) * 100);
+               event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
+           }
+        });
+        await slot.client.uploadFrom(stream, fileName);
+        slot.client.trackProgress(); // clear progress handler
+      }
+      
+      // Emit 100% just in case
+      if (event) event.sender.send('ftp-progress', { filePath, progress: 100, host: config.host });
+      
+      fileLog(`[upload-${type}] ✓ ${fileName}`);
+    } catch (err) {
+      const isCancelled = jobId && global.cancelledFtpJobs.has(jobId);
+      if (isCancelled || (err.message && err.message.includes('Cancelled by user'))) {
+         fileLog(`[upload-${type}] ⛔ Aborted ${fileName} (Cancelled)`);
+      } else {
+         fileLog(`[upload-${type}] ✗ ${fileName}: ${err.message}`);
+      }
+      // Mark slot dead so getPool rebuilds next call
+      if (type === 'ftp') slot.client.close();
+      throw err;
+    } finally {
+      releaseSlot(entry, slot); // always release so other waiters can proceed
+    }
+  }));
+
+  resetIdleTimer(entry, key);
+}
+
+ipcMain.handle('upload-ftp', async (event, config, filePaths, jobId) => {
+  const isSftp = parseInt(config.port) === 22 || config.host?.toLowerCase().includes('sftp');
+  const type   = isSftp ? 'sftp' : 'ftp';
+
+  fileLog(`[upload-ftp] ▶ ${type.toUpperCase()} ${filePaths.length} file(s) → ${config.host} (Job: ${jobId||'none'})`);
+  const t0 = Date.now();
+
+  try {
+    await uploadFilesParallel(config, filePaths, type, jobId, event);
+    fileLog(`[upload-ftp] ✅ Done in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    return { success: true };
+  } catch (err) {
+    const key = poolKey(config, type);
+    await closePool(key); // rebuild pool on next call
+    fileLog(`[upload-ftp] ❌ Failed (${((Date.now() - t0) / 1000).toFixed(1)}s): ${err.message}`);
+    return { success: false, error: `${type.toUpperCase()} Error: ${err.message}` };
+  }
+});
+
+ipcMain.handle('cancel-ftp', (event, jobId) => {
+  if (jobId) {
+    global.cancelledFtpJobs.add(jobId);
+    fileLog(`[upload-ftp] 🛑 Cancelled job: ${jobId}`);
+  }
+  return true;
 });
 
 ipcMain.handle('open-external', async (event, url) => {

@@ -14,11 +14,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveFtpConfig: (config) => ipcRenderer.invoke('save-ftp-config', config),
   getFtpConfig: () => ipcRenderer.invoke('get-ftp-config'),
   testFtp: (config) => ipcRenderer.invoke('test-ftp', config),
-  uploadFtp: (config, filePaths) => ipcRenderer.invoke('upload-ftp', config, filePaths),
+  uploadFtp: (config, filePaths, jobId) => ipcRenderer.invoke('upload-ftp', config, filePaths, jobId),
+  cancelFtp: (jobId) => ipcRenderer.invoke('cancel-ftp', jobId),
+  onFtpProgress: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('ftp-progress', listener);
+    return () => {
+      ipcRenderer.removeListener('ftp-progress', listener);
+    };
+  },
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   generateEpsJpg: (filePath, addWhiteBgToPng) => ipcRenderer.invoke('generate-eps-jpg', filePath, addWhiteBgToPng),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFiles: (options) => ipcRenderer.invoke('select-files', options),
-  saveFile: (filePath, bufferArray) => ipcRenderer.invoke('save-file', filePath, bufferArray)
+  saveFile: (filePath, bufferArray) => ipcRenderer.invoke('save-file', filePath, bufferArray),
+  extractVideoFrame: (filePath) => ipcRenderer.invoke('extract-video-frame', filePath),
 });
 

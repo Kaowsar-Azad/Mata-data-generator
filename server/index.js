@@ -832,7 +832,7 @@ app.post('/api/upscale', upload.single('file'), async (req, res) => {
         return Buffer.from(arrayBuf);
       };
 
-      const hfBuffer = await Promise.race([processCloud(), timeout(12000)]);
+      const hfBuffer = await Promise.race([processCloud(), timeout(4000)]);
       console.log('[Cloud Upscale] Success!');
       
       cleanup();

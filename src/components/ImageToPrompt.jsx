@@ -1,14 +1,25 @@
 import { useState, useRef } from "react";
-import { Upload, Loader2, Trash2, X, RefreshCw, Copy, CheckCircle2, Image as ImageIcon } from "lucide-react";
+import { Upload, Loader2, Trash2, X, RefreshCw, Copy, CheckCircle2, Image as ImageIcon, Target, Sparkles } from "lucide-react";
 import { generatePromptFromImage } from "../services/geminiService";
 
 const ACCEPTED_TYPES = "image/jpeg,image/png,image/webp,image/gif";
 
-export function ImageToPrompt({ apiKeys, apiProvider, promptSettings }) {
+export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptSettings }) {
   const [images, setImages] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const fileInputRef = useRef(null);
+
+  const mode = promptSettings?.promptSimilarityMode || 'Exact Match';
+
+  const handleModeChange = (newMode) => {
+    if (setPromptSettings) {
+      setPromptSettings((prev) => ({
+        ...prev,
+        promptSimilarityMode: newMode,
+      }));
+    }
+  };
 
   const isAccepted = (file) => file.type.startsWith("image/");
 
@@ -39,12 +50,40 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings }) {
   const removeImage = (id) => setImages((prev) => prev.filter((img) => img.id !== id));
   const clearAll = () => setImages([]);
 
-  const toBase64 = (file) =>
+  const resizeImageToBase64 = (file, maxSize = 800) =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result);
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+          
+          if (width > height) {
+            if (width > maxSize) {
+              height = Math.round((height * maxSize) / width);
+              width = maxSize;
+            }
+          } else {
+            if (height > maxSize) {
+              width = Math.round((width * maxSize) / height);
+              height = maxSize;
+            }
+          }
+          
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          resolve(canvas.toDataURL("image/jpeg", 0.7));
+        };
+        img.onerror = reject;
+        img.src = e.target.result;
+      };
       reader.onerror = reject;
+      reader.readAsDataURL(file);
     });
 
   const processBatch = async (onlyErrors = false) => {
@@ -79,7 +118,7 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings }) {
       await Promise.all(
         chunk.map(async (img) => {
           try {
-            const dataUrl = await toBase64(img.file);
+            const dataUrl = await resizeImageToBase64(img.file, 800);
             const base64 = dataUrl.split(",")[1];
             const mimeType = img.file.type;
 
@@ -152,6 +191,82 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings }) {
               <ImageIcon className="w-3 h-3" /> JPG, PNG, WEBP
             </span>
           </div>
+        </div>
+      </div>
+
+      {/* Similarity Mode Selector Card */}
+      <div className="glass card animate-fade-in" style={{ padding: '1.25rem', border: '1px solid var(--glass-border)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', background: 'var(--glass)' }}>
+        <div style={{ flex: '1 1 300px' }}>
+          <h3 style={{ fontSize: '1rem', margin: 0, fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Target className="w-4 h-4 text-primary" style={{ color: 'var(--primary)' }} />
+            AI Prompt Similarity Mode
+          </h3>
+          <p className="text-muted" style={{ fontSize: '0.8rem', marginTop: '0.3rem', lineHeight: '1.4' }}>
+            {mode === 'Unique Variation' 
+              ? '💡 AI will introduce creative variations to avoid similarity/duplication flags on stock platforms.' 
+              : '🎯 AI will describe the image as accurately as possible to recreate it.'}
+          </p>
+        </div>
+        
+        <div style={{
+          display: 'flex',
+          background: 'var(--surface-2)',
+          border: '1px solid var(--glass-border)',
+          borderRadius: '0.5rem',
+          padding: '2px',
+          gap: '2px',
+          width: '100%',
+          maxWidth: '320px',
+          alignSelf: 'center'
+        }}>
+          <button
+            type="button"
+            onClick={() => handleModeChange('Exact Match')}
+            style={{
+              flex: 1,
+              background: mode === 'Exact Match' ? 'var(--primary)' : 'transparent',
+              color: mode === 'Exact Match' ? '#fff' : 'var(--text-2)',
+              border: 'none',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '0.4rem',
+              cursor: 'pointer',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              transition: 'all 0.2s',
+              boxShadow: mode === 'Exact Match' ? '0 2px 6px rgba(37,99,235,0.2)' : 'none'
+            }}
+          >
+            <Target className="w-3.5 h-3.5" />
+            Exact Match
+          </button>
+          <button
+            type="button"
+            onClick={() => handleModeChange('Unique Variation')}
+            style={{
+              flex: 1,
+              background: mode === 'Unique Variation' ? 'var(--primary)' : 'transparent',
+              color: mode === 'Unique Variation' ? '#fff' : 'var(--text-2)',
+              border: 'none',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '0.4rem',
+              cursor: 'pointer',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              transition: 'all 0.2s',
+              boxShadow: mode === 'Unique Variation' ? '0 2px 6px rgba(37,99,235,0.2)' : 'none'
+            }}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Variation
+          </button>
         </div>
       </div>
 

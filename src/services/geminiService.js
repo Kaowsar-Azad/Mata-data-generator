@@ -39,14 +39,14 @@ async function getAvailableModels(apiKey) {
  * @param {boolean} options.isPlaceholder - Was the preview a generated placeholder (no embedded preview)?
  * @param {string}  options.fileName      - Original filename for extra context
  */
-function buildPrompt({ isEps, isPlaceholder, fileName, extractedTextContext, promptSettings }) {
+function buildPrompt({ isEps, isPlaceholder, isVideo, fileName, extractedTextContext, promptSettings }) {
   // Clean up filename (remove extension, replace dashes/underscores with spaces)
   let cleanName = fileName.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
   
   // If the filename looks like a hash or random string (e.g. c35f75d7...), ignore it
   const isHash = /^[a-f0-9]{20,}$/i.test(cleanName) || cleanName.length > 30 && !cleanName.includes(" ");
   if (isHash) {
-    cleanName = "a professional illustration";
+    cleanName = isVideo ? "a professional stock video clip" : "a professional illustration";
   }
 
   // Default settings fallback
@@ -56,15 +56,21 @@ function buildPrompt({ isEps, isPlaceholder, fileName, extractedTextContext, pro
     keywordCount: 48
   };
 
+  // ── File-type context ──────────────────────────────────────────────────────
   let fileContext = "";
-  
-  if (isEps) {
+
+  if (isVideo) {
+    fileContext = `CRITICAL INSTRUCTION: The attached images are 3 representative FRAMES (sampled at 20%, 50%, and 80% duration) extracted from a stock VIDEO CLIP. The video file name is "${cleanName}".
+Do NOT treat this as a photo or illustration. You are writing metadata for a STOCK VIDEO, not a static image.
+Analyze these 3 frames carefully to understand the visual progression, motion, action, setting, mood, and subject of the video clip over time.
+Consider: what type of video motion is implied (e.g., pan, tilt, zoom, tracking shot, timelapse, slow-motion, handheld), what action is taking place, what story is told, and who would license it.
+The metadata will be used on stock video platforms: Adobe Stock, Shutterstock, Pond5, Getty Images, Storyblocks.`;
+  } else if (isEps) {
     if (isPlaceholder) {
       let deepContext = "";
       if (extractedTextContext && extractedTextContext.trim().length > 0) {
         deepContext = `\n\nI managed to extract the following hidden raw data from the EPS file's code (like layer names, colors, and embedded text):\n${extractedTextContext}\n\nPlease use these deeply extracted clues (especially colors, layers, and embedded text) to build highly accurate metadata!`;
       }
-
       fileContext = `CRITICAL INSTRUCTION: The attached image is a FAKE PLACEHOLDER. Do NOT describe the attached image. IGNORE the image completely.
 Instead, you must guess the content of this vector illustration purely based on its file name: "${cleanName}" and the hidden data below.${deepContext}
 
@@ -73,11 +79,10 @@ Generate metadata as if you are looking at a vector illustration about "${cleanN
       fileContext = `This is a preview extracted from a stock vector illustration in EPS format. The file name is "${cleanName}". Please describe the actual illustration shown in the image.`;
     }
   } else {
-    // Standard raster file
     fileContext = `The file name is "${cleanName}". Please describe the image.`;
   }
 
-  // Build negative words instruction
+  // ── Negative-word instructions ─────────────────────────────────────────────
   let negInstructions = "";
   if (s.negTitleEnabled && s.negTitleWords && s.negTitleWords.trim()) {
     negInstructions += `\n- The title MUST NOT contain any of these words: ${s.negTitleWords}.`;
@@ -86,26 +91,24 @@ Generate metadata as if you are looking at a vector illustration about "${cleanN
     negInstructions += `\n- The keywords MUST NOT contain any of these words: ${s.negKeywords}.`;
   }
 
+  // ── Platform-specific SEO signals ─────────────────────────────────────────
   const targetPlatform = s.exportPlatform || "General";
   let platformContext = "";
-  
-  if (targetPlatform === "Adobe Stock") {
-    platformContext = "Platform: Adobe Stock. Buyers here search with conceptual and emotional terms alongside literal ones.";
-  } else if (targetPlatform === "Shutterstock") {
-    platformContext = "Platform: Shutterstock. Buyers here use very literal and specific search terms. Keep title and description precise and factual.";
-  } else if (targetPlatform === "FreePik") {
-    platformContext = "Platform: FreePik. Buyers look for design elements, templates, and vectors. Mention editability and design utility where relevant.";
-  } else if (targetPlatform === "Vecteezy") {
-    platformContext = "Platform: Vecteezy. Buyers search for practical design assets and flat design illustrations.";
-  } else if (targetPlatform === "Pond5") {
-    platformContext = "Platform: Pond5. Buyers are media professionals. Be very literal and descriptive.";
-  } else if (targetPlatform === "Getty") {
-    platformContext = "Platform: Getty Images. Keep an authentic, editorial tone. No marketing language.";
-  } else if (targetPlatform === "Depositphotos") {
-    platformContext = "Platform: Depositphotos. Be straightforward and commercially focused.";
-  } else {
-    platformContext = "Platform: General stock sites.";
-  }
+
+  const PLATFORM_SEO = {
+    "Adobe Stock":    `Platform: Adobe Stock (up to 49 keywords). Algorithm weights title+description match. Buyers use conceptual+emotional+literal terms. Irrelevant keywords are AI-penalized.\nSEO: Lead with primary buyer-intent term. Include emotional concepts (success, freedom, teamwork). Mirror Adobe autocomplete phrases. Add "vector"/"flat design"/"icon" for illustrations; lighting cues for photos.`,
+    "Shutterstock":   `Platform: Shutterstock (up to 50 keywords). Title match = #1 ranking factor. Buyers use literal, specific terms.\nSEO: Put strongest keyword FIRST (extra ranking weight). Use exact colors/materials/quantities. Add occupation keywords for people shots. Include composition terms buyers filter by: "overhead view", "close up", "wide shot". Make description keyword-dense.`,
+    "Getty":          `Platform: Getty Images. Editorial+premium commercial buyers. Authentic, journalistic tone — no marketing language.\nSEO: Use editorial language. Emphasize real-life authenticity. Note location/event/social context if identifiable. Add conceptual storytelling terms. Zero superlatives.`,
+    "FreePik":        `Platform: FreePik. Designers seeking editable templates, vectors, design elements.\nSEO: Emphasize editability — "editable", "customizable", "layered", "template". Add design file style: "flat", "outline", "gradient", "minimal", "3D". Include style-descriptors designers search: "modern", "retro", "corporate". Pair element + use-case.`,
+    "Vecteezy":       `Platform: Vecteezy. Buyers want practical flat design assets and vectors.\nSEO: Lead title with design style — "flat", "outline", "doodle", "cartoon", "geometric". Pair subject + design application. Include utility terms: "scalable", "vector", "SVG".`,
+    "Dreamstime":     `Platform: Dreamstime. Broad audience of commercial buyers and bloggers. Both literal and thematic searches.\nSEO: Title must start with the most-searched literal subject. Add age/gender/ethnicity context for people shots (general terms only). Include seasonal and holiday modifiers when relevant. Add niche industry terms: "editorial", "stock", "royalty free concept" terms in description. Use both American and British spelling variants for key nouns.`,
+    "Pond5":          `Platform: Pond5. Media professionals: video editors, filmmakers, broadcast producers.\nSEO: Extremely literal terms. Include production context: "4K", "HD", "looping", "seamless", "footage". Add location, time of day, season. Pair subject with production style.`,
+    "Depositphotos":  `Platform: Depositphotos. Commercially focused. Balanced literal+conceptual.\nSEO: Equal mix of literal and conceptual terms. Commercial use-cases: "marketing", "advertising", "website", "presentation". Add demographic details for people.`,
+    "General":        `Platform: General (all major stock sites). Maximize cross-platform discovery.\nSEO: Balance conceptual and literal equally. Optimize title for the top buyer search query. Cover all intent layers in keywords: object → action → concept → use-case.`,
+  };
+
+  platformContext = PLATFORM_SEO[targetPlatform] || PLATFORM_SEO["General"];
+
 
   let mediaHintStr = "";
   if (s.mediaTypeHint && s.mediaTypeHint !== "None / Auto-detect") {
@@ -117,135 +120,124 @@ Generate metadata as if you are looking at a vector illustration about "${cleanN
     customInstStr = `\n\nUSER INSTRUCTION (follow strictly):\n"${s.customInstruction.trim()}"`;
   }
 
+  // ── Category list ──────────────────────────────────────────────────────────
   let categoryList = "";
   if (targetPlatform === "Adobe Stock") {
     categoryList = `["Animals", "Buildings and Architecture", "Business", "Drinks", "The Environment", "States of Mind", "Food", "Graphic Resources", "Hobbies and Leisure", "Industry", "Landscapes", "Lifestyle", "People", "Plants and Flowers", "Culture and Religion", "Science", "Social Issues", "Sports", "Technology", "Transport", "Travel"]`;
   } else if (targetPlatform === "Shutterstock") {
     categoryList = `["Abstract", "Animals/Wildlife", "Backgrounds/Textures", "Beauty/Fashion", "Buildings/Landmarks", "Business/Finance", "Education", "Food and Drink", "Healthcare/Medical", "Holidays", "Illustrations/Clip-Art", "Industrial", "Interiors", "Miscellaneous", "Nature", "Objects", "Parks/Outdoor", "People", "Religion", "Science", "Signs/Symbols", "Sports/Recreation", "Technology", "Transportation", "Vintage"]`;
   } else if (targetPlatform === "General") {
-    // Universal hybrid list of broad categories compatible across all platforms
     categoryList = `["Abstract & Textures", "Animals & Wildlife", "Architecture & Buildings", "Business & Finance", "Education & Science", "Food & Drink", "Healthcare & Medical", "Holidays & Celebrations", "Illustrations & Clipart", "Industry & Technology", "Landscapes & Nature", "Lifestyle & People", "Objects & Concepts", "Sports & Recreation", "Transportation & Travel"]`;
   } else {
-    // Fallback/Others (Pond5, Getty, Depositphotos, etc.) - use Shutterstock list as it is highly detailed
     categoryList = `["Abstract", "Animals/Wildlife", "Backgrounds/Textures", "Beauty/Fashion", "Buildings/Landmarks", "Business/Finance", "Education", "Food and Drink", "Healthcare/Medical", "Holidays", "Illustrations/Clip-Art", "Industrial", "Interiors", "Miscellaneous", "Nature", "Objects", "Parks/Outdoor", "People", "Religion", "Science", "Signs/Symbols", "Sports/Recreation", "Technology", "Transportation", "Vintage"]`;
   }
 
   const singleWordRule = s.singleWordKeywords 
     ? "- STRICT: Every keyword must be a single word. No phrases."
-    : "- Single words preferred. Widely-used 2-word phrases (e.g., \"coffee cup\", \"social media\") are allowed.";
+    : "- Single words preferred. Short 2-word phrases that buyers actually search (e.g., \"coffee cup\", \"social media\") are allowed. NEVER write 3+ word phrases as a keyword.";
 
-  // Build keyword instructions
+  // ── Keyword generation strategy ────────────────────────────────────────────
   let keywordEmphasis = "";
   if (s.smartMode) {
     keywordEmphasis = `
-KEYWORDS GENERATION (SMART MODE - CRITICAL):
-Generate ONLY the most highly relevant, precise keywords necessary for this specific image based on SEO and market analysis.
-Do NOT pad the list with unnecessary, generic, or vaguely related words just to increase the count. Quality over quantity.
-Provide as many as necessary to accurately describe the image for buyers, but not a single word more. Ensure no filler words are used.`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KEYWORD STRATEGY — SMART QUALITY MODE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Generate ONLY the most commercially valuable, high-buyer-intent keywords. No padding, no generic filler.
+
+Use this 4-tier framework:
+  TIER 1 — EXACT MATCH (highest priority): The precise literal terms a buyer types to find THIS specific image (3-8 keywords)
+  TIER 2 — LONG-TAIL PHRASES: 2-word combinations that capture specific buyer intent (5-10 keywords)
+  TIER 3 — SEMANTIC/CONCEPTUAL: Broader themes, moods, emotions, and contexts strongly implied by the image (5-10 keywords)
+  TIER 4 — COMMERCIAL APPLICATION: Real use-cases, industries, or contexts where buyers license this image (3-7 keywords)
+
+Do NOT generate generic terms like "image", "photo", "picture", "file", "design", "element" unless they appear as part of a specific compound like "flat design" or "vector element".
+Do NOT pad the list. Every keyword must pass this test: "Would a buyer searching ONLY this term want to find this specific image?"`;  
   } else {
     keywordEmphasis = `
-KEYWORDS GENERATION (CRITICAL - THIS IS YOUR PRIMARY TASK):
-You MUST create EXACTLY ${s.keywordCount} keywords. Not fewer. Not approximately. EXACTLY ${s.keywordCount}.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KEYWORD STRATEGY — MAXIMUM COVERAGE MODE (EXACTLY ${s.keywordCount} keywords required)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You MUST generate EXACTLY ${s.keywordCount} keywords using this precise 6-tier framework:
 
-Strategy for reaching ${s.keywordCount} keywords:
-  Phase 1: List all direct, literal objects/elements visible (5-15 keywords)
-  Phase 2: Add colors, materials, textures (3-5 keywords)
-  Phase 3: Add styles, genres, artistic movements (3-5 keywords)
-  Phase 4: Add moods, emotions, atmospheres (3-5 keywords)
-  Phase 5: Add use-cases, applications, contexts (5-8 keywords)
-  Phase 6: Add technical/industry terms, synonyms, related concepts (fill remaining to reach ${s.keywordCount})
-  
-If you run out of obvious terms, use these exhaustion strategies:
-- Broader category terms (if you have "stethoscope", also add "medical", "healthcare", "equipment")
-- Opposite/complementary concepts (if "indoor" appears, consider "professional space", "clinical setting")
-- Related professions/industries (if "doctor", add "medical professional", "physician", "clinician")
-- Visual descriptors (colors, lighting, composition style)
-- Market segments (business, education, healthcare, creative, etc.)
+  TIER 1 — PRIMARY SUBJECTS (6-10 keywords): The literal nouns visible in the image. Most important tier — buyers search these first.
+    Examples: "laptop", "coffee", "woman", "mountain", "heart icon", "stethoscope"
 
-COUNT VERIFICATION: Before you output your JSON, COUNT your keywords. Write the count in your mind. If you have fewer than ${s.keywordCount}, add more until you reach exactly ${s.keywordCount}.
+  TIER 2 — DESCRIPTIVE ATTRIBUTES (5-8 keywords): Colors, materials, quantities, styles, conditions.
+    Examples: "red", "wooden", "three", "hand-drawn", "transparent background", "overhead view"
 
-UNDER NO CIRCUMSTANCES should your keyword list have fewer than ${s.keywordCount} keywords.`;
+  TIER 3 — ACTIONS & STATES (4-6 keywords): What is happening, movement, poses, interactions.
+    Examples: "working", "smiling", "flying", "isolated", "growing", "connected"
+
+  TIER 4 — MOODS & CONCEPTS (5-8 keywords): Abstract ideas, emotions, and concepts the image conveys.
+    Examples: "success", "freedom", "teamwork", "healthcare", "innovation", "sustainability"
+
+  TIER 5 — COMMERCIAL USE-CASES (5-8 keywords): Where buyers will use this image.
+    Examples: "website banner", "social media", "presentation", "infographic", "logo", "packaging"
+
+  TIER 6 — INDUSTRY & NICHE TERMS (fill remaining to reach EXACTLY ${s.keywordCount}): Sector-specific vocabulary, synonyms, related concepts, alternative search terms.
+    Examples: "fintech", "wellness", "e-commerce", "Gen Z", "startup", "remote work"
+
+COUNT ENFORCEMENT PROTOCOL:
+  Step 1: Generate all keywords across all 6 tiers.
+  Step 2: Count your total. If below ${s.keywordCount}, expand Tier 6 with more synonyms, related industry terms, or regional variants.
+  Step 3: If above ${s.keywordCount}, remove the weakest/most generic keywords from Tier 6 first.
+  Step 4: Final count MUST be EXACTLY ${s.keywordCount}. Not one more, not one less.
+
+ABSOLUTE MINIMUM STANDARD: Every single keyword must be something a real buyer would type in a stock site search bar.`;
   }
+
+  // ── Master prompt assembly (token-efficient) ──────────────────────────────
+  const kwMode = s.smartMode
+    ? `KEYWORDS — QUALITY MODE: Generate only high buyer-intent keywords. Use 4 tiers:
+  T1 Exact-match literals (3-8), T2 2-word buyer phrases (5-10), T3 Semantic/concepts (5-10), T4 Commercial use-cases (3-7).
+  Test: "Would a buyer searching ONLY this word want THIS image?" Remove anything that fails.`
+    : `KEYWORDS — COUNT MODE: Generate EXACTLY ${s.keywordCount} keywords using 6 tiers:
+  T1 Primary nouns/subjects (6-10), T2 Colors/materials/style attributes (5-8),
+  T3 Actions/states/composition (4-6), T4 Moods/concepts/emotions (5-8),
+  T5 Commercial use-cases (5-8), T6 Industry/niche/synonym terms (fill to hit ${s.keywordCount} exactly).
+  Count before output. Adjust T6 up/down to hit exactly ${s.keywordCount}. Never submit fewer.`;
 
   return `${fileContext}
 
-You are a senior stock media contributor with 12+ years of experience selling on Adobe Stock, Shutterstock, and Getty Images. You have personally written metadata for over 50,000 stock assets. Your titles and descriptions always rank high and get sales because they match exactly how real buyers search.
+You are a stock media SEO expert (15 yrs, 100k+ assets optimized on Adobe Stock, Shutterstock, Getty). Your metadata consistently ranks top-3 and drives downloads.
 
-CRITICAL MULTILINGUAL INSTRUCTION: The user may provide file names, hidden context, or USER INSTRUCTIONS in non-English languages (e.g., Bengali, Spanish, French). You MUST understand and translate their intent seamlessly. However, ALL of your generated output (Title, Description, and Keywords) MUST be exclusively in high-quality, industry-standard English. Do NOT output metadata in any language other than English.
+LANGUAGE: All input may be in any language. ALL output MUST be in English only.
+
 ${platformContext}${mediaHintStr}${customInstStr}
 
- Analyze the image carefully. Look at: main subject, objects, colors, style, background, composition, mood, and potential commercial use.
-
-─────────────────────────────────────
-TITLE FORMULA: [Main Subject] + [Key Detail] + [Context/Setting]
-─────────────────────────────────────
-Follow this formula strictly:
-• Slot 1 — Main subject (the most important thing in the image)
-• Slot 2 — Key detail (color, action, style, number, or material)
-• Slot 3 — Context or setting (background, environment, or use)
-
-Real examples of GREAT titles:
-  ✓ "Hand holding coffee cup on wooden desk"
-  ✓ "20% discount stamp icon on white background"
-  ✓ "Young woman working on laptop in home office"
-  ✓ "Blue abstract wave background for web design"
-  ✓ "Christmas tree with gold ornaments isolated"
-  ✓ "Smiling businessman in suit pointing at camera"
-
-Real examples of BAD titles (never write like this):
-  ✗ "A stunning, vibrant illustration of a beautiful red apple"
-  ✗ "Highly detailed vector showcasing captivating design"
-  ✗ "Meticulously crafted premium image for commercial use"
-
-Title rules:
-- Start directly with the main subject noun. NEVER start with "A", "An", "The", or adjectives.
-- Write exactly as a buyer would search — clear, direct, factual.
-- Include specific details: colors, materials, numbers, actions, style when relevant.
-- COMPLETELY FORBIDDEN words: stunning, vibrant, captivating, breathtaking, mesmerizing, exquisite, meticulously, seamlessly, showcasing, featuring, beautifully, crafted, rendered, premium, perfect, dynamic, amazing, incredible, gorgeous, elegant (unless it is literally an elegant design style).
-${s.smartMode ? `- LENGTH: Write a concise, natural, and highly descriptive SEO-optimized title without artificial padding.` : `- REQUIRED LENGTH: Make the title comprehensive and highly descriptive, fully utilizing between ${s.titleMinChars || 70} and ${s.titleMaxChars} characters. Your title should use nearly all available space.`}${s.negTitleEnabled && s.negTitleWords ? `\n- Also forbidden: ${s.negTitleWords}.` : ""}
-
-─────────────────────────────────────
-DESCRIPTION FORMULA: Sentence 1 + Sentence 2
-─────────────────────────────────────
-• Sentence 1: Factual description — what is shown, style, key visual elements.
-• Sentence 2: Practical use — where a buyer can use this (web, print, social media, etc.).
-
-Real examples of GREAT descriptions:
-  ✓ "Flat vector icon of a 20% discount stamp in black and white with a circular border. Perfect for e-commerce sale banners, retail promotions, and discount labels."
-  ✓ "Top view of a cup of black coffee and an open notebook on a white table. Ideal for blog headers, business presentations, and morning routine content."
-  ✓ "Hand-drawn style wreath made of green leaves and red berries on a transparent background. Suitable for Christmas card designs, holiday invitations, and festive decorations."
-
+== TITLE ==
+Formula: [Primary buyer search noun] + [specific attribute: color/action/style/count] + [context/setting]
 Rules:
-- Sentence 1: Be specific. Mention style (flat, 3D, realistic, watercolor, minimal, etc.), colors, and what exactly is depicted.
-- Sentence 2: Mention 2-3 specific real use-cases buyers actually use (e.g., "website banner", "social media post", "product label", "book cover").
-- Write in active, plain language. No passive voice.
-- Completely forbidden: "stunning", "breathtaking", "beautifully crafted", "meticulously", "showcasing", "featuring", "perfectly designed".
-${s.smartMode ? `- LENGTH: Write a natural, concise, and highly effective SEO description without forcing a specific character count.` : `- REQUIRED LENGTH: Write a rich and detailed description utilizing between ${s.descMinChars || 110} and ${s.descMaxChars} characters. Use nearly the full space available.`}
+- Start with the #1 noun buyers search. Never start with A/An/The or adjectives.
+- For vectors/illustrations: include "flat vector" / "3D render" / "outline icon" / "watercolor" / "cartoon".
+- Specific beats vague: "black coffee in white ceramic mug" not "coffee".
+- Forbidden words: stunning vibrant captivating breathtaking mesmerizing showcasing featuring beautifully crafted premium perfect amazing incredible.
+${s.smartMode ? `- Concise and keyword-dense.` : `- Length: ${s.titleMinChars || 70}–${s.titleMaxChars} chars. Use all available space.`}${s.negTitleEnabled && s.negTitleWords ? `\n- Forbidden in title: ${s.negTitleWords}.` : ""}
 
-─────────────────────────────────────
-${keywordEmphasis}
+== DESCRIPTION ==
+Formula: [Factual visual description with style+colors+elements] + [2-3 specific buyer use-cases]
+Rules:
+- Sentence 1: style (flat/3D/realistic/watercolor), colors, what is depicted, composition.
+- Sentence 2: concrete use-cases — "email header", "pitch deck", "product packaging", NOT "any project".
+- Pack with searchable keywords naturally. Active voice only.
+- Forbidden: stunning breathtaking beautifully crafted meticulously showcasing "This image shows".
+${s.smartMode ? `- Concise and natural.` : `- Length: ${s.descMinChars || 110}–${s.descMaxChars} chars.`}
 
-Additional keyword rules:
-- Order: most specific literal subjects first → style/color/mood → use-case concepts last.
-- Every keyword must be directly relevant to what is visually present or commercially implied.
-- No filler: "thing", "item", "shape", "object", "image", "picture", "look", "nice".
-${singleWordRule}
-- No brand/trademark names.
-- No banned words: "free", "download", "copyright", "watermark".
-- No duplicate root words (not both "color" and "colors").
-- No hashtags.${negInstructions}
+== ${kwMode} ==
 
-CATEGORY SELECTION:
-Based on the image content, select 1 or 2 of the most appropriate stock agency categories from this exact list:
-${categoryList}
+Keyword rules (apply to all modes):
+- Order: specific literals first → style/color/mood → use-cases last.
+- No generic filler: "thing" "item" "nice" "great" "image" "photo" "picture".
+- No root duplicates: not both "color" + "colorful". Use most-searched form.
+- No brand/trademark names. No banned: "free" "download" "copyright" "watermark" "shutterstock".
+- No hashtags. ${singleWordRule}${negInstructions}
 
-Output ONLY this JSON. No markdown, no backticks, no extra text:
-{
-  "title": "A highly descriptive title...",
-  "description": "A descriptive explanation of the image...",
-  "keywords": "keyword1, keyword2, keyword3, keyword4, keyword5, ... ${s.smartMode ? "(only relevant keywords)" : `(at least ${s.keywordCount} keywords)`}",
-  "categories": ["Selected Category 1", "Selected Category 2"]
-}`;
+== CATEGORY ==
+Choose 1-2 best-fit from: ${categoryList}
+
+Output ONLY valid JSON, no markdown:
+{"title":"...","description":"...","keywords":"kw1, kw2, kw3${s.smartMode ? '' : `, ... (${s.keywordCount} total)`}","categories":["Cat1"]}`;
 }
 
 
@@ -367,42 +359,58 @@ function postProcessMetadata(metadata, promptSettings) {
   // Remove negative keywords and STRICTLY enforce count
   if (result.keywords) {
     let kws = result.keywords.split(",").map(k => k.trim()).filter(Boolean);
-    
+
     // 1. Remove banned words
     if (s.negKeywordsEnabled && s.negKeywords && s.negKeywords.trim()) {
       const banned = s.negKeywords.split(",").map(w => w.trim().toLowerCase()).filter(Boolean);
       kws = kws.filter(k => !banned.includes(k.toLowerCase()));
     }
 
-    // 2. STRICTLY enforce the count - if too many, slice; if too few, add intelligent fallbacks
+    // 2. Remove keywords shorter than 2 chars or obvious junk
+    kws = kws.filter(k => k.length >= 2 && !/^(a|an|the|and|or|of|in|on|at|to|for|with|by)$/i.test(k));
+
+    // 3. Deduplicate root forms (e.g. remove "colors" if "color" present)
+    const seen = new Set();
+    kws = kws.filter(k => {
+      const root = k.toLowerCase().replace(/s$/, '').replace(/ing$/, '').replace(/ed$/, '');
+      if (seen.has(root)) return false;
+      seen.add(root);
+      return true;
+    });
+
+    // 4. Quality scoring — prefer specific multi-word phrases and concrete nouns over generic single words
+    const getKeywordScore = (keyword) => {
+      const kl = keyword.toLowerCase().trim();
+      // Extremely generic single words that add no value
+      const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual",
+        "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]);
+      if (junk.has(kl)) return 10; // Very low score
+      // Boost multi-word phrases (more specific = more valuable for SEO)
+      const wordCount = kl.split(' ').length;
+      let score = 60 + (wordCount > 1 ? 15 : 0);
+      // Boost keywords that are 4-15 chars (specific enough)
+      if (kl.length >= 4 && kl.length <= 15) score += 10;
+      // Small hash-based variance for stable ordering
+      let hash = 0;
+      for (let i = 0; i < kl.length; i++) hash = kl.charCodeAt(i) + ((hash << 5) - hash);
+      score += (Math.abs(hash) % 15);
+      return Math.min(99, score);
+    };
+
+    // 5. Filter out zero-value keywords
+    kws = kws.filter(k => getKeywordScore(k) >= 20);
+    // Sort: highest SEO value first
+    kws.sort((a, b) => getKeywordScore(b) - getKeywordScore(a));
+
+    // 6. Enforce count — trim only, never pad with generic fallbacks (quality is paramount)
     if (!s.smartMode && s.keywordCount) {
       if (kws.length > s.keywordCount) {
         kws = kws.slice(0, s.keywordCount);
-      } else if (kws.length < s.keywordCount) {
-        // Add intelligent fallback keywords based on common stock photo categories
-        const fallbackKeywords = [
-          "professional", "business", "concept", "background", "abstract", "modern",
-          "design", "creative", "illustration", "digital", "graphic", "visual",
-          "web", "online", "internet", "technology", "communication", "social",
-          "corporate", "commercial", "marketing", "advertising", "promotional",
-          "icon", "symbol", "element", "asset", "template", "mockup",
-          "render", "artwork", "composition", "scene", "object", "lifestyle",
-          "people", "person", "human", "figure", "portrait", "close-up",
-          "detail", "macro", "texture", "pattern", "surface", "material",
-          "color", "vibrant", "bright", "dark", "light", "neutral",
-          "minimalist", "clean", "simple", "complex", "detailed", "stylized"
-        ];
-        
-        while (kws.length < s.keywordCount && fallbackKeywords.length > 0) {
-          const randomIdx = Math.floor(Math.random() * fallbackKeywords.length);
-          const fallback = fallbackKeywords.splice(randomIdx, 1)[0];
-          if (!kws.map(k => k.toLowerCase()).includes(fallback.toLowerCase())) {
-            kws.push(fallback);
-          }
-        }
       }
+      // If under count, accept what the AI gave (it may have given quality-filtered fewer keywords)
+      // Do NOT pad with generic words — that would hurt SEO ranking
     }
-    
+
     result.keywords = kws.join(", ");
   }
 
@@ -452,15 +460,21 @@ async function fetchOpenAICompatible(provider, apiKey, prompt, base64Data, mimeT
 
   for (let i = 0; i < models.length; i++) {
     const currentModel = models[i];
+    const messageContent = [{ type: "text", text: prompt }];
+    if (Array.isArray(base64Data)) {
+      base64Data.forEach(buf => {
+        messageContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${buf}` } });
+      });
+    } else {
+      messageContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } });
+    }
+
     const payload = {
       model: currentModel,
       messages: [
         {
           role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } }
-          ]
+          content: messageContent
         }
       ]
     };
@@ -539,8 +553,8 @@ async function fetchOpenAICompatible(provider, apiKey, prompt, base64Data, mimeT
  * @param {object} fileInfo              - Context info
  */
 export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvider = "gemini", fileInfo = {}) {
-  const { isEps = false, isPlaceholder = false, fileName = "file", extractedTextContext = null, promptSettings = {} } = fileInfo;
-  const prompt = buildPrompt({ isEps, isPlaceholder, fileName, extractedTextContext, promptSettings });
+  const { isEps = false, isPlaceholder = false, isVideo = false, fileName = "file", extractedTextContext = null, promptSettings = {} } = fileInfo;
+  const prompt = buildPrompt({ isEps, isPlaceholder, isVideo, fileName, extractedTextContext, promptSettings });
 
   let lastError = null;
   
@@ -591,15 +605,27 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
         console.log(`[Attempt] Model: ${modelName} on key ${currentKeyIndex}`);
         const model = genAI.getGenerativeModel({ model: modelName });
 
-        const result = await model.generateContent([
-          {
+        const contentParts = [];
+        if (Array.isArray(imageBuffer)) {
+          imageBuffer.forEach(buf => {
+            contentParts.push({
+              inlineData: {
+                data: buf,
+                mimeType: mimeType,
+              },
+            });
+          });
+        } else {
+          contentParts.push({
             inlineData: {
               data: imageBuffer,
               mimeType: mimeType,
             },
-          },
-          { text: prompt },
-        ]);
+          });
+        }
+        contentParts.push({ text: prompt });
+
+        const result = await model.generateContent(contentParts);
 
         const response = await result.response;
         const text = response.text();
@@ -794,5 +820,113 @@ Be vivid and poetic but stay within a single paragraph.`;
     lastError ||
     new Error(`Critical: Could not connect to any ${apiProvider} model. Please check your API keys.`)
   );
+}
+
+/**
+ * Scans an image for policy violations (copyright, watermarks, explicit content, spam)
+ * Returns { isSafe: boolean, reason: string }
+ */
+export async function analyzeImageSecurity(imageBuffer, mimeType, apiKeys, apiProvider = "gemini") {
+  const prompt = `Analyze this image strictly for stock photography marketplace policy violations.
+Check for the following issues:
+1. Watermarks, signatures, or dates indicating ownership by a specific photographer/agency (e.g., "© 2024 John Doe", "Shutterstock", "Getty Images"). Note: General typography, event titles, or template text (like "2026 Soccer Tournament") are perfectly FINE and should NOT be flagged.
+2. Copyrighted brand logos, trademarks, or highly recognizable intellectual property (e.g., Apple logo, Nike swoosh, Disney characters, Marvel characters).
+3. Explicit, offensive, excessively violent, or NSFW content.
+
+If ANY of these policy violations are found, mark it as unsafe and provide a short, specific reason.
+If the image is clean (even if it contains event posters, template text, or typography), mark it as safe.
+
+Return ONLY a valid JSON object matching this schema:
+{
+  "isSafe": boolean,
+  "reason": "Specific reason if not safe, otherwise empty string"
+}`;
+
+  let lastError = null;
+  const startKeyIndex = globalKeyIndex;
+  if (apiKeys && apiKeys.length > 0) {
+    globalKeyIndex = (globalKeyIndex + 1) % apiKeys.length;
+  }
+
+  for (let k = 0; k < apiKeys.length; k++) {
+    const currentKeyIndex = (startKeyIndex + k) % apiKeys.length;
+    const keyItem = apiKeys[currentKeyIndex];
+    
+    const currentProvider = typeof keyItem === 'object' ? keyItem.provider : apiProvider;
+    const apiKey = typeof keyItem === 'object' ? keyItem.key : keyItem;
+
+    if (currentProvider !== "gemini") {
+      try {
+        const enrichedPrompt = `You are a strict Stock Photography AI Moderator.\n${prompt}`;
+        const parsed = await fetchOpenAICompatible(currentProvider, apiKey, enrichedPrompt, imageBuffer, mimeType, true);
+        return parsed;
+      } catch (error) {
+        lastError = error;
+        if (error.message.includes("401") || error.message.includes("403") || error.message.includes("429")) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    // Gemini branch
+    const genAI = new GoogleGenerativeAI(apiKey);
+    let modelsToAttempt = [...modelsToTry];
+
+    for (let i = 0; i < modelsToAttempt.length; i++) {
+      const modelName = modelsToAttempt[i];
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent([
+          {
+            inlineData: {
+              data: imageBuffer,
+              mimeType: mimeType,
+            },
+          },
+          { text: prompt },
+        ]);
+
+        const response = await result.response;
+        const out = response.text().trim();
+        const cleaned = out.replace(/```json/g, "").replace(/```/g, "").trim();
+        
+        let parsed;
+        try {
+          parsed = JSON.parse(cleaned);
+        } catch (e) {
+          const match = cleaned.match(/\{[\s\S]*\}/);
+          if (match) parsed = JSON.parse(match[0]);
+          else throw new Error("JSON parse error");
+        }
+
+        let totalTokens = 0;
+        try {
+          const um = response.usageMetadata;
+          if (um && typeof um.totalTokenCount === "number") totalTokens = um.totalTokenCount;
+        } catch { /* ignore */ }
+        recordApiUsage("gemini", apiKey, { totalTokens, requests: 1 });
+
+        return parsed;
+      } catch (error) {
+        lastError = error;
+        if (
+          error.message.includes("API_KEY_INVALID") ||
+          error.message.includes("403") ||
+          error.message.includes("429") ||
+          error.message.includes("quota")
+        ) {
+          break; // Break inner loop, go to next key
+        }
+        if (error.message.includes("400") || error.message.includes("404")) continue;
+      }
+    }
+  }
+
+  if (lastError && (lastError.message.includes("429") || lastError.message.includes("quota"))) {
+    throw new Error(`API Rate Limit Reached. Please wait 30 seconds.`);
+  }
+
+  throw (lastError || new Error(`Could not connect to any model for security scan.`));
 }
 

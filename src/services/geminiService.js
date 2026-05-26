@@ -337,11 +337,15 @@ function postProcessMetadata(metadata, promptSettings) {
     title = `${title} ${s.suffixText.trim()}`;
   }
 
-  // Enforce title max chars
-  if (!s.smartMode && s.titleMaxChars && title.length > s.titleMaxChars) {
-    title = title.substring(0, s.titleMaxChars).replace(/\s+\S*$/, "");
+  // Enforce title max chars based on settings, but NEVER exceed 200 (Adobe Stock hard limit)
+  let maxTitle = s.titleMaxChars || 200;
+  if (maxTitle > 200) maxTitle = 200;
+  
+  if (title.length > maxTitle) {
+    title = title.substring(0, maxTitle).replace(/\s+\S*$/, "");
   }
-  // Enforce minimum title length
+  
+  // Enforce minimum title length (only if not in smart mode)
   if (!s.smartMode && s.titleMinChars && title.length < s.titleMinChars) {
     title = title.padEnd(s.titleMinChars, ' ');
   }

@@ -800,6 +800,28 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           } else if (embeddedImages.length > 1) {
             showToast(`${embeddedImages.length}টি ফাইল সফলভাবে FTP-তে আপলোড করা হয়েছে!`, "success");
           }
+
+          // Automatically open/refresh contributor portals for active configurations
+          if (window.electronAPI?.openExternal) {
+            uploadConfigs.forEach(conf => {
+              const host = (conf.host || '').toLowerCase();
+              let portalUrl = null;
+              if (host.includes('adobestock') || host.includes('adobe') || host.includes('contributor.stock')) {
+                portalUrl = "https://contributor.stock.adobe.com/uploads";
+              } else if (host.includes('shutterstock')) {
+                portalUrl = "https://submit.shutterstock.com/";
+              } else if (host.includes('freepik')) {
+                portalUrl = "https://contributor.freepik.com/dashboard";
+              } else if (host.includes('vecteezy')) {
+                portalUrl = "https://contributors.vecteezy.com/dashboard";
+              } else if (host.includes('dreamstime')) {
+                portalUrl = "https://www.dreamstime.com/uploadfiles.php";
+              }
+              if (portalUrl) {
+                window.electronAPI.openExternal(portalUrl);
+              }
+            });
+          }
         } catch (uploadErr) {
           // Set all to error
           setImages(prev => prev.map(item => {

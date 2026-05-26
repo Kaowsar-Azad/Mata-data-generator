@@ -93,6 +93,13 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
   const [testResult, setTestResult] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [testingStatus, setTestingStatus] = useState({});
+  const isAdobeConfig = (config) => {
+    const h = (config?.host || '').toLowerCase();
+    return h.includes('adobe') || h.includes('adobestock') || h.includes('contributor.stock');
+  };
+
+  const activeConfigs = ftpConfigs.filter(c => c.enabled);
+  const adobeActive = activeConfigs.some(isAdobeConfig);
 
   useEffect(() => {
     setTestResult(null);
@@ -118,19 +125,23 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
               ? { ...f.progress }
               : {};
             currentProgressMap[host] = progress;
-            return { ...f, progress: currentProgressMap };
+            
+            let isAll100 = activeConfigs.length > 0;
+            for (const conf of activeConfigs) {
+              if (currentProgressMap[conf.host] !== 100) {
+                isAll100 = false;
+                break;
+              }
+            }
+            
+            return { ...f, progress: currentProgressMap, status: isAll100 ? 'success' : f.status };
           }
           return f;
         }));
       });
       return unsubscribe;
     }
-  }, []);
-
-  const isAdobeConfig = (config) => {
-    const h = (config?.host || '').toLowerCase();
-    return h.includes('adobe') || h.includes('adobestock') || h.includes('contributor.stock');
-  };
+  }, [activeConfigs]);
 
   const handleTestSpecificConfig = async (config) => {
     setTestingStatus(prev => ({ ...prev, [config.id]: { isTesting: true, result: null } }));
@@ -147,9 +158,6 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
       setTestingStatus(prev => ({ ...prev, [config.id]: { isTesting: false, result: { success: false, msg: err.message } } }));
     }
   };
-
-  const activeConfigs = ftpConfigs.filter(c => c.enabled);
-  const adobeActive = activeConfigs.some(isAdobeConfig);
 
   const handleCancel = () => setEditingConfig(null);
 
@@ -315,13 +323,35 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
       }
 
       setFiles(prev => prev.map(item =>
-        pendingFiles.some(pf => pf.id === item.id)
+        pendingFiles.some(pf => pf.id === item.id) && item.status !== 'success'
           ? { ...item, status: 'success' }
           : item
       ));
+
+      // Automatically open/refresh contributor portals for active configurations
+      if (window.electronAPI?.openExternal) {
+        activeConfigs.forEach(conf => {
+          const host = (conf.host || '').toLowerCase();
+          let portalUrl = null;
+          if (host.includes('adobestock') || host.includes('adobe') || host.includes('contributor.stock')) {
+            portalUrl = "https://contributor.stock.adobe.com/uploads";
+          } else if (host.includes('shutterstock')) {
+            portalUrl = "https://submit.shutterstock.com/";
+          } else if (host.includes('freepik')) {
+            portalUrl = "https://contributor.freepik.com/dashboard";
+          } else if (host.includes('vecteezy')) {
+            portalUrl = "https://contributors.vecteezy.com/dashboard";
+          } else if (host.includes('dreamstime')) {
+            portalUrl = "https://www.dreamstime.com/uploadfiles.php";
+          }
+          if (portalUrl) {
+            window.electronAPI.openExternal(portalUrl);
+          }
+        });
+      }
     } catch (uploadErr) {
       setFiles(prev => prev.map(item =>
-        pendingFiles.some(pf => pf.id === item.id)
+        pendingFiles.some(pf => pf.id === item.id) && item.status !== 'success'
           ? { ...item, status: 'error', error: uploadErr.message }
           : item
       ));
@@ -680,7 +710,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                   {formatBytes(totalSize)}
                 </span>
               )}
-              {successCount > 0 && (
+              {files.length > 0 && (
                 <span style={{ fontSize: '0.78rem', color: 'var(--success)', fontWeight: 700 }}>
                   ✓ {successCount} / {files.length} ({Math.round((successCount / files.length) * 100)}%) Uploaded
                 </span>
@@ -763,7 +793,16 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
 
           {/* Files List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, overflowY: 'auto' }}>
-            {files.map(file => (
+            {[...files].sort((a, b) => {
+              const getScore = (f) => {
+                if (f.status === 'uploading') return 0;
+                if (f.status === 'pending') return 1;
+                if (f.status === 'error') return 2;
+                if (f.status === 'success') return 3;
+                return 4;
+              };
+              return getScore(a) - getScore(b);
+            }).map(file => (
               <div key={file.id} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 background: file.status === 'success' ? 'rgba(16,185,129,0.04)' : file.status === 'error' ? 'rgba(239,68,68,0.04)' : 'var(--surface-1)',

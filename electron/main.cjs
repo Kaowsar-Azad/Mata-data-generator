@@ -1040,7 +1040,11 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
 
   // Upload each file: acquire a free slot → upload → release
   await Promise.all(validPaths.map(async (filePath) => {
-    const fileName = path.basename(filePath);
+    let fileName = path.basename(filePath);
+    // Dreamstime and some other stock sites reject .jpeg extensions, they require .jpg
+    if (fileName.toLowerCase().endsWith('.jpeg')) {
+      fileName = fileName.substring(0, fileName.length - 5) + '.jpg';
+    }
     
     // Check before acquiring slot
     if (jobId && global.cancelledFtpJobs.has(jobId)) {
@@ -1049,6 +1053,8 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
     }
 
     const slot = await acquireSlot(entry); // blocks until a connection is free
+    let total_transferred = 0;
+    let fileSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
 
     try {
       // Re-check after acquiring
@@ -1066,24 +1072,25 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
         if (isAdobe) {
           // For Adobe Stock, fastPut is rejected by the server (throws "fastPut: _fast..." error).
           // Switching to standard put with a manual read stream to track progress.
+          const { PassThrough } = require('stream');
           const readStream = fs.createReadStream(filePath);
-          const stats = fs.statSync(filePath);
-          let total_transferred = 0;
           
-          readStream.on('data', (chunk) => {
+          const progressStream = new PassThrough();
+          progressStream.on('data', (chunk) => {
             if (jobId && global.cancelledFtpJobs.has(jobId)) {
                readStream.destroy(new Error('Cancelled by user'));
+               progressStream.destroy(new Error('Cancelled by user'));
                return;
             }
             total_transferred += chunk.length;
-            if (stats.size > 0 && event) {
-               const p = Math.round((total_transferred / stats.size) * 100);
+            if (fileSize > 0 && event) {
+               const p = Math.round((total_transferred / fileSize) * 100);
                event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
             }
           });
 
           try {
-            await slot.client.put(readStream, `/${fileName}`);
+            await slot.client.put(readStream.pipe(progressStream), `/${fileName}`);
           } catch (err) {
             if (jobId && global.cancelledFtpJobs.has(jobId)) {
                slot.client.end();
@@ -1096,7 +1103,8 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
           await slot.client.fastPut(filePath, `/${fileName}`, {
             concurrency: 32, // High concurrency to saturate the user's internet bandwidth
             chunkSize: 1024 * 1024,
-            step: function(total_transferred, chunk, total) {
+            step: function(transferred, chunk, total) {
+              total_transferred = transferred;
               if (jobId && global.cancelledFtpJobs.has(jobId)) {
                  slot.client.end();
                  throw new Error('Cancelled by user');
@@ -1109,22 +1117,24 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
           });
         }
       } else {
-        const stream = fs.createReadStream(filePath, { highWaterMark: FTP_STREAM_HWM });
+        const { PassThrough } = require('stream');
+        const readStream = fs.createReadStream(filePath, { highWaterMark: FTP_STREAM_HWM });
         
-        stream.on('data', () => {
+        const progressStream = new PassThrough();
+        progressStream.on('data', (chunk) => {
            if (jobId && global.cancelledFtpJobs.has(jobId)) {
-               stream.destroy(new Error('Cancelled by user'));
+               readStream.destroy(new Error('Cancelled by user'));
+               progressStream.destroy(new Error('Cancelled by user'));
+               return;
            }
-        });
-
-        slot.client.trackProgress(info => {
-           if (info.bytesOverall > 0 && event) {
-               const p = Math.round((info.bytes / info.bytesOverall) * 100);
+           total_transferred += chunk.length;
+           if (fileSize > 0 && event) {
+               const p = Math.round((total_transferred / fileSize) * 100);
                event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
            }
         });
-        await slot.client.uploadFrom(stream, fileName);
-        slot.client.trackProgress(); // clear progress handler
+        
+        await slot.client.uploadFrom(readStream.pipe(progressStream), fileName);
       }
       
       // Emit 100% just in case
@@ -1135,12 +1145,16 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
       const isCancelled = jobId && global.cancelledFtpJobs.has(jobId);
       if (isCancelled || (err.message && err.message.includes('Cancelled by user'))) {
          fileLog(`[upload-${type}] ⛔ Aborted ${fileName} (Cancelled)`);
+      } else if ((err.code === 'ECONNRESET' || err.message.includes('ECONNRESET')) && total_transferred >= fileSize && fileSize > 0) {
+         // Server closed connection after receiving the whole file (common on Dreamstime)
+         fileLog(`[upload-${type}] ⚠️ ${fileName}: Connection reset after transfer (ignoring). Treated as success.`);
+         if (event) event.sender.send('ftp-progress', { filePath, progress: 100, host: config.host });
       } else {
          fileLog(`[upload-${type}] ✗ ${fileName}: ${err.message}`);
+         // Mark slot dead so getPool rebuilds next call
+         if (type === 'ftp') slot.client.close();
+         throw err;
       }
-      // Mark slot dead so getPool rebuilds next call
-      if (type === 'ftp') slot.client.close();
-      throw err;
     } finally {
       releaseSlot(entry, slot); // always release so other waiters can proceed
     }

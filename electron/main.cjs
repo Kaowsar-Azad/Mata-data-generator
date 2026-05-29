@@ -517,6 +517,68 @@ app.on('will-quit', () => {
   }
 });
 
+// ── Persistent Metadata Cache helper functions for Red Dot prevention ──
+const METADATA_CACHE_FILE = path.join(app.getPath('userData'), 'metadata-history-cache.json');
+
+async function saveMetadataToCache(originalPath, newFileName, title, description, keywords, categories) {
+  try {
+    let cache = {};
+    if (fs.existsSync(METADATA_CACHE_FILE)) {
+      try {
+        cache = JSON.parse(fs.readFileSync(METADATA_CACHE_FILE, 'utf8') || '{}');
+      } catch (e) {
+        fileLog('[cache] Failed parsing cache file, resetting:', e);
+      }
+    }
+    
+    const entry = {
+      title,
+      description,
+      keywords: Array.isArray(keywords) ? keywords : (keywords || '').split(',').map(k => k.trim()).filter(Boolean),
+      categories: Array.isArray(categories) ? categories : (categories || '').split(',').map(c => c.trim()).filter(Boolean),
+      timestamp: Date.now()
+    };
+    
+    const origKey = path.basename(originalPath).toLowerCase().trim();
+    cache[origKey] = entry;
+    
+    if (newFileName) {
+      const newKey = newFileName.toLowerCase().trim();
+      cache[newKey] = entry;
+    }
+    
+    fs.writeFileSync(METADATA_CACHE_FILE, JSON.stringify(cache, null, 2), 'utf8');
+    fileLog('[cache] Metadata saved for keys:', [origKey, newFileName?.toLowerCase().trim()].filter(Boolean));
+  } catch (err) {
+    fileLog('[cache] Error saving to metadata cache:', err);
+  }
+}
+
+async function getMetadataFromCache(fileName) {
+  try {
+    if (!fs.existsSync(METADATA_CACHE_FILE)) return null;
+    const cache = JSON.parse(fs.readFileSync(METADATA_CACHE_FILE, 'utf8') || '{}');
+    const key = fileName.toLowerCase().trim();
+    
+    if (cache[key]) {
+      fileLog('[cache] Match found for:', key);
+      return cache[key];
+    }
+    
+    const normalizedKey = key.replace(/[\s_-]+/g, '');
+    for (const [k, entry] of Object.entries(cache)) {
+      if (k.replace(/[\s_-]+/g, '') === normalizedKey) {
+        fileLog('[cache] Loose match found:', k, 'for:', key);
+        return entry;
+      }
+    }
+    return null;
+  } catch (err) {
+    fileLog('[cache] Error reading from metadata cache:', err);
+    return null;
+  }
+}
+
 ipcMain.handle('write-metadata', async (event, filePath, title, description, keywords, categories) => {
   fileLog('[write-metadata] Called with:', { filePath, title, description, keywords, categories });
   try {
@@ -559,7 +621,7 @@ ipcMain.handle('write-metadata', async (event, filePath, title, description, key
     fileLog('[write-metadata] Writing tags to file:', tags);
     
     // "-overwrite_original" ensures no *_original backup files are created
-    const writePromise = exiftool.write(filePath, tags, ["-overwrite_original"]);
+    const writePromise = exiftool.write(filePath, tags, ["-overwrite_original", "-codedcharacterset=utf8"]);
     fileLog('[write-metadata] write promise triggered, awaiting...');
     
     let timeoutId;
@@ -609,6 +671,7 @@ ipcMain.handle('write-metadata', async (event, filePath, title, description, key
       }
     }
     
+    await saveMetadataToCache(filePath, newFileName, title, description, keywords, categories);
     return { success: true, newPath: finalPath, newFileName };
   } catch (error) {
     fileLog('[write-metadata error]', error);
@@ -796,8 +859,7 @@ ipcMain.handle('test-ftp', async (event, config) => {
         secure: config.secure === true ? true : false,
         secureOptions: {
           rejectUnauthorized: false,
-          minVersion: 'TLSv1.2',
-          maxVersion: 'TLSv1.2'
+          minVersion: 'TLSv1.2'
         }
       });
       client.close();
@@ -824,7 +886,7 @@ ipcMain.handle('test-ftp', async (event, config) => {
 // We detect the host and cap at 3 workers for Adobe Stock.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const FTP_STREAM_HWM = 4 * 1024 * 1024; // 4 MB read-buffer per stream
+const FTP_STREAM_HWM = 16 * 1024 * 1024; // 16 MB read-buffer per stream
 const POOL_IDLE_TTL  = 60_000;           // close pool after 60 s of inactivity
 
 // pool: Map<cacheKey, { type, clients: Client[], idleTimer, busy }>
@@ -837,12 +899,12 @@ global.cancelledFtpJobs = new Set();
 
 function getWorkerLimit(host) {
   const h = (host || '').toLowerCase();
-  // Adobe Stock / Contributor portal - highly sensitive to parallel uploads, can cause SFTP _fast errors or disconnects
+  // Adobe Stock / Contributor portal - highly sensitive to parallel uploads, must be 1 to prevent SFTP _fast errors or disconnects
   if (h.includes('adobe') || h.includes('adobestock') || h.includes('contributor.stock')) return 1;
-  // Dreamstime limits connections per user, can cause 550 High-end error
+  // Dreamstime limits connections per user
   if (h.includes('dreamstime')) return 1;
   // Shutterstock, Getty, Freepik etc.
-  return 3; // Reduced from 6 to 3 to be safe and avoid rate limits across all platforms
+  return 3; // Reduced to 3 to ensure maximum stability and 0% error rate
 }
 
 // ── client factories ──────────────────────────────────────────────────────────
@@ -857,7 +919,10 @@ async function createFtpClient(config) {
     password:      config.password?.trim(),
     port:          parseInt(config.port) || 21,
     secure:        config.secure === true,
-    secureOptions: { rejectUnauthorized: false }
+    secureOptions: {
+      rejectUnauthorized: false,
+      minVersion: 'TLSv1.2'
+    }
   });
   // Force binary mode once – avoids per-file TYPE I round-trip
   await client.send('TYPE I');
@@ -874,12 +939,7 @@ async function createSftpClient(config) {
     username:     config.user?.trim(),
     password:     config.password?.trim(),
     port:         parseInt(config.port) || 22,
-    readyTimeout: 30000,
-    algorithms: {
-      kex:    ['ecdh-sha2-nistp256', 'diffie-hellman-group14-sha256'],
-      cipher: ['aes128-gcm@openssh.com', 'aes256-gcm@openssh.com', 'aes128-ctr'],
-      hmac:   ['hmac-sha2-256', 'hmac-sha1'],
-    }
+    readyTimeout: 30000
   });
   return client;
 }
@@ -1031,7 +1091,8 @@ class ProgressTransform extends Transform {
 
 async function uploadFilesParallel(config, filePaths, type, jobId, event) {
   const validPaths = filePaths.filter(p => fs.existsSync(p));
-  if (validPaths.length === 0) return;
+  const fileErrors = {};
+  if (validPaths.length === 0) return fileErrors;
 
   const key   = poolKey(config, type);
   const entry = await getPool(config, type, key);
@@ -1049,7 +1110,83 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
     // Check before acquiring slot
     if (jobId && global.cancelledFtpJobs.has(jobId)) {
        fileLog(`[upload-${type}] ⛔ Skipped ${fileName} (Job Cancelled)`);
+       fileErrors[filePath] = 'Cancelled by user';
        return; // skip
+    }
+
+    // ── AUTOMATIC METADATA SCAN & FORMAT CORRECTION (Red Dot Prevention) ──
+    try {
+      const ext = path.extname(filePath).toLowerCase();
+      // Only process common formats we can write metadata to (jpg, jpeg, png, eps)
+      if (['.jpg', '.jpeg', '.png', '.eps'].includes(ext)) {
+        const exiftool = await getExifTool();
+        let tags = {};
+        try {
+          tags = await exiftool.read(filePath);
+        } catch (e) {
+          fileLog('[upload-metadata] Failed reading tags from:', fileName, e);
+        }
+        
+        const title = tags.Title || tags.ObjectName || tags.XPTitle || '';
+        
+        let keywords = [];
+        const rawKeywords = tags.Subject || tags.Keywords || tags.XPKeywords || [];
+        if (Array.isArray(rawKeywords)) {
+          keywords = rawKeywords;
+        } else if (typeof rawKeywords === 'string') {
+          keywords = rawKeywords.split(/[,;]/).map(k => k.trim()).filter(Boolean);
+        }
+        
+        const hasTitle = title && String(title).trim().length > 0;
+        const hasKeywords = keywords.length > 0;
+        
+        if (hasTitle || hasKeywords) {
+          // File has metadata. Check and format it correctly to avoid Red Dot issues on Adobe Stock
+          fileLog(`[upload-metadata] Formatting existing metadata for ${fileName} (Title: ${hasTitle}, Keywords: ${keywords.length})`);
+          
+          // Deduplicate and clean up keywords
+          const finalKeywordsArray = [...new Set(keywords)].map(k => String(k).trim()).filter(Boolean).slice(0, 49);
+          const finalTitle = String(title).trim();
+          
+          // Re-write in correct standard XMP and IPTC formats with UTF-8 encoding
+          const writeTags = {
+            "XMP-dc:Title": finalTitle,
+            "XMP-dc:Subject": finalKeywordsArray,
+            "IPTC:ObjectName": finalTitle,
+            "IPTC:Keywords": finalKeywordsArray,
+            "EXIF:XPTitle": finalTitle,
+            "EXIF:XPKeywords": finalKeywordsArray.join('; ')
+          };
+          
+          // If description exists, preserve and rewrite it in correct fields
+          const description = tags.Description || tags.Caption || tags['Caption-Abstract'] || tags.ImageDescription || tags.XPComment;
+          if (description) {
+            const finalDesc = String(description).trim();
+            writeTags["XMP-dc:Description"] = finalDesc;
+            writeTags["IPTC:Caption-Abstract"] = finalDesc;
+            writeTags["EXIF:ImageDescription"] = finalDesc;
+            writeTags["EXIF:XPComment"] = finalDesc;
+          }
+          
+          // If supplemental categories exist, preserve them
+          const categories = tags.SupplementalCategories || tags['XMP-photoshop:SupplementalCategories'] || [];
+          const categoriesArray = Array.isArray(categories) ? categories : (typeof categories === 'string' ? categories.split(',') : []);
+          if (categoriesArray.length > 0) {
+            const cleanCategories = categoriesArray.map(c => String(c).trim()).filter(Boolean);
+            writeTags["IPTC:SupplementalCategories"] = cleanCategories;
+            writeTags["XMP-photoshop:Category"] = cleanCategories[0] || "";
+            writeTags["XMP-photoshop:SupplementalCategories"] = cleanCategories;
+          }
+          
+          fileLog('[upload-metadata] Re-writing formatted tags to ensure Adobe Stock compatibility:', writeTags);
+          await exiftool.write(filePath, writeTags, ["-overwrite_original", "-codedcharacterset=utf8"]);
+          fileLog('[upload-metadata] Metadata formatting completed for:', fileName);
+        } else {
+          fileLog(`[upload-metadata] File ${fileName} has no metadata. Uploading as-is without adding metadata.`);
+        }
+      }
+    } catch (metadataErr) {
+      fileLog('[upload-metadata error] Failed to process metadata:', metadataErr);
     }
 
     const slot = await acquireSlot(entry); // blocks until a connection is free
@@ -1062,6 +1199,13 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
         throw new Error('Cancelled by user');
       }
 
+      // Reconnect slot if dead/closed before upload starts
+      if (slot.dead || (type === 'ftp' && slot.client.closed)) {
+        fileLog(`[pool] Reconnecting dead/closed slot for ${config.host}...`);
+        slot.client = type === 'sftp' ? await createSftpClient(config) : await createFtpClient(config);
+        slot.dead = false;
+      }
+
       if (type === 'sftp') {
         const isAdobe = config.host && (
           config.host.toLowerCase().includes('adobe') ||
@@ -1072,28 +1216,29 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
         if (isAdobe) {
           // For Adobe Stock, fastPut is rejected by the server (throws "fastPut: _fast..." error).
           // Switching to standard put with a manual read stream to track progress.
-          const { PassThrough } = require('stream');
           const readStream = fs.createReadStream(filePath);
           
-          const progressStream = new PassThrough();
-          progressStream.on('data', (chunk) => {
-            if (jobId && global.cancelledFtpJobs.has(jobId)) {
-               readStream.destroy(new Error('Cancelled by user'));
-               progressStream.destroy(new Error('Cancelled by user'));
-               return;
-            }
-            total_transferred += chunk.length;
-            if (fileSize > 0 && event) {
-               const p = Math.round((total_transferred / fileSize) * 100);
-               event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
-            }
+          const progressStream = new ProgressTransform(fileSize, (p) => {
+             if (jobId && global.cancelledFtpJobs.has(jobId)) {
+                readStream.destroy(new Error('Cancelled by user'));
+                progressStream.destroy(new Error('Cancelled by user'));
+                try { slot.client.end(); } catch(e){}
+                return;
+             }
+             total_transferred = Math.floor((p / 100) * fileSize);
+             if (event && !event.sender.isDestroyed()) {
+                event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
+             }
           });
+          
+          readStream.on('error', () => {}); // Prevent uncaught exception
+          progressStream.on('error', () => {}); // Prevent uncaught exception
 
           try {
             await slot.client.put(readStream.pipe(progressStream), `/${fileName}`);
           } catch (err) {
             if (jobId && global.cancelledFtpJobs.has(jobId)) {
-               slot.client.end();
+               try { slot.client.end(); } catch(e){}
                throw new Error('Cancelled by user');
             }
             throw err;
@@ -1106,10 +1251,10 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
             step: function(transferred, chunk, total) {
               total_transferred = transferred;
               if (jobId && global.cancelledFtpJobs.has(jobId)) {
-                 slot.client.end();
+                 try { slot.client.end(); } catch(e){}
                  throw new Error('Cancelled by user');
               }
-              if (total > 0 && event) {
+              if (total > 0 && event && !event.sender.isDestroyed()) {
                  const p = Math.round((total_transferred / total) * 100);
                  event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
               }
@@ -1117,43 +1262,58 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
           });
         }
       } else {
-        const { PassThrough } = require('stream');
         const readStream = fs.createReadStream(filePath, { highWaterMark: FTP_STREAM_HWM });
         
-        const progressStream = new PassThrough();
-        progressStream.on('data', (chunk) => {
+        const progressStream = new ProgressTransform(fileSize, (p) => {
            if (jobId && global.cancelledFtpJobs.has(jobId)) {
                readStream.destroy(new Error('Cancelled by user'));
                progressStream.destroy(new Error('Cancelled by user'));
+               try { slot.client.close(); } catch(e){}
                return;
            }
-           total_transferred += chunk.length;
-           if (fileSize > 0 && event) {
-               const p = Math.round((total_transferred / fileSize) * 100);
+           total_transferred = Math.floor((p / 100) * fileSize);
+           if (event && !event.sender.isDestroyed()) {
                event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
            }
         });
         
+        readStream.on('error', () => {}); // Prevent uncaught exception
+        progressStream.on('error', () => {}); // Prevent uncaught exception
+
         await slot.client.uploadFrom(readStream.pipe(progressStream), fileName);
       }
       
       // Emit 100% just in case
-      if (event) event.sender.send('ftp-progress', { filePath, progress: 100, host: config.host });
+      if (event && !event.sender.isDestroyed()) event.sender.send('ftp-progress', { filePath, progress: 100, host: config.host });
       
       fileLog(`[upload-${type}] ✓ ${fileName}`);
+      fileErrors[filePath] = null;
     } catch (err) {
       const isCancelled = jobId && global.cancelledFtpJobs.has(jobId);
       if (isCancelled || (err.message && err.message.includes('Cancelled by user'))) {
          fileLog(`[upload-${type}] ⛔ Aborted ${fileName} (Cancelled)`);
+         slot.dead = true;
+         if (type === 'ftp') slot.client.close();
+         if (type === 'sftp') try { slot.client.end(); } catch(e){}
+         fileErrors[filePath] = 'Cancelled by user';
+         if (event && !event.sender.isDestroyed()) {
+            event.sender.send('ftp-progress', { filePath, progress: -1, host: config.host, error: 'Cancelled by user' });
+         }
       } else if ((err.code === 'ECONNRESET' || err.message.includes('ECONNRESET')) && total_transferred >= fileSize && fileSize > 0) {
          // Server closed connection after receiving the whole file (common on Dreamstime)
          fileLog(`[upload-${type}] ⚠️ ${fileName}: Connection reset after transfer (ignoring). Treated as success.`);
-         if (event) event.sender.send('ftp-progress', { filePath, progress: 100, host: config.host });
+         if (event && !event.sender.isDestroyed()) event.sender.send('ftp-progress', { filePath, progress: 100, host: config.host });
+         fileErrors[filePath] = null;
       } else {
          fileLog(`[upload-${type}] ✗ ${fileName}: ${err.message}`);
          // Mark slot dead so getPool rebuilds next call
+         slot.dead = true;
          if (type === 'ftp') slot.client.close();
-         throw err;
+         if (type === 'sftp') try { slot.client.end(); } catch(e){}
+         fileErrors[filePath] = err.message;
+         if (event && !event.sender.isDestroyed()) {
+            event.sender.send('ftp-progress', { filePath, progress: -1, host: config.host, error: err.message });
+         }
       }
     } finally {
       releaseSlot(entry, slot); // always release so other waiters can proceed
@@ -1161,6 +1321,7 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
   }));
 
   resetIdleTimer(entry, key);
+  return fileErrors;
 }
 
 ipcMain.handle('upload-ftp', async (event, config, filePaths, jobId) => {
@@ -1171,14 +1332,18 @@ ipcMain.handle('upload-ftp', async (event, config, filePaths, jobId) => {
   const t0 = Date.now();
 
   try {
-    await uploadFilesParallel(config, filePaths, type, jobId, event);
+    const fileErrors = await uploadFilesParallel(config, filePaths, type, jobId, event);
     fileLog(`[upload-ftp] ✅ Done in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-    return { success: true };
+    return { success: true, fileErrors };
   } catch (err) {
     const key = poolKey(config, type);
     await closePool(key); // rebuild pool on next call
     fileLog(`[upload-ftp] ❌ Failed (${((Date.now() - t0) / 1000).toFixed(1)}s): ${err.message}`);
     return { success: false, error: `${type.toUpperCase()} Error: ${err.message}` };
+  } finally {
+    if (jobId) {
+      global.cancelledFtpJobs.delete(jobId);
+    }
   }
 });
 
@@ -1237,3 +1402,98 @@ ipcMain.handle('save-file', async (event, filePath, bufferArray) => {
   }
 });
 
+// Colab Cloud GPU Engine Handlers
+let colabWindow = null;
+
+ipcMain.handle('start-colab', async (event, url) => {
+  if (colabWindow) {
+    colabWindow.close();
+  }
+  
+  colabWindow = new BrowserWindow({
+    width: 1100,
+    height: 800,
+    show: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      partition: 'persist:colab'
+    },
+    title: 'Cloud GPU Engine (Colab)'
+  });
+
+  colabWindow.setMenu(null);
+  colabWindow.loadURL(url);
+
+  // Inject observer to find gradio link and auto-click Run All
+  colabWindow.webContents.on('did-finish-load', () => {
+    colabWindow.webContents.executeJavaScript(`
+      (function() {
+        if (window.__colabObserver) return;
+        
+        // 1. Observe for the generated link
+        window.__colabObserver = new MutationObserver((mutations) => {
+          const links = document.querySelectorAll('a');
+          for (let a of links) {
+            if (a.href && (a.href.includes('.gradio.live') || a.href.includes('ngrok-free.app') || a.href.includes('trycloudflare.com') || a.href.includes('loca.lt'))) {
+              document.title = "GRADIO_LINK:" + a.href;
+            }
+          }
+        });
+        window.__colabObserver.observe(document.body, { childList: true, subtree: true });
+        
+        // 2. Try to auto-click Run All after a short delay
+        setTimeout(() => {
+          const runAllBtn = document.querySelector('colab-toolbar-button#run-all');
+          if (runAllBtn) {
+            runAllBtn.click();
+            // A dialog might appear "Warning: This notebook was not authored by Google."
+            // We can try to click "Run anyway" after a second.
+            setTimeout(() => {
+              const runAnywayBtn = document.getElementById('ok');
+              if (runAnywayBtn) runAnywayBtn.click();
+            }, 1000);
+          }
+        }, 5000);
+      })();
+    `).catch(err => fileLog('[Colab] Inject Error:', err.message));
+  });
+
+  colabWindow.on('page-title-updated', (e, title) => {
+    if (title.startsWith('GRADIO_LINK:')) {
+      const link = title.replace('GRADIO_LINK:', '').trim();
+      fileLog('[Colab] Found Gradio link:', link);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('colab-status', { status: 'connected', url: link });
+      }
+      // Hide the window so it continues running in background
+      if (colabWindow) {
+        colabWindow.hide();
+      }
+    }
+  });
+
+  colabWindow.on('closed', () => {
+    colabWindow = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('colab-status', { status: 'disconnected' });
+    }
+  });
+
+  return { success: true };
+});
+
+ipcMain.handle('stop-colab', async () => {
+  if (colabWindow) {
+    colabWindow.close();
+    colabWindow = null;
+  }
+  return { success: true };
+});
+
+ipcMain.handle('show-colab', async () => {
+  if (colabWindow) {
+    colabWindow.show();
+  }
+  return { success: true };
+});

@@ -82,8 +82,6 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
   const [files, setFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSpeed, setUploadSpeed] = useState(null); // bytes/sec
-  const [uploadStart, setUploadStart] = useState(null);
-  const [uploadedBytes, setUploadedBytes] = useState(0);
   const [currentJobId, setCurrentJobId] = useState(null);
   const fileInputRef = useRef(null);
   const dropZoneRef = useRef(null);
@@ -93,6 +91,16 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
   const [testResult, setTestResult] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [testingStatus, setTestingStatus] = useState({});
+  const [toasts, setToasts] = useState([]);
+
+  const showToast = (message, type = "success") => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 5000);
+  };
+
   const isAdobeConfig = (config) => {
     const h = (config?.host || '').toLowerCase();
     return h.includes('adobe') || h.includes('adobestock') || h.includes('contributor.stock');
@@ -115,12 +123,20 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
 
   useEffect(() => {
     if (window.electronAPI?.onFtpProgress) {
-      const unsubscribe = window.electronAPI.onFtpProgress(({ filePath, progress, host }) => {
+      const unsubscribe = window.electronAPI.onFtpProgress(({ filePath, progress, host, error }) => {
         setFiles(prev => prev.map(f => {
           // Normalize paths for windows
           const fPath = f.path.replace(/\\/g, '/');
           const pPath = filePath.replace(/\\/g, '/');
           if (fPath === pPath) {
+            if (error) {
+              return {
+                ...f,
+                status: 'error',
+                error: `${host} error: ${error}`
+              };
+            }
+            
             const currentProgressMap = typeof f.progress === 'object' && f.progress !== null
               ? { ...f.progress }
               : {};
@@ -272,7 +288,6 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
     files.forEach(f => { if (f.previewUrl) URL.revokeObjectURL(f.previewUrl); });
     setFiles([]);
     setUploadSpeed(null);
-    setUploadedBytes(0);
     setCurrentJobId(null);
     setIsUploading(false);
   };
@@ -281,10 +296,8 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
     if (!window.electronAPI || files.length === 0 || activeConfigs.length === 0) return;
     setIsUploading(true);
     setUploadSpeed(null);
-    setUploadedBytes(0);
 
     const t0 = Date.now();
-    setUploadStart(t0);
 
     const pendingFiles = files.filter(f => f.status !== 'success');
     const filePaths = pendingFiles.map(f => f.path).filter(Boolean);
@@ -312,49 +325,66 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
         if (!res.success) {
           throw new Error(`Failed on ${conf.websiteName || conf.host}: ${res.error}`);
         }
+        return { host: conf.websiteName || conf.host, fileErrors: res.fileErrors || {} };
       });
 
-      await Promise.all(uploadPromises);
+      const uploadResults = await Promise.all(uploadPromises);
 
       const elapsed = (Date.now() - t0) / 1000;
       if (totalSize > 0 && elapsed > 0) {
         setUploadSpeed(totalSize / elapsed);
-        setUploadedBytes(totalSize);
       }
 
-      setFiles(prev => prev.map(item =>
-        pendingFiles.some(pf => pf.id === item.id) && item.status !== 'success'
-          ? { ...item, status: 'success' }
-          : item
-      ));
-
-      // Automatically open/refresh contributor portals for active configurations
-      if (window.electronAPI?.openExternal) {
-        activeConfigs.forEach(conf => {
-          const host = (conf.host || '').toLowerCase();
-          let portalUrl = null;
-          if (host.includes('adobestock') || host.includes('adobe') || host.includes('contributor.stock')) {
-            portalUrl = "https://contributor.stock.adobe.com/uploads";
-          } else if (host.includes('shutterstock')) {
-            portalUrl = "https://submit.shutterstock.com/";
-          } else if (host.includes('freepik')) {
-            portalUrl = "https://contributor.freepik.com/dashboard";
-          } else if (host.includes('vecteezy')) {
-            portalUrl = "https://contributors.vecteezy.com/dashboard";
-          } else if (host.includes('dreamstime')) {
-            portalUrl = "https://www.dreamstime.com/uploadfiles.php";
+      // Combine errors from all servers
+      const fileErrorsMap = {}; // { [filePath]: { [host]: error } }
+      for (const res of uploadResults) {
+        for (const [filePath, err] of Object.entries(res.fileErrors)) {
+          if (err) {
+            const normalizedPath = filePath.replace(/\\/g, '/');
+            if (!fileErrorsMap[normalizedPath]) fileErrorsMap[normalizedPath] = {};
+            fileErrorsMap[normalizedPath][res.host] = err;
           }
-          if (portalUrl) {
-            window.electronAPI.openExternal(portalUrl);
-          }
-        });
+        }
       }
+
+      setFiles(prev => prev.map(item => {
+        if (!pendingFiles.some(pf => pf.id === item.id)) return item;
+        
+        // Find errors for this file
+        const fPath = item.path.replace(/\\/g, '/');
+        const errorsForFile = fileErrorsMap[fPath];
+        
+        if (errorsForFile && Object.keys(errorsForFile).length > 0) {
+          const errMsg = Object.entries(errorsForFile).map(([h, err]) => `${h}: ${err}`).join(', ');
+          return { ...item, status: 'error', error: errMsg };
+        } else {
+          return { ...item, status: 'success', error: null };
+        }
+      }));
+
+      // Calculate how many failed
+      let batchFailed = 0;
+      filePaths.forEach(fPath => {
+         const normalizedPath = fPath.replace(/\\/g, '/');
+         if (fileErrorsMap[normalizedPath] && Object.keys(fileErrorsMap[normalizedPath]).length > 0) {
+            batchFailed++;
+         }
+      });
+      const batchSuccess = filePaths.length - batchFailed;
+
+      if (batchFailed > 0) {
+        showToast(`আপলোড সম্পন্ন! কিন্তু ${batchFailed}টি ফাইল ফেইল করেছে। অনুগ্রহ করে উপরের "Retry Failed" বাটনে ক্লিক করুন।`, "error");
+      } else {
+        showToast(`${batchSuccess}টি ফাইল সফলভাবে সার্ভারে আপলোড হয়েছে!`, "success");
+      }
+
     } catch (uploadErr) {
       setFiles(prev => prev.map(item =>
         pendingFiles.some(pf => pf.id === item.id) && item.status !== 'success'
           ? { ...item, status: 'error', error: uploadErr.message }
           : item
       ));
+      showToast(`আপলোড করতে সমস্যা হয়েছে: ${uploadErr.message}`, "error");
     }
 
     setIsUploading(false);
@@ -899,6 +929,67 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
           </div>
         </div>
       </div>
+
+      {/* Premium Floating Toast Notifications Stack */}
+      <div style={{
+        position: 'fixed',
+        bottom: '2rem',
+        right: '2rem',
+        zIndex: 9999,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.75rem',
+        pointerEvents: 'none'
+      }}>
+        {toasts.map((t) => (
+          <div 
+            key={t.id}
+            style={{
+              pointerEvents: 'auto',
+              background: t.type === 'success' ? 'rgba(16,185,129,0.95)' : 'rgba(239,68,68,0.95)',
+              color: '#fff',
+              padding: '1rem 1.5rem',
+              borderRadius: '0.75rem',
+              boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+              backdropFilter: 'blur(10px)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              animation: 'slideIn 0.3s ease-out',
+              border: '1px solid rgba(255,255,255,0.1)',
+              width: '350px',
+              boxSizing: 'border-box'
+            }}
+          >
+            {t.type === 'success' ? (
+              <CheckCircle2 style={{ width: '1.25rem', height: '1.25rem', flexShrink: 0 }} />
+            ) : (
+              <X style={{ width: '1.25rem', height: '1.25rem', flexShrink: 0 }} />
+            )}
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, flexGrow: 1, wordBreak: 'break-word', lineHeight: '1.3' }}>{t.message}</span>
+            <button 
+              onClick={() => setToasts(prev => prev.filter(item => item.id !== t.id))}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'rgba(255,255,255,0.7)',
+                cursor: 'pointer',
+                marginLeft: '0.5rem',
+                display: 'flex',
+                flexShrink: 0
+              }}
+            >
+              <X style={{ width: '0.9rem', height: '0.9rem' }} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <style>{`
+        @keyframes slideIn {
+          from { transform: translateY(100%) scale(0.9); opacity: 0; }
+          to { transform: translateY(0) scale(1); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }

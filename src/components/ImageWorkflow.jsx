@@ -12,8 +12,49 @@ import {
   Copy,
   Video,
   LayoutGrid,
-  List
+  List,
+  AlertTriangle
 } from "lucide-react";
+
+// ─── Perceptual Hash Utility ───────────────────────────────────────────────
+// Resizes image/dataURL to an 8×8 grayscale grid and returns a 64-bit binary
+// string. Two hashes with Hamming distance ≤ 10 are considered near-duplicates.
+const computePHash = (src) =>
+  new Promise((resolve) => {
+    const SIZE = 8;
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = SIZE;
+        canvas.height = SIZE;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, SIZE, SIZE);
+        const { data } = ctx.getImageData(0, 0, SIZE, SIZE);
+        const grays = [];
+        for (let i = 0; i < data.length; i += 4) {
+          // BT.601 luminance
+          grays.push(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+        }
+        const avg = grays.reduce((a, b) => a + b, 0) / grays.length;
+        resolve(grays.map((g) => (g >= avg ? "1" : "0")).join(""));
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+
+const hammingDistance = (a, b) => {
+  if (!a || !b || a.length !== b.length) return Infinity;
+  let dist = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) dist++;
+  return dist;
+};
+
+// Threshold: ≤ 10 out of 64 bits → near-duplicate
+const DUPLICATE_THRESHOLD = 10;
 import { generateMetadata, analyzeImageSecurity } from "../services/geminiService";
 import { processEpsFile, isEpsFile } from "../services/epsService";
 
@@ -46,6 +87,17 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const [activeJobId, setActiveJobId] = useState(null);
   const [activeCell, setActiveCell] = useState(null); // { id: '...', field: '...' }
   const [showExportModal, setShowExportModal] = useState(false);
+  const [selectedRows, setSelectedRows] = useState(new Set()); // row IDs selected in grid
+  const [gridSort, setGridSort] = useState({ field: null, dir: 'asc' }); // column sort
+  const [gridFilter, setGridFilter] = useState(''); // quick filter text
+  const cellRefs = useRef({}); // { [id_field]: textareaDOM }
+
+  // ─── Duplicate Detection State ─────────────────────────────────────────────
+  // duplicatePairs: Array of { id1, name1, id2, name2, similarity }
+  const [duplicatePairs, setDuplicatePairs] = useState([]);
+  const [dismissedDuplicates, setDismissedDuplicates] = useState(false);
+  // Store computed hashes: { [imageId]: hashString }
+  const hashMapRef = useRef({});
 
   const getTitleCounterClass = (val) => {
     const len = (val || '').length;
@@ -144,6 +196,63 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     if (isEpsFile(file)) return true;
     if (isVideoFile(file)) return true;
     return file.type.startsWith("image/");
+  };
+
+  // ─── Perceptual Hash helpers ──────────────────────────────────────────────
+  const computeHashForEntry = async (entry) => {
+    try {
+      let src = null;
+      if (entry.preview) {
+        src = entry.preview;
+      } else if (entry.visualFile) {
+        src = await new Promise((res, rej) => {
+          const reader = new FileReader();
+          reader.onload = (e) => res(e.target.result);
+          reader.onerror = rej;
+          reader.readAsDataURL(entry.visualFile);
+        });
+      } else if (entry.file && !entry.isEps && !entry.isVideo) {
+        src = await new Promise((res, rej) => {
+          const reader = new FileReader();
+          reader.onload = (e) => res(e.target.result);
+          reader.onerror = rej;
+          reader.readAsDataURL(entry.file);
+        });
+      }
+      if (!src) return null;
+      return await computePHash(src);
+    } catch {
+      return null;
+    }
+  };
+
+  const detectDuplicates = (existingImages, newEntries) => {
+    const allEntries = [...existingImages, ...newEntries];
+    const pairs = [];
+    const seenPairs = new Set();
+    for (let i = 0; i < allEntries.length; i++) {
+      const hashA = hashMapRef.current[allEntries[i].id];
+      if (!hashA) continue;
+      for (let j = i + 1; j < allEntries.length; j++) {
+        const hashB = hashMapRef.current[allEntries[j].id];
+        if (!hashB) continue;
+        const dist = hammingDistance(hashA, hashB);
+        if (dist <= DUPLICATE_THRESHOLD) {
+          const key = [allEntries[i].id, allEntries[j].id].sort().join('|');
+          if (!seenPairs.has(key)) {
+            seenPairs.add(key);
+            pairs.push({
+              id1: allEntries[i].id,
+              name1: allEntries[i].file?.name || allEntries[i].renamedName || 'File 1',
+              id2: allEntries[j].id,
+              name2: allEntries[j].file?.name || allEntries[j].renamedName || 'File 2',
+              similarity: Math.round((1 - dist / 64) * 100),
+            });
+          }
+        }
+      }
+    }
+    return pairs;
   };
 
   const addImages = async (files) => {
@@ -249,6 +358,31 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
     setImages((prev) => [...prev, ...newEntries]);
 
+    // ─── Compute perceptual hashes for new non-video, non-EPS entries ───────
+    // Run asynchronously in background so UI isn't blocked.
+    // After hashing, re-run duplicate detection across all images.
+    setTimeout(async () => {
+      const hashPromises = newEntries
+        .filter(e => !e.isVideo) // skip videos (no raster to hash yet)
+        .map(async (entry) => {
+          const hash = await computeHashForEntry(entry);
+          if (hash) {
+            hashMapRef.current[entry.id] = hash;
+          }
+        });
+      await Promise.all(hashPromises);
+
+      // Re-detect across all currently loaded images
+      const currentImages = imagesRef.current;
+      const pairs = detectDuplicates(currentImages, []);
+      if (pairs.length > 0) {
+        setDuplicatePairs(pairs);
+        setDismissedDuplicates(false);
+      } else {
+        setDuplicatePairs([]);
+      }
+    }, 200);
+
     // Process EPS previews in background ONLY for unpaired EPS files
     newEntries
       .filter((e) => e.isEps && !e.isPaired)
@@ -298,13 +432,20 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     addImages(Array.from(e.dataTransfer.files));
   };
 
-  const removeImage = (id) =>
+  const removeImage = (id) => {
     setImages((prev) => prev.filter((img) => img.id !== id));
+    // Clean up hash entry and remove any duplicate pairs referencing this id
+    delete hashMapRef.current[id];
+    setDuplicatePairs((prev) => prev.filter((p) => p.id1 !== id && p.id2 !== id));
+  };
 
   const clearAll = () => {
     setImages([]);
     setUploadBatchIds([]);
     setActiveJobId(null);
+    hashMapRef.current = {};
+    setDuplicatePairs([]);
+    setDismissedDuplicates(false);
   };
 
   // ---------- Processing ----------
@@ -524,7 +665,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 const upscaleFolder = `${folderPath}${pathSeparator}Upscaled`;
                 const savePath = `${upscaleFolder}${pathSeparator}${baseName}_${upscaleScale}x${ext}`;
 
-                const saveRes = await window.electronAPI.saveFile(savePath, arrayBuffer);
+                const saveRes = await window.electronAPI.saveFile(savePath, new Uint8Array(arrayBuffer));
                 if (!saveRes.success) throw new Error(saveRes.error);
 
                 upscaledPath = savePath;
@@ -598,7 +739,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   };
                 }
               }
-              const p = embedMetadataToFiles([doneImg], false); // Let all active servers upload normally
+              const p = embedMetadataToFiles([doneImg], false, false, true); // skipOpenPortal = true
               embedPromises.push(p);
             }
           } catch (err) {
@@ -649,7 +790,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   
   // ---------- Embedding Metadata ----------
   
-  const embedMetadataToFiles = async (imagesToProcess, forceUpload = false, skipAdobeUpload = false) => {
+  const embedMetadataToFiles = async (imagesToProcess, forceUpload = false, skipAdobeUpload = false, skipOpenPortal = false) => {
     setShowPermissionModal(false);
     if (!window.electronAPI) return;
     
@@ -801,27 +942,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             showToast(`${embeddedImages.length}টি ফাইল সফলভাবে FTP-তে আপলোড করা হয়েছে!`, "success");
           }
 
-          // Automatically open/refresh contributor portals for active configurations
-          if (window.electronAPI?.openExternal) {
-            uploadConfigs.forEach(conf => {
-              const host = (conf.host || '').toLowerCase();
-              let portalUrl = null;
-              if (host.includes('adobestock') || host.includes('adobe') || host.includes('contributor.stock')) {
-                portalUrl = "https://contributor.stock.adobe.com/uploads";
-              } else if (host.includes('shutterstock')) {
-                portalUrl = "https://submit.shutterstock.com/";
-              } else if (host.includes('freepik')) {
-                portalUrl = "https://contributor.freepik.com/dashboard";
-              } else if (host.includes('vecteezy')) {
-                portalUrl = "https://contributors.vecteezy.com/dashboard";
-              } else if (host.includes('dreamstime')) {
-                portalUrl = "https://www.dreamstime.com/uploadfiles.php";
-              }
-              if (portalUrl) {
-                window.electronAPI.openExternal(portalUrl);
-              }
-            });
-          }
+
         } catch (uploadErr) {
           // Set all to error
           setImages(prev => prev.map(item => {
@@ -1122,6 +1243,115 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     );
   };
 
+  // ─── Grid: apply value to all selected rows ────────────────────────────────
+  const applyToSelected = (sourceId, field, value) => {
+    if (selectedRows.size < 2) return;
+    setImages((prev) =>
+      prev.map((img) => {
+        if (selectedRows.has(img.id) && img.result) {
+          return { ...img, result: { ...img.result, [field]: value } };
+        }
+        return img;
+      })
+    );
+  };
+
+  // ─── Grid: computed sorted+filtered list ───────────────────────────────────
+  const getGridImages = () => {
+    let list = [...images];
+    if (gridFilter.trim()) {
+      const q = gridFilter.toLowerCase();
+      list = list.filter(img =>
+        (img.file?.name || '').toLowerCase().includes(q) ||
+        (img.result?.title || '').toLowerCase().includes(q) ||
+        (img.result?.keywords || '').toLowerCase().includes(q)
+      );
+    }
+    if (gridSort.field) {
+      list.sort((a, b) => {
+        let av = '', bv = '';
+        if (gridSort.field === 'filename') { av = a.file?.name || ''; bv = b.file?.name || ''; }
+        else if (gridSort.field === 'status') { av = a.status || ''; bv = b.status || ''; }
+        else if (gridSort.field === 'title') { av = a.result?.title || ''; bv = b.result?.title || ''; }
+        else if (gridSort.field === 'score') { av = Number(a.result?.sellingScore ?? -1); bv = Number(b.result?.sellingScore ?? -1); }
+        if (typeof av === 'number') return gridSort.dir === 'asc' ? av - bv : bv - av;
+        return gridSort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+      });
+    }
+    return list;
+  };
+
+  // ─── Grid: toggle sort ────────────────────────────────────────────────────
+  const toggleSort = (field) => {
+    setGridSort(prev => ({
+      field,
+      dir: prev.field === field && prev.dir === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  // ─── Grid: keyboard navigation (Tab / Shift+Tab / ArrowDown / ArrowUp) ────
+  const GRID_FIELDS = ['title', 'description', 'keywords'];
+  const handleCellKeyDown = (e, imgId, field) => {
+    const gridImages = getGridImages();
+    const rowIndex = gridImages.findIndex(img => img.id === imgId);
+    const fieldIndex = GRID_FIELDS.indexOf(field);
+
+    let nextId = imgId, nextField = field;
+
+    if (e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault();
+      if (fieldIndex < GRID_FIELDS.length - 1) {
+        nextField = GRID_FIELDS[fieldIndex + 1];
+      } else if (rowIndex < gridImages.length - 1) {
+        nextField = GRID_FIELDS[0];
+        nextId = gridImages[rowIndex + 1].id;
+      }
+    } else if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault();
+      if (fieldIndex > 0) {
+        nextField = GRID_FIELDS[fieldIndex - 1];
+      } else if (rowIndex > 0) {
+        nextField = GRID_FIELDS[GRID_FIELDS.length - 1];
+        nextId = gridImages[rowIndex - 1].id;
+      }
+    } else if (e.key === 'ArrowDown' && e.ctrlKey) {
+      e.preventDefault();
+      if (rowIndex < gridImages.length - 1) nextId = gridImages[rowIndex + 1].id;
+    } else if (e.key === 'ArrowUp' && e.ctrlKey) {
+      e.preventDefault();
+      if (rowIndex > 0) nextId = gridImages[rowIndex - 1].id;
+    } else if (e.key === 'Enter' && e.ctrlKey) {
+      // Ctrl+Enter: apply this cell's value to all selected rows
+      const curImg = images.find(i => i.id === imgId);
+      if (curImg?.result) applyToSelected(imgId, field, curImg.result[field] || '');
+      return;
+    } else {
+      return; // normal typing
+    }
+
+    if (nextId !== imgId || nextField !== field) {
+      setActiveCell({ id: nextId, field: nextField });
+      const key = `${nextId}_${nextField}`;
+      setTimeout(() => cellRefs.current[key]?.focus(), 10);
+    }
+  };
+
+  // ─── Grid: toggle row selection ───────────────────────────────────────────
+  const toggleRowSelect = (id) => {
+    setSelectedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = () => {
+    const visible = getGridImages();
+    setSelectedRows(prev => {
+      if (prev.size === visible.length) return new Set();
+      return new Set(visible.map(i => i.id));
+    });
+  };
+
   const getProviderName = (prov) => {
     const map = {
       gemini: "Gemini",
@@ -1133,6 +1363,14 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     return map[prov] || "Gemini";
   };
   const activeProviderName = getProviderName(Array.isArray(apiProvider) ? apiProvider[0] : apiProvider);
+
+  // ─── Selling Score helpers ───────────────────────────────────────────
+  const getScoreMeta = (score) => {
+    if (score >= 80) return { label: 'Hot', emoji: '🔥', color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.3)', trackColor: '#10b981' };
+    if (score >= 60) return { label: 'Good', emoji: '✅', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.3)', trackColor: '#3b82f6' };
+    if (score >= 40) return { label: 'Average', emoji: '⚠️', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', trackColor: '#f59e0b' };
+    return { label: 'Low', emoji: '❌', color: '#ef4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.3)', trackColor: '#ef4444' };
+  };
 
   // ---------- Render ----------
 
@@ -1217,6 +1455,116 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             {isEmbedding ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             {isEmbedding ? 'Retrying...' : 'Retry Failed Uploads'}
           </button>
+        </div>
+      )}
+
+      {/* DUPLICATE DETECTION BANNER */}
+      {duplicatePairs.length > 0 && !dismissedDuplicates && (
+        <div
+          className="glass card animate-fade-in"
+          style={{
+            borderLeft: '4px solid #f59e0b',
+            background: 'rgba(245,158,11,0.05)',
+            padding: '0.85rem 1rem',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h3 style={{ color: '#f59e0b', fontSize: '0.95rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.55rem' }}>
+                <AlertTriangle style={{ width: '1rem', height: '1rem', flexShrink: 0 }} />
+                {duplicatePairs.length} Duplicate{duplicatePairs.length !== 1 ? 's' : ''} Detected
+                <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-3)', marginLeft: '0.25rem' }}>
+                  — এই ছবিগুলো প্রায় একই। স্টক সাইট reject করতে পারে!
+                </span>
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                {duplicatePairs.map((pair, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      background: 'rgba(245,158,11,0.08)',
+                      borderRadius: '0.4rem',
+                      padding: '0.3rem 0.6rem',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-1)', fontFamily: 'monospace', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={pair.name1}>
+                      {pair.name1}
+                    </span>
+                    <span style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: 700 }}>≈</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-1)', fontFamily: 'monospace', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={pair.name2}>
+                      {pair.name2}
+                    </span>
+                    <span style={{ fontSize: '0.65rem', background: pair.similarity >= 95 ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)', color: pair.similarity >= 95 ? '#ef4444' : '#f59e0b', borderRadius: '999px', padding: '1px 7px', fontWeight: 700, marginLeft: 'auto' }}>
+                      {pair.similarity}% match
+                    </span>
+                    <button
+                      title={`Remove "${pair.name2}" (keep first)`}
+                      onClick={() => removeImage(pair.id2)}
+                      style={{
+                        background: 'rgba(239,68,68,0.12)',
+                        border: '1px solid rgba(239,68,68,0.25)',
+                        color: '#ef4444',
+                        borderRadius: '0.35rem',
+                        padding: '2px 8px',
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        flexShrink: 0,
+                        transition: 'background 0.15s',
+                      }}
+                    >
+                      <Trash2 style={{ width: '0.6rem', height: '0.6rem' }} /> Remove 2nd
+                    </button>
+                    <button
+                      title={`Remove "${pair.name1}" (keep second)`}
+                      onClick={() => removeImage(pair.id1)}
+                      style={{
+                        background: 'rgba(239,68,68,0.12)',
+                        border: '1px solid rgba(239,68,68,0.25)',
+                        color: '#ef4444',
+                        borderRadius: '0.35rem',
+                        padding: '2px 8px',
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        flexShrink: 0,
+                        transition: 'background 0.15s',
+                      }}
+                    >
+                      <Trash2 style={{ width: '0.6rem', height: '0.6rem' }} /> Remove 1st
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <button
+              onClick={() => setDismissedDuplicates(true)}
+              title="Dismiss warning"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-3)',
+                cursor: 'pointer',
+                padding: '2px',
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                marginTop: '2px',
+              }}
+            >
+              <X style={{ width: '0.9rem', height: '0.9rem' }} />
+            </button>
+          </div>
         </div>
       )}
 
@@ -1332,7 +1680,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               <button
                 className="btn-icon"
                 style={{ padding: '0.3rem', borderRadius: '0.3rem', background: viewMode === 'card' ? 'var(--surface-3)' : 'transparent', color: viewMode === 'card' ? 'var(--text-1)' : 'var(--text-3)', border: 'none', cursor: 'pointer' }}
-                onClick={() => setViewMode('card')}
+                onClick={() => { setViewMode('card'); setSelectedRows(new Set()); }}
                 title="Card View"
               >
                 <List className="w-4 h-4" />
@@ -1346,6 +1694,23 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 <LayoutGrid className="w-4 h-4" />
               </button>
             </div>
+            {/* Grid quick filter & selected count */}
+            {viewMode === 'grid' && (
+              <div className="flex items-center gap-2" style={{ marginRight: '0.5rem' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Filter rows..."
+                  value={gridFilter}
+                  onChange={e => setGridFilter(e.target.value)}
+                  className="grid-filter-input"
+                />
+                {selectedRows.size > 0 && (
+                  <span className="grid-selected-pill">
+                    {selectedRows.size} selected · Ctrl+Enter to apply
+                  </span>
+                )}
+              </div>
+            )}
 
             <div 
               className="flex items-center gap-1.5 text-sm select-none mr-2"
@@ -1500,152 +1865,230 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       })()}
 
       {/* View Container */}
-      {viewMode === 'grid' && (
-        <div className="grid-view-container">
-          <table className="bulk-edit-table">
-            <thead>
-              <tr>
-                <th className="col-width-preview">Preview</th>
-                <th className="col-width-filename">Filename</th>
-                <th className="col-width-title">Title</th>
-                <th className="col-width-description">Description</th>
-                <th className="col-width-keywords">Keywords</th>
-                <th className="col-width-status">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {images.map(img => (
-                <tr key={img.id}>
-                  {/* Thumbnail Preview */}
-                  <td>
-                    <div className="grid-thumb-container">
-                      {img.preview ? (
-                        <img src={img.preview} alt="preview" className="grid-thumb-img" />
-                      ) : img.isVideo ? (
-                        <Video className="w-5 h-5 text-purple-500" />
-                      ) : (
-                        <Loader2 className="w-5 h-5 text-primary animate-spin" />
-                      )}
-                    </div>
-                  </td>
-
-                  {/* Filename & Type/Size badges */}
-                  <td>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                      <span className="font-mono" style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-1)', wordBreak: 'break-all' }}>
-                        {img.file?.name || img.renamedName}
-                      </span>
-                      <div className="flex gap-1.5 items-center flex-wrap">
-                        {img.isEps && <span className="eps-badge" style={{ fontSize: '0.6rem', padding: '1px 5px' }}>EPS</span>}
-                        {img.isVideo && <span className="eps-indicator" style={{ position: 'static', transform: 'none', fontSize: '0.6rem', padding: '1px 5px', background: 'rgba(124,58,237,0.15)', color: '#a855f7' }}>Video</span>}
-                        {!img.isEps && !img.isVideo && <span className="img-badge" style={{ fontSize: '0.6rem', padding: '1px 5px' }}>IMG</span>}
-                        {img.file?.size && (
-                          <span style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>
-                            {(img.file.size / (1024 * 1024)).toFixed(2)} MB
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-
-                  {/* Title editor */}
-                  <td>
-                    <div className={`grid-cell-editor ${activeCell?.id === img.id && activeCell?.field === 'title' ? 'focused' : ''}`}>
-                      <textarea 
-                        className="bulk-edit-input" 
-                        value={img.result?.title || ''} 
-                        onChange={(e) => handleMetaChange(img.id, 'title', e.target.value)}
-                        onFocus={() => setActiveCell({ id: img.id, field: 'title' })}
-                        onBlur={() => setActiveCell(null)}
-                        disabled={!img.result}
-                        placeholder={img.status === 'done' ? 'Enter title...' : '-'}
-                      />
-                      {img.result && (
-                        <span className={`grid-cell-counter ${getTitleCounterClass(img.result.title)}`}>
-                          {img.result.title?.length || 0} / 150
-                        </span>
-                      )}
-                    </div>
-                  </td>
-
-                  {/* Description editor */}
-                  <td>
-                    <div className={`grid-cell-editor ${activeCell?.id === img.id && activeCell?.field === 'description' ? 'focused' : ''}`}>
-                      <textarea 
-                        className="bulk-edit-input" 
-                        value={img.result?.description || ''} 
-                        onChange={(e) => handleMetaChange(img.id, 'description', e.target.value)}
-                        onFocus={() => setActiveCell({ id: img.id, field: 'description' })}
-                        onBlur={() => setActiveCell(null)}
-                        disabled={!img.result}
-                        placeholder={img.status === 'done' ? 'Enter description...' : '-'}
-                      />
-                      {img.result && (
-                        <span className={`grid-cell-counter ${getDescriptionCounterClass(img.result.description)}`}>
-                          {img.result.description?.length || 0} / 250
-                        </span>
-                      )}
-                    </div>
-                  </td>
-
-                  {/* Keywords editor */}
-                  <td>
-                    <div className={`grid-cell-editor ${activeCell?.id === img.id && activeCell?.field === 'keywords' ? 'focused' : ''}`}>
-                      <textarea 
-                        className="bulk-edit-input" 
-                        value={img.result?.keywords || ''} 
-                        onChange={(e) => handleMetaChange(img.id, 'keywords', e.target.value)}
-                        onFocus={() => setActiveCell({ id: img.id, field: 'keywords' })}
-                        onBlur={() => setActiveCell(null)}
-                        disabled={!img.result}
-                        placeholder={img.status === 'done' ? 'Enter keywords...' : '-'}
-                      />
-                      {img.result && (
-                        <span className={`grid-cell-counter ${getKeywordsCounterClass(img.result.keywords)}`}>
-                          {(img.result.keywords || '').split(',').map(k => k.trim()).filter(Boolean).length} / 50 kws
-                        </span>
-                      )}
-                    </div>
-                  </td>
-
-                  {/* Status & Row Action */}
-                  <td>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem', marginTop: '0.25rem' }}>
-                      <StatusBadge status={img.status} />
-                      
-                      {img.embeddingStatus && img.embeddingStatus !== 'none' && (
-                        <div 
-                          className={`px-2 py-0.5 rounded text-[9px] font-bold text-center ${
-                            img.embeddingStatus === 'embedding' ? 'bg-indigo-500/10 text-indigo-400 animate-pulse' :
-                            img.embeddingStatus === 'uploading' ? 'bg-amber-500/10 text-amber-500' :
-                            img.embeddingStatus === 'success' ? 'bg-green-500/10 text-green-400' :
-                            'bg-red-500/10 text-red-400'
-                          }`}
-                          style={{ maxWidth: '80px', wordBreak: 'break-all' }}
-                          title={img.embeddingStatus === 'error' ? img.embeddingError : ''}
-                        >
-                          {img.embeddingStatus === 'embedding' && 'Embedding'}
-                          {img.embeddingStatus === 'uploading' && 'FTP Uploading'}
-                          {img.embeddingStatus === 'success' && 'Embedded'}
-                          {img.embeddingStatus === 'error' && 'Failed'}
-                        </div>
-                      )}
-
-                      <button 
-                        onClick={() => removeImage(img.id)}
-                        className="grid-row-remove-btn"
-                        title="Delete Row"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
+      {viewMode === 'grid' && (() => {
+        const gridImages = getGridImages();
+        const allSelected = gridImages.length > 0 && selectedRows.size === gridImages.length;
+        const SortIcon = ({ field }) => {
+          if (gridSort.field !== field) return <span className="grid-sort-arrow idle">⇅</span>;
+          return <span className="grid-sort-arrow active">{gridSort.dir === 'asc' ? '↑' : '↓'}</span>;
+        };
+        return (
+          <div className="grid-view-container">
+            {/* Bulk action bar */}
+            {selectedRows.size > 0 && (
+              <div className="grid-bulk-bar">
+                <span className="grid-bulk-bar-count">
+                  ✓ {selectedRows.size} row{selectedRows.size > 1 ? 's' : ''} selected
+                </span>
+                <span className="grid-bulk-bar-hint">— Ctrl+Enter in any cell to copy that value to all selected rows</span>
+                <button onClick={() => setSelectedRows(new Set())} className="grid-bulk-bar-clear">Clear</button>
+              </div>
+            )}
+            <table className="bulk-edit-table">
+              <thead>
+                <tr>
+                  {/* Select-all checkbox */}
+                  <th style={{ width: 40, textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      title="Select / Deselect all"
+                      className="grid-checkbox"
+                    />
+                  </th>
+                  <th className="col-width-preview">Preview</th>
+                  <th className="col-width-filename sortable" onClick={() => toggleSort('filename')}>
+                    Filename <SortIcon field="filename" />
+                  </th>
+                  <th className="col-width-title sortable" onClick={() => toggleSort('title')}>
+                    Title <SortIcon field="title" />
+                  </th>
+                  <th className="col-width-description">Description</th>
+                  <th className="col-width-keywords">Keywords</th>
+                  <th className="col-width-status sortable" onClick={() => toggleSort('status')}>
+                    Status <SortIcon field="status" />
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {gridImages.map(img => {
+                  const isSelected = selectedRows.has(img.id);
+                  return (
+                    <tr
+                      key={img.id}
+                      className={isSelected ? 'row-selected' : ''}
+                    >
+                      {/* Row checkbox */}
+                      <td className="grid-td-check">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleRowSelect(img.id)}
+                          className="grid-checkbox"
+                        />
+                      </td>
+
+                      {/* Thumbnail Preview */}
+                      <td className="grid-td-preview">
+                        <div className="grid-thumb-wrap">
+                          {img.preview ? (
+                            <img src={img.preview} alt="preview" />
+                          ) : img.isVideo ? (
+                            <Video className="w-6 h-6 text-purple-500" />
+                          ) : (
+                            <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Filename & Type/Size badges */}
+                      <td className="grid-td-filename">
+                        <span className="grid-filename-name" title={img.file?.name || img.renamedName}>
+                          {img.file?.name || img.renamedName}
+                        </span>
+                        <div className="grid-filename-badges">
+                          {img.isEps && <span className="eps-badge" style={{ fontSize: '0.55rem', padding: '1px 4px' }}>EPS</span>}
+                          {img.isVideo && <span className="eps-indicator" style={{ position: 'static', transform: 'none', fontSize: '0.55rem', padding: '1px 4px', background: 'rgba(124,58,237,0.15)', color: '#a855f7' }}>Video</span>}
+                          {!img.isEps && !img.isVideo && <span className="img-badge" style={{ fontSize: '0.55rem', padding: '1px 4px' }}>IMG</span>}
+                          {img.file?.size && (
+                            <span className="grid-filesize-badge">
+                              {(img.file.size / (1024 * 1024)).toFixed(2)} MB
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Title editor */}
+                      <td className="grid-td-editor">
+                        <div className={`grid-cell-editor ${activeCell?.id === img.id && activeCell?.field === 'title' ? 'focused' : ''}`}>
+                          <textarea
+                            ref={el => { cellRefs.current[`${img.id}_title`] = el; }}
+                            className="bulk-edit-input"
+                            value={img.result?.title || ''}
+                            onChange={(e) => handleMetaChange(img.id, 'title', e.target.value)}
+                            onFocus={() => setActiveCell({ id: img.id, field: 'title' })}
+                            onBlur={() => setActiveCell(null)}
+                            onKeyDown={(e) => handleCellKeyDown(e, img.id, 'title')}
+                            disabled={!img.result}
+                            placeholder={img.status === 'done' ? 'Enter title…' : '—'}
+                          />
+                          {img.result && (
+                            <span className={`grid-cell-counter ${getTitleCounterClass(img.result.title)}`}>
+                              {img.result.title?.length || 0} / 150
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Description editor */}
+                      <td className="grid-td-editor">
+                        <div className={`grid-cell-editor ${activeCell?.id === img.id && activeCell?.field === 'description' ? 'focused' : ''}`}>
+                          <textarea
+                            ref={el => { cellRefs.current[`${img.id}_description`] = el; }}
+                            className="bulk-edit-input"
+                            value={img.result?.description || ''}
+                            onChange={(e) => handleMetaChange(img.id, 'description', e.target.value)}
+                            onFocus={() => setActiveCell({ id: img.id, field: 'description' })}
+                            onBlur={() => setActiveCell(null)}
+                            onKeyDown={(e) => handleCellKeyDown(e, img.id, 'description')}
+                            disabled={!img.result}
+                            placeholder={img.status === 'done' ? 'Enter description…' : '—'}
+                          />
+                          {img.result && (
+                            <span className={`grid-cell-counter ${getDescriptionCounterClass(img.result.description)}`}>
+                              {img.result.description?.length || 0} / 250
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Keywords editor */}
+                      <td className="grid-td-editor">
+                        <div className={`grid-cell-editor ${activeCell?.id === img.id && activeCell?.field === 'keywords' ? 'focused' : ''}`}>
+                          <textarea
+                            ref={el => { cellRefs.current[`${img.id}_keywords`] = el; }}
+                            className="bulk-edit-input"
+                            value={img.result?.keywords || ''}
+                            onChange={(e) => handleMetaChange(img.id, 'keywords', e.target.value)}
+                            onFocus={() => setActiveCell({ id: img.id, field: 'keywords' })}
+                            onBlur={() => setActiveCell(null)}
+                            onKeyDown={(e) => handleCellKeyDown(e, img.id, 'keywords')}
+                            disabled={!img.result}
+                            placeholder={img.status === 'done' ? 'Enter keywords…' : '—'}
+                          />
+                          {img.result && (
+                            <span className={`grid-cell-counter ${getKeywordsCounterClass(img.result.keywords)}`}>
+                              {(img.result.keywords || '').split(',').map(k => k.trim()).filter(Boolean).length} / 50 kws
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Status & Row Action */}
+                      <td className="grid-td-status">
+                        <div className="grid-status-stack">
+                          <StatusBadge status={img.status} />
+
+                          {/* Selling Score */}
+                          {img.result?.sellingScore !== undefined && img.result?.sellingScore !== null && (() => {
+                            const sc = Number(img.result.sellingScore);
+                            const meta = getScoreMeta(sc);
+                            return (
+                              <div
+                                title={img.result.scoreReason || `Selling Score: ${sc}/100`}
+                                style={{
+                                  background: meta.bg,
+                                  border: `1px solid ${meta.border}`,
+                                  color: meta.color,
+                                  borderRadius: '999px',
+                                  padding: '1px 6px',
+                                  fontSize: '0.65rem',
+                                  fontWeight: 800,
+                                  cursor: 'default',
+                                }}
+                              >
+                                {meta.emoji} {sc}
+                              </div>
+                            );
+                          })()}
+
+                          {/* Embedding Status */}
+                          {img.embeddingStatus && img.embeddingStatus !== 'none' && (
+                            <div
+                              className={`grid-embed-chip ${
+                                img.embeddingStatus === 'embedding' ? 'bg-indigo-500/10 text-indigo-500 animate-pulse' :
+                                img.embeddingStatus === 'uploading' ? 'bg-amber-500/10 text-amber-500' :
+                                img.embeddingStatus === 'success' ? 'bg-green-500/10 text-green-500' :
+                                'bg-red-500/10 text-red-500'
+                              }`}
+                              title={img.embeddingStatus === 'error' ? img.embeddingError : ''}
+                            >
+                              {img.embeddingStatus === 'embedding' && 'Embedding'}
+                              {img.embeddingStatus === 'uploading' && 'FTP'}
+                              {img.embeddingStatus === 'success' && 'Embedded'}
+                              {img.embeddingStatus === 'error' && 'Failed'}
+                            </div>
+                          )}
+
+                          <button onClick={() => removeImage(img.id)} className="grid-row-remove-btn" title="Delete Row">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {gridImages.length === 0 && gridFilter && (
+              <div className="grid-no-results">
+                No rows match <strong>"{gridFilter}"</strong>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {viewMode !== 'grid' && (
       <div className="grid grid-cols-1 gap-4">
@@ -1690,6 +2133,33 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 <div className="eps-indicator" style={{ background: 'linear-gradient(135deg, #7c3aed, #a855f7)' }} title="Video File">
                   <Video className="w-2.5 h-2.5" />
                   Video
+                </div>
+              )}
+
+              {/* Duplicate badge on thumbnail */}
+              {duplicatePairs.some((p) => p.id1 === img.id || p.id2 === img.id) && (
+                <div
+                  title="Near-duplicate detected!"
+                  style={{
+                    position: 'absolute',
+                    bottom: '22px',
+                    left: '4px',
+                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                    color: '#fff',
+                    borderRadius: '4px',
+                    padding: '1px 5px',
+                    fontSize: '0.6rem',
+                    fontWeight: 800,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '2px',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+                    zIndex: 3,
+                    letterSpacing: '0.03em',
+                  }}
+                >
+                  <AlertTriangle style={{ width: '0.55rem', height: '0.55rem' }} />
+                  DUP
                 </div>
               )}
 
@@ -1749,6 +2219,52 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                       </div>
                     </div>
                   )}
+
+                  {/* ─── SELLING SCORE GAUGE ─── */}
+                  {img.result.sellingScore !== undefined && img.result.sellingScore !== null && (() => {
+                    const sc = Math.max(0, Math.min(100, Number(img.result.sellingScore)));
+                    const meta = getScoreMeta(sc);
+                    const R = 22; const cx = 28; const cy = 28;
+                    const circ = 2 * Math.PI * R;
+                    const offset = circ - (sc / 100) * circ;
+                    return (
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: '0.75rem',
+                        marginTop: '0.65rem', padding: '0.55rem 0.8rem',
+                        background: meta.bg, border: `1px solid ${meta.border}`,
+                        borderRadius: '0.6rem',
+                      }}>
+                        {/* SVG circular arc */}
+                        <svg width="56" height="56" style={{ flexShrink: 0, filter: `drop-shadow(0 0 5px ${meta.trackColor}66)` }}>
+                          <circle cx={cx} cy={cy} r={R} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="5" />
+                          <circle
+                            cx={cx} cy={cy} r={R} fill="none"
+                            stroke={meta.trackColor} strokeWidth="5"
+                            strokeLinecap="round"
+                            strokeDasharray={circ} strokeDashoffset={offset}
+                            transform={`rotate(-90 ${cx} ${cy})`}
+                            style={{ transition: 'stroke-dashoffset 1.1s cubic-bezier(.4,0,.2,1)' }}
+                          />
+                          <text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="middle"
+                            fontSize="11" fontWeight="800" fill={meta.trackColor}>{sc}</text>
+                        </svg>
+                        {/* Right: label + reason */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: meta.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              {meta.emoji} {meta.label} Score
+                            </span>
+                            <span style={{ fontSize: '0.63rem', color: 'var(--text-3)', fontWeight: 500 }}>/ 100</span>
+                          </div>
+                          {img.result.scoreReason && (
+                            <p style={{ fontSize: '0.72rem', color: 'var(--text-2)', margin: '0.18rem 0 0', lineHeight: 1.4, fontStyle: 'italic' }}>
+                              {img.result.scoreReason}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

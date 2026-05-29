@@ -9,7 +9,8 @@ import { FtpUploader } from './components/FtpUploader'
 import { FtpConfigManager } from './components/FtpConfigManager'
 import { EpsPreviewGenerator } from './components/EpsPreviewGenerator'
 import { ImageUpscaler } from './components/ImageUpscaler'
-import { Sparkles, Zap, Image as ImageIcon, Eraser, Box, ChevronLeft, ChevronRight, Server, Key, Camera, Maximize } from 'lucide-react'
+import { AiImageGenerator } from './components/AiImageGenerator'
+import { Sparkles, Zap, Image as ImageIcon, Eraser, Box, ChevronLeft, ChevronRight, Server, Key, Camera, Maximize, Cpu } from 'lucide-react'
 
 function App() {
   const [apiKeys, setApiKeys] = useState([])
@@ -147,6 +148,7 @@ function App() {
               { id: 'removebg', icon: Eraser, label: 'Background Remover' },
               { id: 'vector', icon: Box, label: 'Vector Magic' },
               { id: 'upscale', icon: Maximize, label: 'AI Image Upscaler' },
+              { id: 'aiimage', icon: Cpu, label: 'Cloud GPU Image Gen' },
               { id: 'ftp', icon: Server, label: 'FTP Upload System' },
             ].map(tab => (
               <button
@@ -266,6 +268,9 @@ function App() {
         </div>
         <div style={{ display: activeTab === 'upscale' ? 'block' : 'none', width: '100%', height: '100%' }}>
           <ImageUpscaler />
+        </div>
+        <div style={{ display: activeTab === 'aiimage' ? 'block' : 'none', width: '100%', height: '100%' }}>
+          <AiImageGenerator apiKeys={apiKeys} apiProvider={apiProvider} />
         </div>
         <div style={{ display: activeTab === 'epspreview' ? 'block' : 'none', width: '100%', height: '100%' }}>
           <EpsPreviewGenerator />

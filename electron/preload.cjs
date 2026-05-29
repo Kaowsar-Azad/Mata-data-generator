@@ -29,5 +29,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFiles: (options) => ipcRenderer.invoke('select-files', options),
   saveFile: (filePath, bufferArray) => ipcRenderer.invoke('save-file', filePath, bufferArray),
   extractVideoFrame: (filePath) => ipcRenderer.invoke('extract-video-frame', filePath),
+  startColab: (url) => ipcRenderer.invoke('start-colab', url),
+  stopColab: () => ipcRenderer.invoke('stop-colab'),
+  showColab: () => ipcRenderer.invoke('show-colab'),
+  onColabStatus: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('colab-status', listener);
+    return () => {
+      ipcRenderer.removeListener('colab-status', listener);
+    };
+  }
 });
 

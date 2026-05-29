@@ -236,8 +236,47 @@ Keyword rules (apply to all modes):
 == CATEGORY ==
 Choose 1-2 best-fit from: ${categoryList}
 
+== SELLING SCORE ==
+Evaluate this image's COMMERCIAL POTENTIAL for stock photo marketplaces (Adobe Stock, Shutterstock, Getty).
+Score each dimension using the anchored scale below, then sum for a final sellingScore.
+
+DIMENSION 1 — COMMERCIAL CONCEPT APPEAL (0-35 pts)
+  Scoring anchors (be strict — most images score 15-25):
+  30-35: Timeless evergreen concept (business teamwork, happy family, nature sunset) with universal appeal
+  20-29: Popular but somewhat competitive concept (food, travel, technology, healthcare)
+  10-19: Niche or limited-appeal concept (very local, highly specific, personal/artistic)
+  0-9:   Obscure, abstract with no clear commercial use case
+
+DIMENSION 2 — SUBJECT CLARITY (0-25 pts)
+  Scoring anchors (most images score 12-20):
+  22-25: Single clear subject, perfectly isolated or composed, instantly obvious purpose
+  15-21: Clear main subject, minor distractions or slight composition issues
+  7-14:  Subject is identifiable but cluttered, busy, or ambiguous framing
+  0-6:   Confusing, unclear, or hard to identify what the image is about
+
+DIMENSION 3 — TECHNICAL VISUAL QUALITY (0-25 pts)
+  Scoring anchors (most images score 12-20):
+  22-25: Professional quality — sharp, excellent lighting, accurate colors, clean finish
+  15-21: Good quality — minor sharpness/lighting issues but clearly usable
+  7-14:  Acceptable — noticeable noise, flat lighting, or color issues
+  0-6:   Poor quality — blurry, heavily noised, or technically inadequate for stock
+
+DIMENSION 4 — MARKET DEMAND & TREND (0-15 pts)
+  Scoring anchors:
+  12-15: Currently high-demand topic (AI/tech, sustainability, remote work, diversity, wellness)
+  7-11:  Consistently popular evergreen topic
+  3-6:   Declining, oversaturated, or niche trend
+  0-2:   No identifiable demand trend
+
+SCORING RULES (CRITICAL — follow precisely):
+- Compute each dimension score separately, then ADD them for the final total.
+- Be realistic: average stock-worthy image scores 45-65. Only truly exceptional images exceed 80.
+- DO NOT round all images to similar scores. Differentiate clearly between poor (30-44), average (45-64), good (65-79), and exceptional (80+) images.
+- Output sellingScore as a single integer (the sum of all 4 dimensions).
+- In "scoreReason": write exactly 1 sentence (max 15 words) naming the PRIMARY factor — the single biggest strength or weakness.
+
 Output ONLY valid JSON, no markdown:
-{"title":"...","description":"...","keywords":"kw1, kw2, kw3${s.smartMode ? '' : `, ... (${s.keywordCount} total)`}","categories":["Cat1"]}`;
+{"title":"...","description":"...","keywords":"kw1, kw2, kw3${s.smartMode ? '' : `, ... (${s.keywordCount} total)`}","categories":["Cat1"],"sellingScore":62,"scoreReason":"Clear evergreen business concept but technical quality is limited by flat lighting."}`;
 }
 
 

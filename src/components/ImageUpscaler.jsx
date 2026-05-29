@@ -97,7 +97,7 @@ export function ImageUpscaler() {
       const baseName = lastDot > -1 ? fileObj.name.substring(0, lastDot) : fileObj.name;
       const savePath = `${outputFolder}${pathSeparator}${baseName}_${currentScale}x${ext}`;
       
-      const saveRes = await window.electronAPI.saveFile(savePath, arrayBuffer);
+      const saveRes = await window.electronAPI.saveFile(savePath, new Uint8Array(arrayBuffer));
       if (!saveRes.success) throw new Error(saveRes.error);
       
       return { success: true, path: savePath };

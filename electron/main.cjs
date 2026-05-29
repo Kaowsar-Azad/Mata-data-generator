@@ -1404,10 +1404,48 @@ ipcMain.handle('save-file', async (event, filePath, bufferArray) => {
 
 // Colab Cloud GPU Engine Handlers
 let colabWindow = null;
+let colabScanInterval = null;
+
+function scanFramesForGradioLink(frame, onFound) {
+  if (!frame) return;
+  
+  // Try to execute script in this frame to find links or printed text containing links
+  frame.executeJavaScript(`
+    (() => {
+      const links = document.querySelectorAll('a');
+      for (let a of links) {
+        if (a.href && (a.href.includes('.gradio.live') || a.href.includes('ngrok-free.app') || a.href.includes('trycloudflare.com') || a.href.includes('loca.lt'))) {
+          return a.href;
+        }
+      }
+      const bodyText = document.body ? document.body.innerText : '';
+      const match = bodyText.match(/https?:\\/\\/[a-zA-Z0-9-]+\\.(gradio\\.live|ngrok-free\\.app|trycloudflare\\.com|loca\\.lt)/);
+      if (match) {
+        return match[0];
+      }
+      return null;
+    })()
+  `).then(link => {
+    if (link) {
+      onFound(link);
+    }
+  }).catch(err => {
+    // Suppress frame execution errors
+  });
+
+  // Recurse into child frames
+  if (frame.frames && frame.frames.length > 0) {
+    frame.frames.forEach(child => scanFramesForGradioLink(child, onFound));
+  }
+}
 
 ipcMain.handle('start-colab', async (event, url) => {
   if (colabWindow) {
     colabWindow.close();
+  }
+  if (colabScanInterval) {
+    clearInterval(colabScanInterval);
+    colabScanInterval = null;
   }
   
   colabWindow = new BrowserWindow({
@@ -1425,7 +1463,7 @@ ipcMain.handle('start-colab', async (event, url) => {
   colabWindow.setMenu(null);
   colabWindow.loadURL(url);
 
-  // Inject observer to find gradio link and auto-click Run All
+  // Inject observer to find gradio link and auto-click Run All in the main frame
   colabWindow.webContents.on('did-finish-load', () => {
     colabWindow.webContents.executeJavaScript(`
       (function() {
@@ -1459,21 +1497,96 @@ ipcMain.handle('start-colab', async (event, url) => {
     `).catch(err => fileLog('[Colab] Inject Error:', err.message));
   });
 
+  // Watch for main page title updates (fallback)
   colabWindow.on('page-title-updated', (e, title) => {
     if (title.startsWith('GRADIO_LINK:')) {
       const link = title.replace('GRADIO_LINK:', '').trim();
-      fileLog('[Colab] Found Gradio link:', link);
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('colab-status', { status: 'connected', url: link });
+      
+      if (global.testedLinks && global.testedLinks.has(link + "_dead")) {
+        return;
       }
-      // Hide the window so it continues running in background
-      if (colabWindow) {
-        colabWindow.hide();
-      }
+      
+      fileLog('[Colab] Found potential Gradio link via title:', link);
+      
+      // Ping the server to verify it's alive and responsive
+      fetch(link.replace(/\/$/, '') + '/system_info', {
+        headers: { 'bypass-tunnel-reminder': 'true' }
+      }).then(res => {
+        if (res.ok) {
+          fileLog('[Colab] Verified live link via title:', link);
+          if (colabScanInterval) {
+            clearInterval(colabScanInterval);
+            colabScanInterval = null;
+          }
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('colab-status', { status: 'connected', url: link });
+          }
+          if (colabWindow) {
+            colabWindow.hide();
+          }
+        } else {
+          fileLog('[Colab] Link from title returned non-ok status:', link, res.status);
+          if (global.testedLinks) global.testedLinks.add(link + "_dead");
+        }
+      }).catch(err => {
+        fileLog('[Colab] Link from title ping failed:', link, err.message);
+        if (global.testedLinks) global.testedLinks.add(link + "_dead");
+      });
     }
   });
 
+  // Start periodic recursive frame scanning (handles sandboxed output iframes)
+  colabScanInterval = setInterval(() => {
+    if (!colabWindow || colabWindow.isDestroyed()) {
+      clearInterval(colabScanInterval);
+      colabScanInterval = null;
+      return;
+    }
+    
+    scanFramesForGradioLink(colabWindow.webContents.mainFrame, (link) => {
+      // Avoid scanning same link repeatedly if we already know it's dead or being tested
+      if (global.testedLinks && global.testedLinks.has(link)) {
+        return;
+      }
+      if (!global.testedLinks) {
+        global.testedLinks = new Set();
+      }
+      global.testedLinks.add(link);
+      
+      fileLog('[Colab] Found potential Gradio link via frame scan, testing:', link);
+      
+      // Ping the server to verify it's alive and responsive
+      fetch(link.replace(/\/$/, '') + '/system_info', {
+        headers: { 'bypass-tunnel-reminder': 'true' }
+      }).then(res => {
+        if (res.ok) {
+          fileLog('[Colab] Verified live link via frame scan:', link);
+          if (colabScanInterval) {
+            clearInterval(colabScanInterval);
+            colabScanInterval = null;
+          }
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('colab-status', { status: 'connected', url: link });
+          }
+          if (colabWindow) {
+            colabWindow.hide();
+          }
+        } else {
+          fileLog('[Colab] Link from frame scan returned non-ok status:', link, res.status);
+          global.testedLinks.add(link + "_dead");
+        }
+      }).catch(err => {
+        fileLog('[Colab] Link from frame scan ping failed:', link, err.message);
+        global.testedLinks.add(link + "_dead");
+      });
+    });
+  }, 3000);
+
   colabWindow.on('closed', () => {
+    if (colabScanInterval) {
+      clearInterval(colabScanInterval);
+      colabScanInterval = null;
+    }
     colabWindow = null;
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('colab-status', { status: 'disconnected' });
@@ -1484,6 +1597,10 @@ ipcMain.handle('start-colab', async (event, url) => {
 });
 
 ipcMain.handle('stop-colab', async () => {
+  if (colabScanInterval) {
+    clearInterval(colabScanInterval);
+    colabScanInterval = null;
+  }
   if (colabWindow) {
     colabWindow.close();
     colabWindow = null;
@@ -1497,3 +1614,4 @@ ipcMain.handle('show-colab', async () => {
   }
   return { success: true };
 });
+

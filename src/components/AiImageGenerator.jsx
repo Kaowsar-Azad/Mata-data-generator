@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Cpu, Wand2, Power, Eye, AlertTriangle, CheckCircle, Loader2, Settings2, Download, Image as ImageIcon, History, Sparkles, Upload, Trash2, Maximize2 } from "lucide-react";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const DEFAULT_COMFYUI_URL = "https://your-comfyui-colab-url.loca.lt";
+const DEFAULT_COMFYUI_URL = "https://colab.research.google.com/github/sayantan-2/comfyui_colab_Flux/blob/main/comfyui_colab_Flux.ipynb";
 
 const STYLES = [
   { id: "realistic", label: "Realistic / Photography", promptRef: "realistic photography, highly detailed, 8k resolution, photorealistic, RAW photo, cinematic lighting" },
@@ -12,7 +12,7 @@ const STYLES = [
   { id: "none", label: "None (Raw Prompt)", promptRef: "" }
 ];
 
-export function AiImageGenerator({ apiKeys, apiProvider }) {
+export function AiImageGenerator({ apiKeys }) {
   const [colabUrl, setColabUrl] = useState(DEFAULT_COMFYUI_URL);
   const [status, setStatus] = useState("disconnected");
   const [serverUrl, setServerUrl] = useState("");
@@ -22,7 +22,6 @@ export function AiImageGenerator({ apiKeys, apiProvider }) {
   const [denoising, setDenoising] = useState(0.75);
 
   const [prompt, setPrompt] = useState("");
-  const [negativePrompt, setNegativePrompt] = useState(""); // FLUX barely uses this, but we keep it
   const [selectedStyle, setSelectedStyle] = useState(STYLES[0]);
   const [aspectRatio, setAspectRatio] = useState("1:1");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -40,7 +39,9 @@ export function AiImageGenerator({ apiKeys, apiProvider }) {
     if (saved) {
       try {
         setHistory(JSON.parse(saved));
-      } catch (e) {}
+      } catch (err) {
+        console.error("Failed to parse history:", err);
+      }
     }
 
     if (window.electronAPI?.onColabStatus) {
@@ -85,6 +86,30 @@ export function AiImageGenerator({ apiKeys, apiProvider }) {
     } catch (err) {
       setStatus("disconnected");
       setError(err.message);
+    }
+  };
+
+  const handleConnectDirect = async () => {
+    setStatus("connecting");
+    setError(null);
+    try {
+      const cleanUrl = colabUrl.trim().replace(/\/$/, '');
+      const pingUrl = `${cleanUrl}/system_info`;
+      
+      const res = await fetch(pingUrl, {
+        headers: { "bypass-tunnel-reminder": "true" }
+      });
+      
+      if (!res.ok) {
+        throw new Error(`Server returned status ${res.status}`);
+      }
+      
+      setStatus("connected");
+      setServerUrl(cleanUrl);
+      setError(null);
+    } catch (err) {
+      setStatus("disconnected");
+      setError(`Failed to connect to ComfyUI server: ${err.message}. Make sure the URL is correct and the server is fully running.`);
     }
   };
 
@@ -160,12 +185,15 @@ Return ONLY the enhanced prompt, no conversational text. Focus on lighting, came
         
         const uploadRes = await fetch(`${apiUrl}/upload/image`, {
           method: 'POST',
+          headers: {
+            "bypass-tunnel-reminder": "true"
+          },
           body: formData
         });
         const uploadData = await uploadRes.json();
         uploadedImageName = uploadData.name;
-      } catch (e) {
-        throw new Error("Failed to upload Init Image to ComfyUI server.");
+      } catch (err) {
+        throw new Error(`Failed to upload Init Image to ComfyUI server: ${err.message}`);
       }
     }
 
@@ -239,7 +267,10 @@ Return ONLY the enhanced prompt, no conversational text. Focus on lighting, came
 
     const res = await fetch(`${apiUrl}/prompt`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'bypass-tunnel-reminder': 'true'
+      },
       body: JSON.stringify(promptJson)
     });
 
@@ -253,7 +284,11 @@ Return ONLY the enhanced prompt, no conversational text. Focus on lighting, came
     
     while (!isComplete) {
       await new Promise(r => setTimeout(r, 2000));
-      const historyRes = await fetch(`${apiUrl}/history/${promptId}`);
+      const historyRes = await fetch(`${apiUrl}/history/${promptId}`, {
+        headers: {
+          'bypass-tunnel-reminder': 'true'
+        }
+      });
       const historyData = await historyRes.json();
       
       if (historyData[promptId]) {
@@ -273,7 +308,11 @@ Return ONLY the enhanced prompt, no conversational text. Focus on lighting, came
     if (!finalImageUrl) throw new Error("Generation finished but no image was found in output.");
 
     // Convert URL to Base64 so we can save it locally offline
-    const imgRes = await fetch(finalImageUrl);
+    const imgRes = await fetch(finalImageUrl, {
+      headers: {
+        'bypass-tunnel-reminder': 'true'
+      }
+    });
     const blob = await imgRes.blob();
     const reader = new FileReader();
     
@@ -405,12 +444,18 @@ Return ONLY the enhanced prompt, no conversational text. Focus on lighting, came
               </div>
               
               {status === 'disconnected' ? (
-                <button onClick={handleStartColab} style={{ background: 'linear-gradient(135deg, var(--primary), var(--secondary))', border: 'none', color: '#fff', padding: '0.6rem 1.2rem', borderRadius: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', boxShadow: '0 4px 12px rgba(37,99,235,0.25)' }}>
-                  Start Free GPU
-                </button>
+                colabUrl.includes("colab.research.google.com") ? (
+                  <button onClick={handleStartColab} style={{ background: 'linear-gradient(135deg, var(--primary), var(--secondary))', border: 'none', color: '#fff', padding: '0.6rem 1.2rem', borderRadius: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', boxShadow: '0 4px 12px rgba(37,99,235,0.25)' }}>
+                    Start Free GPU
+                  </button>
+                ) : (
+                  <button onClick={handleConnectDirect} style={{ background: 'linear-gradient(135deg, var(--success), var(--primary))', border: 'none', color: '#fff', padding: '0.6rem 1.2rem', borderRadius: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', boxShadow: '0 4px 12px rgba(16,185,129,0.25)' }}>
+                    Connect to Server
+                  </button>
+                )
               ) : (
                 <button onClick={handleStopColab} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: 'var(--danger)', padding: '0.6rem 1.2rem', borderRadius: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  Stop GPU
+                  {colabUrl.includes("colab.research.google.com") ? "Stop GPU" : "Disconnect"}
                 </button>
               )}
             </div>
@@ -421,7 +466,7 @@ Return ONLY the enhanced prompt, no conversational text. Focus on lighting, came
               type="text" 
               value={colabUrl}
               onChange={(e) => setColabUrl(e.target.value)}
-              placeholder="ComfyUI Colab URL (e.g. .loca.lt)"
+              placeholder="Google Colab Notebook URL or Direct ComfyUI Server Link (e.g. .trycloudflare.com / http://127.0.0.1:8188)"
               style={{ width: '100%', padding: '0.75rem 1rem', background: 'var(--surface-2)', border: '1px solid var(--glass-border)', borderRadius: '0.5rem', color: 'var(--text-1)' }}
             />
           )}

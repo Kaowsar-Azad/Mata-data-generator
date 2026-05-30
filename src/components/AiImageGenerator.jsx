@@ -150,25 +150,37 @@ export function AiImageGenerator({ apiKeys }) {
     return () => clearInterval(interval);
   }, [portalTarget]);
 
-  // ── Load history & listen for Colab link ──────────────────────────────
+  // ── Load history & Auto-connect to backend ────────────────────────────
   useEffect(() => {
     try {
       const saved = localStorage.getItem("ai_image_history");
       if (saved) setHistory(JSON.parse(saved));
     } catch (err) { /* ignore */ }
 
-    if (window.electronAPI?.onColabStatus) {
-      return window.electronAPI.onColabStatus((data) => {
-        if (data.status === "connected") {
+    const fetchServerUrl = async () => {
+      setStatus("connecting");
+      try {
+        // Fetch centralized URL from GitHub raw link
+        const url = "https://raw.githubusercontent.com/Kaowsar-Azad/Mata-data-generator/main/backend_url.json?t=" + Date.now();
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Central database not accessible");
+        const data = await res.json();
+        
+        if (data.serverUrl) {
+          const api = data.serverUrl.replace(/\/$/, "");
+          setServerUrl(api);
           setStatus("connected");
-          setServerUrl(data.url.replace(/\/$/, ""));
           setError(null);
-        } else if (data.status === "disconnected") {
-          setStatus("disconnected");
-          setServerUrl("");
+        } else {
+          throw new Error("Invalid URL in database");
         }
-      });
-    }
+      } catch (err) {
+        setStatus("disconnected");
+        setError("সার্ভার লিংক পাওয়া যায়নি: " + err.message);
+      }
+    };
+    
+    fetchServerUrl();
   }, []);
 
   // ── History helpers ───────────────────────────────────────────────────
@@ -643,53 +655,20 @@ export function AiImageGenerator({ apiKeys }) {
 
                 {status === "disconnected" && (
                   <button
-                    onClick={handleStartColab}
+                    onClick={() => window.location.reload()}
                     style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)", color: "#fff", border: "none", padding: "0.5rem 1rem", borderRadius: "0.6rem", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}
                   >
-                    <Zap size={14} /> Colab খুলুন
-                  </button>
-                )}
-                {status !== "disconnected" && (
-                  <button
-                    onClick={handleDisconnect}
-                    style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: "#ef4444", padding: "0.5rem 1rem", borderRadius: "0.6rem", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
-                  >
-                    বন্ধ করুন
+                    <RefreshCw size={14} /> আবার চেষ্টা করুন
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Manual URL connect */}
+            {/* Error message if disconnected */}
             {status === "disconnected" && (
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                <input
-                  type="text"
-                  value={manualUrl}
-                  onChange={e => setManualUrl(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && handleConnectManual()}
-                  placeholder="লাইভ লিংক পেস্ট করুন — যেমন: https://xxxx.loca.lt"
-                  style={{ flex: 1, padding: "0.6rem 0.9rem", background: "var(--surface-2)", border: "1px solid var(--glass-border)", borderRadius: "0.5rem", color: "var(--text-1)", fontSize: "0.85rem" }}
-                />
-                <button
-                  onClick={handleConnectManual}
-                  style={{ background: "var(--primary)", color: "#fff", border: "none", padding: "0.6rem 1rem", borderRadius: "0.5rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.85rem", whiteSpace: "nowrap" }}
-                >
-                  <Link2 size={14} /> কানেক্ট
-                </button>
-              </div>
-            )}
-
-            {/* Step-by-step guide */}
-            {status === "disconnected" && (
-              <div style={{ background: "rgba(59,130,246,0.06)", border: "1px dashed rgba(59,130,246,0.3)", borderRadius: "0.75rem", padding: "0.9rem 1.1rem", fontSize: "0.82rem", color: "var(--text-2)", lineHeight: 1.7 }}>
-                <strong style={{ color: "var(--primary)", display: "block", marginBottom: "0.4rem" }}>💡 কিভাবে শুরু করবেন:</strong>
-                <ol style={{ margin: 0, paddingLeft: "1.2rem", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-                  <li><strong>"Colab খুলুন"</strong> বাটনে ক্লিক করুন</li>
-                  <li>Colab-এ <strong>Runtime → Change runtime type → T4 GPU</strong> সিলেক্ট করুন</li>
-                  <li><code>comfyui_flux_cloudflare.ipynb</code> আপলোড করে Run (▶️) করুন</li>
-                  <li>Colab-এ <code>https://xxxx.loca.lt</code> লিংক দেখালে উপরের বক্সে পেস্ট করে <strong>কানেক্ট</strong> বাটন চাপুন</li>
-                </ol>
+              <div style={{ background: "rgba(239,68,68,0.06)", border: "1px dashed rgba(239,68,68,0.3)", borderRadius: "0.75rem", padding: "0.9rem 1.1rem", fontSize: "0.82rem", color: "var(--danger)", lineHeight: 1.7 }}>
+                <strong style={{ display: "block", marginBottom: "0.4rem", fontWeight: 700 }}>⚠️ সার্ভার অফলাইন!</strong>
+                বর্তমানে সার্ভারটি বন্ধ আছে অথবা ইন্টারনেট সংযোগে সমস্যা আছে। অ্যাডমিন সার্ভার চালু করা পর্যন্ত অপেক্ষা করুন।
               </div>
             )}
 

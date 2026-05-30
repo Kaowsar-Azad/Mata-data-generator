@@ -206,6 +206,11 @@ function App() {
           />
         )}
 
+        {/* AI IMAGE SETTINGS PORTAL */}
+        {sidebarOpen && activeTab === 'aiimage' && (
+          <div id="ai-image-settings-portal" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}></div>
+        )}
+
         {/* BOTTOM SECTION (Fixed/Static) */}
         <div className="sidebar-bottom-section">
           {/* Collapse Button */}

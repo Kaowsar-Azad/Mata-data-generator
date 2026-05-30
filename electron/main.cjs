@@ -31,6 +31,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      webSecurity: false,
     },
     autoHideMenuBar: true,
   });
@@ -1497,23 +1498,27 @@ ipcMain.handle('start-colab', async (event, url) => {
     `).catch(err => fileLog('[Colab] Inject Error:', err.message));
   });
 
+  // Keep track of active pings and connection state
+  const activePings = new Set();
+  let successfulLink = null;
+
   // Watch for main page title updates (fallback)
   colabWindow.on('page-title-updated', (e, title) => {
     if (title.startsWith('GRADIO_LINK:')) {
       const link = title.replace('GRADIO_LINK:', '').trim();
-      
-      if (global.testedLinks && global.testedLinks.has(link + "_dead")) {
-        return;
-      }
-      
-      fileLog('[Colab] Found potential Gradio link via title:', link);
-      
-      // Ping the server to verify it's alive and responsive
-      fetch(link.replace(/\/$/, '') + '/system_info', {
-        headers: { 'bypass-tunnel-reminder': 'true' }
+      if (successfulLink) return;
+      if (activePings.has(link)) return;
+
+      activePings.add(link);
+      fileLog('[Colab] Found potential link via title, testing:', link);
+
+      fetch(link.replace(/\/$/, '') + '/system_stats', {
+        headers: { 'bypass-tunnel-reminder': 'true' },
+        signal: AbortSignal.timeout(5000)
       }).then(res => {
         if (res.ok) {
           fileLog('[Colab] Verified live link via title:', link);
+          successfulLink = link;
           if (colabScanInterval) {
             clearInterval(colabScanInterval);
             colabScanInterval = null;
@@ -1526,11 +1531,11 @@ ipcMain.handle('start-colab', async (event, url) => {
           }
         } else {
           fileLog('[Colab] Link from title returned non-ok status:', link, res.status);
-          if (global.testedLinks) global.testedLinks.add(link + "_dead");
         }
       }).catch(err => {
-        fileLog('[Colab] Link from title ping failed:', link, err.message);
-        if (global.testedLinks) global.testedLinks.add(link + "_dead");
+        fileLog('[Colab] Link from title ping failed (will retry):', link, err.message);
+      }).finally(() => {
+        activePings.delete(link);
       });
     }
   });
@@ -1544,23 +1549,20 @@ ipcMain.handle('start-colab', async (event, url) => {
     }
     
     scanFramesForGradioLink(colabWindow.webContents.mainFrame, (link) => {
-      // Avoid scanning same link repeatedly if we already know it's dead or being tested
-      if (global.testedLinks && global.testedLinks.has(link)) {
-        return;
-      }
-      if (!global.testedLinks) {
-        global.testedLinks = new Set();
-      }
-      global.testedLinks.add(link);
-      
-      fileLog('[Colab] Found potential Gradio link via frame scan, testing:', link);
+      if (successfulLink) return;
+      if (activePings.has(link)) return;
+
+      activePings.add(link);
+      fileLog('[Colab] Found potential link via frame scan, testing:', link);
       
       // Ping the server to verify it's alive and responsive
-      fetch(link.replace(/\/$/, '') + '/system_info', {
-        headers: { 'bypass-tunnel-reminder': 'true' }
+      fetch(link.replace(/\/$/, '') + '/system_stats', {
+        headers: { 'bypass-tunnel-reminder': 'true' },
+        signal: AbortSignal.timeout(5000)
       }).then(res => {
         if (res.ok) {
           fileLog('[Colab] Verified live link via frame scan:', link);
+          successfulLink = link;
           if (colabScanInterval) {
             clearInterval(colabScanInterval);
             colabScanInterval = null;
@@ -1573,11 +1575,11 @@ ipcMain.handle('start-colab', async (event, url) => {
           }
         } else {
           fileLog('[Colab] Link from frame scan returned non-ok status:', link, res.status);
-          global.testedLinks.add(link + "_dead");
         }
       }).catch(err => {
-        fileLog('[Colab] Link from frame scan ping failed:', link, err.message);
-        global.testedLinks.add(link + "_dead");
+        fileLog('[Colab] Link from frame scan ping failed (will retry):', link, err.message);
+      }).finally(() => {
+        activePings.delete(link);
       });
     });
   }, 3000);
@@ -1614,4 +1616,20 @@ ipcMain.handle('show-colab', async () => {
   }
   return { success: true };
 });
+
+ipcMain.handle('fetch-image', async (event, url) => {
+  try {
+    fileLog('[fetch-image] Fetching URL:', url);
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch image: HTTP ${res.status}`);
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    return { success: true, buffer: Buffer.from(arrayBuffer) };
+  } catch (err) {
+    fileLog('[fetch-image] Error fetching URL:', url, err);
+    return { success: false, error: err.message };
+  }
+});
+
 

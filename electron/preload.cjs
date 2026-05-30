@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startColab: (url) => ipcRenderer.invoke('start-colab', url),
   stopColab: () => ipcRenderer.invoke('stop-colab'),
   showColab: () => ipcRenderer.invoke('show-colab'),
+  fetchImage: (url) => ipcRenderer.invoke('fetch-image', url),
   onColabStatus: (callback) => {
     const listener = (event, data) => callback(data);
     ipcRenderer.on('colab-status', listener);

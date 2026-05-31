@@ -40,7 +40,7 @@ function dataUrlToBlob(dataUrl) {
   return new Blob([bytes], { type: mime });
 }
 
-// ─── Helper: Blob → data URL ───────────────────────────────────────────────
+// ─── Helper: Blob → data URL 
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -50,7 +50,7 @@ function blobToDataUrl(blob) {
   });
 }
 
-// ─── Build ComfyUI SDXL Workflow ───────────────────────────────────────────
+// ─── Build ComfyUI SDXL Workflow
 function buildSdxlWorkflow({ width, height, prompt, denoise, mode, uploadedImageName, steps }) {
   const seed = Math.floor(Math.random() * 1_000_000_000);
   const cfg = 7.5;
@@ -81,6 +81,21 @@ export function AiImageGenerator({ apiKeys }) {
   const [manualUrl, setManualUrl] = useState("");
   const [status, setStatus]       = useState("disconnected");
   const [serverUrl, setServerUrl] = useState("");
+
+  const [connectProgress, setConnectProgress] = useState(0);
+
+  useEffect(() => {
+    let interval;
+    if (status === "connecting") {
+      setConnectProgress(0);
+      interval = setInterval(() => {
+        setConnectProgress(p => (p >= 95 ? 95 : p + 1));
+      }, 1500);
+    } else {
+      setConnectProgress(0);
+    }
+    return () => clearInterval(interval);
+  }, [status]);
 
   // Generation settings
   const [mode, setMode]                   = useState("txt2img");
@@ -572,9 +587,14 @@ export function AiImageGenerator({ apiKeys }) {
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "var(--surface-2)", border: "1px solid var(--glass-border)", borderRadius: "2rem", padding: "0.4rem 0.9rem" }}>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor, display: "inline-block", boxShadow: status === "connected" ? `0 0 0 3px ${statusColor}33` : "none" }} />
                   <span style={{ fontSize: "0.78rem", fontWeight: 700, color: statusColor }}>
-                    {status === "connected" ? "সংযুক্ত ✓" : status === "connecting" ? "সংযুক্ত হচ্ছে..." : "বিচ্ছিন্ন"}
+                    {status === "connected" ? "সংযুক্ত ✓" : status === "connecting" ? `সার্ভার রেডি হচ্ছে... ${connectProgress}%` : "বিচ্ছিন্ন"}
                   </span>
                 </div>
+                {(status === "connected" || status === "connecting") && (
+                  <button onClick={handleStopColab} style={{ background: "none", border: "1px solid var(--danger)", color: "var(--danger)", padding: "0.4rem 0.8rem", borderRadius: "0.6rem", fontSize: "0.75rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <X size={12} /> সংযোগ বাতিল
+                  </button>
+                )}
                 {(status === "connected" || status === "connecting") && (
                   <button onClick={() => window.electronAPI?.showColab()} title="Colab এর পেছনের কাজ দেখতে ক্লিক করুন" style={{ background: "var(--surface-2)", border: "1px solid var(--glass-border)", color: "var(--text-1)", padding: "0.4rem 0.8rem", borderRadius: "0.6rem", fontSize: "0.75rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}>
                     <Maximize2 size={12} /> লগ দেখুন

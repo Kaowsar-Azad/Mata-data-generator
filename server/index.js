@@ -919,17 +919,32 @@ app.post('/api/upscale', upload.single('file'), async (req, res) => {
   }
 });
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`\n========================================`);
-  console.log(`✅ Backend running on port ${port}`);
-  console.log(`   • URL: http://127.0.0.1:${port}`);
-  console.log(`   • POST /api/process-eps  — EPS → PNG (Ghostscript)`);
-  console.log(`   • POST /api/removebg       — remove.bg API proxy (header X-Removebg-Key)`);
-  console.log(`   • POST /api/remove-bg-local — free local removal (Node, @imgly/background-removal-node)`);
-  console.log(`   • POST /api/vectorize      — Image → SVG (VTracer / ImageTracer)`);
-  console.log(`   • POST /api/upscale        — AI Image Upscaler (Cloud + Local HF)`);
-  console.log(`========================================\n`);
-});
+// Auto-retry port if busy (EADDRINUSE)
+function startServer(tryPort) {
+  const server = app.listen(tryPort, '0.0.0.0');
+  server.on('listening', () => {
+    console.log(`\n========================================`);
+    console.log(`✅ Backend running on port ${tryPort}`);
+    console.log(`   • URL: http://127.0.0.1:${tryPort}`);
+    console.log(`   • POST /api/process-eps  — EPS → PNG (Ghostscript)`);
+    console.log(`   • POST /api/removebg       — remove.bg API proxy (header X-Removebg-Key)`);
+    console.log(`   • POST /api/remove-bg-local — free local removal (Node, @imgly/background-removal-node)`);
+    console.log(`   • POST /api/vectorize      — Image → SVG (VTracer / ImageTracer)`);
+    console.log(`   • POST /api/upscale        — AI Image Upscaler (Cloud + Local HF)`);
+    console.log(`========================================\n`);
+  });
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`⚠️  Port ${tryPort} is in use, trying ${tryPort + 1}...`);
+      server.close();
+      startServer(tryPort + 1);
+    } else {
+      console.error('❌ Server error:', err);
+    }
+  });
+}
+
+startServer(port);
 
 // Global Error Handler to prevent server crashes
 process.on('uncaughtException', (err) => {
@@ -939,3 +954,4 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason, promise) => {
   console.error('❌ UNHANDLED REJECTION at:', promise, 'reason:', reason);
 });
+

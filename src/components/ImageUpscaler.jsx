@@ -12,6 +12,28 @@ export function ImageUpscaler() {
   const [error, setError] = useState(null);
   const [statusText, setStatusText] = useState("");
   const [results, setResults] = useState([]);
+  const [comfyServerUrl, setComfyServerUrl] = useState("");
+
+  // Check if ComfyUI server is online
+  useState(() => {
+    const fetchServerUrl = async () => {
+      try {
+        const url = "https://raw.githubusercontent.com/Kaowsar-Azad/Mata-data-generator/main/backend_url.json?t=" + Date.now();
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.serverUrl) {
+            const api = data.serverUrl.replace(/\/$/, "");
+            const pingRes = await fetch(`${api}/system_stats`, { headers: { "bypass-tunnel-reminder": "true" } });
+            if (pingRes.ok || pingRes.status === 404 || pingRes.status === 403) {
+              setComfyServerUrl(api);
+            }
+          }
+        }
+      } catch (err) {}
+    };
+    fetchServerUrl();
+  }, []);
 
   const fileInputRef = useRef(null);
 
@@ -68,6 +90,114 @@ export function ImageUpscaler() {
   };
 
   const upscaleSingleFile = async (fileObj, currentScale) => {
+    // Helper to get Blob from fileObj
+    const getFileBlob = async () => {
+      if (fileObj.isElectron) {
+        const fileContent = await window.electronAPI.readFile(fileObj.path);
+        return new Blob([fileContent], { type: fileObj.type || 'image/jpeg' });
+      }
+      return fileObj;
+    };
+
+    if (comfyServerUrl) {
+      try {
+        setStatusText(`Uploading ${fileObj.name} to Cloud GPU...`);
+        const blob = await getFileBlob();
+        const form = new FormData();
+        form.append("image", blob, fileObj.name);
+
+        const upRes = await fetch(`${comfyServerUrl}/upload/image`, {
+          method: "POST", headers: { "bypass-tunnel-reminder": "true" }, body: form
+        });
+        if (!upRes.ok) throw new Error("Image upload to ComfyUI failed");
+        const upData = await upRes.json();
+        const uploadedImageName = upData.name;
+
+        setStatusText(`Upscaling ${fileObj.name} with Real-ESRGAN...`);
+        
+        const workflow = {
+          "1": { class_type: "LoadImage", inputs: { image: uploadedImageName } },
+          "2": { class_type: "UpscaleModelLoader", inputs: { model_name: "RealESRGAN_x4plus.pth" } },
+          "3": { class_type: "ImageUpscaleWithModel", inputs: { upscale_model: ["2", 0], image: ["1", 0] } }
+        };
+
+        // Real-ESRGAN is 4x. If user selected 2x, scale down by 0.5. If user selected custom scale, calculate ratio
+        const finalScale = parseFloat(currentScale);
+        if (finalScale !== 4) {
+          workflow["4"] = { class_type: "ImageScaleBy", inputs: { upscale_method: "bicubic", scale_by: finalScale / 4.0, image: ["3", 0] } };
+          workflow["5"] = { class_type: "SaveImage", inputs: { filename_prefix: "upscale_out", images: ["4", 0] } };
+        } else {
+          workflow["5"] = { class_type: "SaveImage", inputs: { filename_prefix: "upscale_out", images: ["3", 0] } };
+        }
+
+        const clientId = Date.now().toString();
+        const submitRes = await fetch(`${comfyServerUrl}/prompt`, {
+          method: "POST", headers: { "Content-Type": "application/json", "bypass-tunnel-reminder": "true" },
+          body: JSON.stringify({ prompt: workflow, client_id: clientId })
+        });
+
+        if (!submitRes.ok) throw new Error("Failed to submit workflow to ComfyUI");
+        const { prompt_id: promptId } = await submitRes.json();
+
+        let imageUrl = null;
+        for (let attempt = 0; attempt < 60; attempt++) {
+          await new Promise(r => setTimeout(r, 2000));
+          const histRes = await fetch(`${comfyServerUrl}/history/${promptId}`, { headers: { "bypass-tunnel-reminder": "true" } });
+          if (!histRes.ok) continue;
+          const histData = await histRes.json();
+          const job = histData[promptId];
+          if (!job) continue;
+
+          if (job.status?.status_str === "error") throw new Error("ComfyUI upscaling error");
+
+          const outputs = job.outputs || {};
+          for (const nodeId of Object.keys(outputs)) {
+            const imgs = outputs[nodeId]?.images;
+            if (imgs?.length > 0) {
+              const img = imgs[0];
+              imageUrl = `${comfyServerUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder ?? "")}&type=${encodeURIComponent(img.type ?? "output")}`;
+              break;
+            }
+          }
+          if (imageUrl) break;
+        }
+
+        if (!imageUrl) throw new Error("Upscaling timeout");
+
+        setStatusText(`Downloading ${fileObj.name}...`);
+        const imgRes = await fetch(imageUrl, { headers: { "bypass-tunnel-reminder": "true" } });
+        if (!imgRes.ok) throw new Error("Failed to download upscaled image");
+        
+        const arrayBuffer = await imgRes.arrayBuffer();
+
+        if (window.electronAPI && outputFolder) {
+          const pathSeparator = outputFolder.includes('\\') ? '\\' : '/';
+          const lastDot = fileObj.name.lastIndexOf('.');
+          const ext = lastDot > -1 ? fileObj.name.substring(lastDot) : '.jpg';
+          const baseName = lastDot > -1 ? fileObj.name.substring(0, lastDot) : fileObj.name;
+          const savePath = `${outputFolder}${pathSeparator}${baseName}_${currentScale}x_RealESRGAN${ext}`;
+          
+          const saveRes = await window.electronAPI.saveFile(savePath, new Uint8Array(arrayBuffer));
+          if (!saveRes.success) throw new Error(saveRes.error);
+          return { success: true, path: savePath };
+        } else {
+          const blobOutput = new Blob([arrayBuffer], { type: imgRes.headers.get('content-type') || 'image/jpeg' });
+          const url = URL.createObjectURL(blobOutput);
+          const a = document.createElement('a');
+          a.href = url;
+          const lastDot = fileObj.name.lastIndexOf('.');
+          const ext = lastDot > -1 ? fileObj.name.substring(lastDot) : '.jpg';
+          const baseName = lastDot > -1 ? fileObj.name.substring(0, lastDot) : fileObj.name;
+          a.download = `${baseName}_${currentScale}x_RealESRGAN${ext}`;
+          a.click();
+          URL.revokeObjectURL(url);
+          return { success: true };
+        }
+      } catch (err) {
+        console.warn("ComfyUI upscaling failed, falling back to local...", err);
+      }
+    }
+
     const formData = new FormData();
     formData.append('scale', currentScale);
 
@@ -229,7 +359,7 @@ export function ImageUpscaler() {
           AI Image Upscaler
         </h2>
         <p style={{ color: 'var(--text-2)', fontSize: '0.95rem', margin: 0, maxWidth: '600px' }}>
-          Upscale your images without losing quality or altering colors. Perfect for meeting microstock megapixel requirements. Uses Cloud AI with an ultra-sharp local fallback engine.
+          Upscale your images without losing quality or altering colors. Perfect for meeting microstock megapixel requirements. Uses Cloud AI (Real-ESRGAN via Colab) with an ultra-sharp local fallback engine.
         </p>
       </div>
 

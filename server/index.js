@@ -26,6 +26,48 @@ const port = 3002;
 // Enable CORS for Vite frontend
 app.use(cors());
 
+// Universal Proxy for ComfyUI (Bypasses CORS & Cloudflare browser blocks)
+app.post('/api/comfy-proxy', express.json({ limit: '50mb' }), async (req, res) => {
+  try {
+    const { url, method = 'GET', body, headers = {} } = req.body;
+    if (!url) return res.status(400).json({ error: 'URL is required' });
+
+    console.log(`[ComfyProxy] ${method} ${url}`);
+    
+    const fetchOptions = {
+      method,
+      headers: {
+        ...headers,
+        'bypass-tunnel-reminder': 'true',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    };
+    
+    if (body && (method === 'POST' || method === 'PUT')) {
+      fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+      fetchOptions.headers['Content-Type'] = 'application/json';
+    }
+
+    const response = await fetch(url, fetchOptions);
+    
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('image/') || contentType.includes('application/octet-stream')) {
+      res.setHeader('Content-Type', contentType);
+      const arrayBuf = await response.arrayBuffer();
+      return res.status(response.status).send(Buffer.from(arrayBuf));
+    }
+    
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); } catch(e) { data = { text }; }
+    
+    res.status(response.status).json(data);
+  } catch (error) {
+    console.error('[ComfyProxy Error]', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Configure multer for temp file uploads with original extension preservation
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {

@@ -1452,7 +1452,7 @@ ipcMain.handle('start-colab', async (event, url) => {
   colabWindow = new BrowserWindow({
     width: 1100,
     height: 800,
-    show: true,
+    show: false, // Start hidden to prevent bothering the user
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -1481,21 +1481,41 @@ ipcMain.handle('start-colab', async (event, url) => {
         });
         window.__colabObserver.observe(document.body, { childList: true, subtree: true });
         
-        // 2. Try to auto-click Run All after a short delay
-        setTimeout(() => {
-          const runAllBtn = document.querySelector('colab-toolbar-button#run-all');
-          if (runAllBtn) {
-            runAllBtn.click();
-            // A dialog might appear "Warning: This notebook was not authored by Google."
-            // We can try to click "Run anyway" after a second.
-            setTimeout(() => {
-              const runAnywayBtn = document.getElementById('ok');
-              if (runAnywayBtn) runAnywayBtn.click();
-            }, 1000);
-          }
-        }, 5000);
+        // Check if user is logged out (Sign in button exists)
+        const isLoggedOut = document.body.innerText.includes('Sign in') || document.querySelector('a[href*="ServiceLogin"]') !== null;
+        
+        if (!isLoggedOut) {
+          // 2. Try to auto-click Run All after a short delay
+          setTimeout(() => {
+            const runAllBtn = document.querySelector('colab-toolbar-button#run-all') || document.querySelector('colab-toolbar-button[aria-label="Run all"]');
+            if (runAllBtn) {
+              runAllBtn.click();
+              // A dialog might appear "Warning: This notebook was not authored by Google."
+              setTimeout(() => {
+                const runAnywayBtn = document.getElementById('ok');
+                if (runAnywayBtn) runAnywayBtn.click();
+              }, 1000);
+              
+              // Also check for "No GPU warning" dialog and click "Cancel" or "Ok" if it appears
+              setTimeout(() => {
+                 const okBtn = document.getElementById('ok');
+                 if (okBtn && document.body.innerText.includes('Cannot connect to GPU')) {
+                     okBtn.click();
+                 }
+              }, 2000);
+            }
+          }, 3000);
+        }
+        return isLoggedOut;
       })();
-    `).catch(err => fileLog('[Colab] Inject Error:', err.message));
+    `).then(isLoggedOut => {
+      if (isLoggedOut) {
+        fileLog('[Colab] User needs to login. Showing window.');
+        colabWindow.show();
+      } else {
+        fileLog('[Colab] User is logged in. Auto-running in hidden mode.');
+      }
+    }).catch(err => fileLog('[Colab] Inject Error:', err.message));
   });
 
   // Keep track of active pings and connection state

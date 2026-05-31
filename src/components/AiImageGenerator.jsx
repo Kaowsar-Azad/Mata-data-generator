@@ -10,11 +10,11 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_COLAB_URL =
-  "https://colab.research.google.com/github/sayantan-2/comfyui_colab_Flux/blob/main/comfyui_colab_Flux.ipynb";
+  "https://colab.research.google.com/github/Kaowsar-Azad/Mata-data-generator/blob/main/SDXL_RealESRGAN.ipynb";
 
 const STYLES = [
   { id: "realistic", label: "📸 Realistic / Photography", apiModel: "flux-realism", tag: "realistic photography, highly detailed, 8k resolution, photorealistic, RAW photo, cinematic lighting, sharp focus, professional camera, natural skin texture, intricate details" },
-  { id: "3d",        label: "🎮 3D Render / Animation",  apiModel: "flux-3d",      tag: "3d render, octane render, unreal engine 5, masterpiece, Pixar style, ray tracing, 4k, beautiful lighting, high detail" },
+  { id: "3d",        label: "🎮 3D Render / Animation",   apiModel: "flux-3d",      tag: "3d render, octane render, unreal engine 5, masterpiece, Pixar style, ray tracing, 4k, beautiful lighting, high detail" },
   { id: "vector",    label: "✏️ Vector Illustration",     apiModel: "flux",         tag: "vector art, flat illustration, Adobe Illustrator style, clean lines, vibrant colors, minimalist, sharp edges" },
   { id: "anime",     label: "🌸 Anime / Manga",           apiModel: "flux-anime",   tag: "anime style, studio ghibli, highly detailed, beautiful lighting, cel shaded, vibrant colors, manga illustration" },
   { id: "none",      label: "⚡ Raw Prompt",              apiModel: "flux-realism", tag: "" }

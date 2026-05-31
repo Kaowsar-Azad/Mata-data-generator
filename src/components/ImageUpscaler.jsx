@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { Upload, Folder, X, ShieldCheck, Loader2, Image as ImageIcon, Maximize, AlertCircle, RefreshCw } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Upload, Folder, X, ShieldCheck, Loader2, Image as ImageIcon, Maximize, AlertCircle, RefreshCw, Wifi, WifiOff, Link } from "lucide-react";
 
 export function ImageUpscaler() {
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -13,27 +13,78 @@ export function ImageUpscaler() {
   const [statusText, setStatusText] = useState("");
   const [results, setResults] = useState([]);
   const [comfyServerUrl, setComfyServerUrl] = useState("");
+  const [serverStatus, setServerStatus] = useState("disconnected"); // 'connected' | 'disconnected' | 'checking'
+  const [manualUrl, setManualUrl] = useState("");
+  const [showManualInput, setShowManualInput] = useState(false);
 
-  // Check if ComfyUI server is online
-  useState(() => {
-    const fetchServerUrl = async () => {
-      try {
-        const url = "https://raw.githubusercontent.com/Kaowsar-Azad/Mata-data-generator/main/backend_url.json?t=" + Date.now();
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.serverUrl) {
-            const api = data.serverUrl.replace(/\/$/, "");
-            const pingRes = await fetch(`${api}/system_stats`, { headers: { "bypass-tunnel-reminder": "true" } });
-            if (pingRes.ok || pingRes.status === 404 || pingRes.status === 403) {
-              setComfyServerUrl(api);
+  // Listen to Colab status from Electron (same server as AiImageGenerator)
+  useEffect(() => {
+    // 1. Get current URL immediately on mount (already connected case)
+    if (window.electronAPI?.getColabUrl) {
+      window.electronAPI.getColabUrl().then(res => {
+        if (res?.url) {
+          setComfyServerUrl(res.url.replace(/\/$/, ""));
+          setServerStatus('connected');
+        }
+      }).catch(() => {});
+    }
+
+    // 2. Listen for future status changes
+    if (window.electronAPI?.onColabStatus) {
+      const cleanup = window.electronAPI.onColabStatus((data) => {
+        if (data.status === 'connected' && data.url) {
+          setComfyServerUrl(data.url.replace(/\/$/, ""));
+          setServerStatus('connected');
+        } else if (data.status === 'disconnected') {
+          setComfyServerUrl("");
+          setServerStatus('disconnected');
+        }
+      });
+      return cleanup;
+    } else {
+      // Fallback: try GitHub backend_url.json
+      const fetchServerUrl = async () => {
+        setServerStatus('checking');
+        try {
+          const url = "https://raw.githubusercontent.com/Kaowsar-Azad/Mata-data-generator/main/backend_url.json?t=" + Date.now();
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.serverUrl) {
+              const api = data.serverUrl.replace(/\/$/, "");
+              const pingRes = await fetch(`${api}/system_stats`, { headers: { "bypass-tunnel-reminder": "true" } });
+              if (pingRes.ok || pingRes.status === 404 || pingRes.status === 403) {
+                setComfyServerUrl(api);
+                setServerStatus('connected');
+                return;
+              }
             }
           }
-        }
-      } catch (err) {}
-    };
-    fetchServerUrl();
+        } catch (err) {}
+        setServerStatus('disconnected');
+      };
+      fetchServerUrl();
+    }
   }, []);
+
+  const handleManualConnect = async () => {
+    if (!manualUrl.trim()) return;
+    const api = manualUrl.trim().replace(/\/$/, "");
+    setServerStatus('checking');
+    try {
+      const pingRes = await fetch(`${api}/system_stats`, { headers: { "bypass-tunnel-reminder": "true" } });
+      if (pingRes.ok || pingRes.status === 404 || pingRes.status === 403) {
+        setComfyServerUrl(api);
+        setServerStatus('connected');
+        setShowManualInput(false);
+        setError(null);
+        return;
+      }
+    } catch (err) {}
+    setServerStatus('disconnected');
+    setError("সার্ভারে কানেক্ট করা যায়নি। URL টি সঠিক কিনা দেখুন।");
+  };
+
 
   const fileInputRef = useRef(null);
 
@@ -250,6 +301,10 @@ export function ImageUpscaler() {
 
   const startUpscaling = async () => {
     if (selectedFiles.length === 0) return;
+    if (!comfyServerUrl) {
+      setError("Cloud GPU সার্ভারে কানেক্ট করুন। 'Cloud GPU Image Gen' পেজ থেকে সার্ভার চালু করুন অথবা Manual বাটনে URL দিন।");
+      return;
+    }
     if (!outputFolder && window.electronAPI) {
       setError("Please select an output folder first.");
       return;
@@ -354,14 +409,54 @@ export function ImageUpscaler() {
     }}>
       {/* Header */}
       <div>
-        <h2 style={{ fontSize: '1.75rem', fontWeight: 800, margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <Maximize style={{ width: '1.75rem', height: '1.75rem', color: 'var(--primary)' }} />
-          AI Image Upscaler
-        </h2>
-        <p style={{ color: 'var(--text-2)', fontSize: '0.95rem', margin: 0, maxWidth: '600px' }}>
-          Upscale your images without losing quality or altering colors. Perfect for meeting microstock megapixel requirements. Uses Cloud AI (Real-ESRGAN via Colab) with an ultra-sharp local fallback engine.
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <h2 style={{ fontSize: '1.75rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <Maximize style={{ width: '1.75rem', height: '1.75rem', color: 'var(--primary)' }} />
+            AI Image Upscaler
+          </h2>
+          {/* Server Status Badge */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '0.5rem',
+              padding: '0.4rem 0.9rem', borderRadius: '2rem',
+              background: serverStatus === 'connected' ? 'rgba(34,197,94,0.15)' : serverStatus === 'checking' ? 'rgba(234,179,8,0.15)' : 'rgba(239,68,68,0.12)',
+              border: `1px solid ${serverStatus === 'connected' ? 'rgba(34,197,94,0.35)' : serverStatus === 'checking' ? 'rgba(234,179,8,0.35)' : 'rgba(239,68,68,0.25)'}`,
+              fontSize: '0.78rem', fontWeight: 700,
+              color: serverStatus === 'connected' ? 'var(--success)' : serverStatus === 'checking' ? '#eab308' : 'var(--danger)'
+            }}>
+              {serverStatus === 'connected' ? <Wifi style={{ width: '0.85rem', height: '0.85rem' }} /> : serverStatus === 'checking' ? <Loader2 className="spin" style={{ width: '0.85rem', height: '0.85rem' }} /> : <WifiOff style={{ width: '0.85rem', height: '0.85rem' }} />}
+              {serverStatus === 'connected' ? 'Cloud GPU সংযুক্ত' : serverStatus === 'checking' ? 'সংযোগ পরীক্ষা...' : 'সার্ভার নেই'}
+            </div>
+            <button
+              onClick={() => setShowManualInput(v => !v)}
+              title="Manually enter server URL"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-2)', padding: '0.4rem 0.65rem', borderRadius: '0.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', fontWeight: 600 }}
+            >
+              <Link style={{ width: '0.85rem', height: '0.85rem' }} /> Manual
+            </button>
+          </div>
+        </div>
+        <p style={{ color: 'var(--text-2)', fontSize: '0.95rem', margin: '0 0 0.75rem 0', maxWidth: '600px' }}>
+          Upscale your images without losing quality. Uses Real-ESRGAN via Cloud GPU for ultra-sharp results.
         </p>
+        {/* Manual URL connect panel */}
+        {showManualInput && (
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.75rem', background: 'var(--surface-1)', border: '1px solid var(--glass-border)', borderRadius: '0.75rem' }}>
+            <input
+              type="text"
+              value={manualUrl}
+              onChange={e => setManualUrl(e.target.value)}
+              placeholder="https://xxx.trycloudflare.com"
+              onKeyDown={e => e.key === 'Enter' && handleManualConnect()}
+              style={{ flex: 1, padding: '0.5rem 0.75rem', background: 'var(--surface-2)', border: '1px solid var(--glass-border)', borderRadius: '0.5rem', color: 'var(--text-1)', fontSize: '0.85rem' }}
+            />
+            <button onClick={handleManualConnect} disabled={serverStatus === 'checking'} style={{ padding: '0.5rem 1rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '0.5rem', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}>
+              Connect
+            </button>
+          </div>
+        )}
       </div>
+
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '1.5rem', alignItems: 'start' }}>
         

@@ -22,6 +22,11 @@ function fileLog(...args) {
 fileLog('Electron main process starting. Log file path:', LOG_FILE);
 
 let mainWindow;
+let isQuitting = false;
+
+app.on('before-quit', () => {
+  isQuitting = true;
+});
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -1403,46 +1408,67 @@ ipcMain.handle('save-file', async (event, filePath, bufferArray) => {
   }
 });
 
+ipcMain.handle('read-file', async (event, filePath) => {
+  try {
+    const buffer = fs.readFileSync(filePath);
+    return buffer;
+  } catch (err) {
+    throw new Error(err.message);
+  }
+});
+
 // Colab Cloud GPU Engine Handlers
 let colabWindow = null;
 let colabScanInterval = null;
+let activeColabUrl = null; // Track currently connected server URL
 
-function scanFramesForGradioLink(frame, onFound) {
-  if (!frame) return;
+function scanFramesForGradioLink(webContents, onFound, onError) {
+  if (!webContents || !webContents.mainFrame) return;
   
-  // Try to execute script in this frame to find links or printed text containing links
-  frame.executeJavaScript(`
-    (() => {
-      const links = document.querySelectorAll('a');
-      for (let a of links) {
-        if (a.href && (a.href.includes('.gradio.live') || a.href.includes('ngrok-free.app') || a.href.includes('trycloudflare.com') || a.href.includes('loca.lt'))) {
-          return a.href;
+  const frames = webContents.mainFrame.framesInSubtree || [webContents.mainFrame];
+  
+  frames.forEach(frame => {
+    if (!frame || typeof frame.executeJavaScript !== 'function') return;
+    
+    // Try to execute script in this frame to find links or printed text containing links or errors
+    frame.executeJavaScript(`
+      (() => {
+        const bodyText = document.body ? document.body.innerText : '';
+        
+        // Check for specific Python/Kaggle errors
+        if (bodyText.includes('AssertionError: Torch not compiled with CUDA enabled')) {
+            return { type: 'error', message: 'Kaggle GPU Error: আপনার Public নোটবুকটি GPU দিয়ে সেভ করা নেই! దয়া করে আপনার Kaggle নোটবুকে গিয়ে Accelerator: GPU T4 x2 সিলেক্ট করে Save Version দিন।' };
         }
+        if (bodyText.includes('OutOfMemoryError') || bodyText.includes('CUDA out of memory')) {
+            return { type: 'error', message: 'GPU Out of Memory! সার্ভার রিস্টার্ট করুন।' };
+        }
+        
+        const links = document.querySelectorAll('a');
+        for (let a of links) {
+          if (a.href && (a.href.includes('.gradio.live') || a.href.includes('ngrok-free.app') || a.href.includes('trycloudflare.com') || a.href.includes('loca.lt'))) {
+            return { type: 'link', data: a.href };
+          }
+        }
+        const match = bodyText.match(/https?:\\/\\/[a-zA-Z0-9-]+\\.(gradio\\.live|ngrok-free\\.app|trycloudflare\\.com|loca\\.lt)/);
+        if (match) {
+          return { type: 'link', data: match[0] };
+        }
+        return null;
+      })()
+    `).then(res => {
+      if (res) {
+        if (res.type === 'link') onFound(res.data);
+        else if (res.type === 'error' && onError) onError(res.message);
       }
-      const bodyText = document.body ? document.body.innerText : '';
-      const match = bodyText.match(/https?:\\/\\/[a-zA-Z0-9-]+\\.(gradio\\.live|ngrok-free\\.app|trycloudflare\\.com|loca\\.lt)/);
-      if (match) {
-        return match[0];
-      }
-      return null;
-    })()
-  `).then(link => {
-    if (link) {
-      onFound(link);
-    }
-  }).catch(err => {
-    // Suppress frame execution errors
+    }).catch(err => {
+      // Suppress frame execution errors
+    });
   });
-
-  // Recurse into child frames
-  if (frame.frames && frame.frames.length > 0) {
-    frame.frames.forEach(child => scanFramesForGradioLink(child, onFound));
-  }
 }
 
 ipcMain.handle('start-colab', async (event, url) => {
   if (colabWindow) {
-    colabWindow.close();
+    colabWindow.destroy(); // Bypass intercept to close old window completely
   }
   if (colabScanInterval) {
     clearInterval(colabScanInterval);
@@ -1452,7 +1478,8 @@ ipcMain.handle('start-colab', async (event, url) => {
   colabWindow = new BrowserWindow({
     width: 1100,
     height: 800,
-    show: false, // Start hidden to prevent bothering the user
+    show: false,
+    skipTaskbar: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -1464,56 +1491,192 @@ ipcMain.handle('start-colab', async (event, url) => {
   colabWindow.setMenu(null);
   colabWindow.loadURL(url);
 
+  // Intercept the close event to hide the window instead of destroying it
+  colabWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      colabWindow.hide();
+      fileLog('[Colab] Log window hidden by user close request.');
+    }
+  });
+
   // Inject observer to find gradio link and auto-click Run All in the main frame
   colabWindow.webContents.on('did-finish-load', () => {
+    // Show window briefly so keyboard events work, then auto-hide after 5s if not needing login
+    colabWindow.showInactive();
+    
+    // Send Ctrl+F9 after page settles (only works when window is visible)
+    setTimeout(() => {
+      if (!colabWindow || colabWindow.isDestroyed()) return;
+      fileLog('[Colab] Sending Ctrl+F9 Run All keyboard shortcut');
+      colabWindow.focus();
+      colabWindow.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'F9', modifiers: ['control'] });
+      setTimeout(() => {
+        if (colabWindow && !colabWindow.isDestroyed()) {
+          colabWindow.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'F9', modifiers: ['control'] });
+        }
+      }, 200);
+    }, 3500);
+
+    // 2. Run deep DOM search polling in the page
     colabWindow.webContents.executeJavaScript(`
       (function() {
-        if (window.__colabObserver) return;
-        
-        // 1. Observe for the generated link
-        window.__colabObserver = new MutationObserver((mutations) => {
-          const links = document.querySelectorAll('a');
-          for (let a of links) {
-            if (a.href && (a.href.includes('.gradio.live') || a.href.includes('ngrok-free.app') || a.href.includes('trycloudflare.com') || a.href.includes('loca.lt'))) {
-              document.title = "GRADIO_LINK:" + a.href;
-            }
+        if (window.__colabAutoRunStarted) return;
+        window.__colabAutoRunStarted = true;
+
+        console.log("[AutoRun] Injecting deep search script for Shadow DOM");
+
+        function findElementDeep(root, predicate) {
+          if (!root) return null;
+          if (predicate(root)) return root;
+          
+          // Check shadowRoot
+          if (root.shadowRoot) {
+            const found = findElementDeep(root.shadowRoot, predicate);
+            if (found) return found;
           }
-        });
-        window.__colabObserver.observe(document.body, { childList: true, subtree: true });
-        
+          
+          // Check children
+          const children = root.children || [];
+          for (let i = 0; i < children.length; i++) {
+            const found = findElementDeep(children[i], predicate);
+            if (found) return found;
+          }
+          return null;
+        }
+
+        // Observe for the generated link
+        if (!window.__colabObserver) {
+          window.__colabObserver = new MutationObserver((mutations) => {
+            const links = document.querySelectorAll('a');
+            for (let a of links) {
+              if (a.href && (a.href.includes('.gradio.live') || a.href.includes('ngrok-free.app') || a.href.includes('trycloudflare.com') || a.href.includes('loca.lt'))) {
+                document.title = "GRADIO_LINK:" + a.href;
+              }
+            }
+          });
+          window.__colabObserver.observe(document.body, { childList: true, subtree: true });
+        }
+
         // Check if user is logged out (Sign in button exists)
         const isLoggedOut = document.body.innerText.includes('Sign in') || document.querySelector('a[href*="ServiceLogin"]') !== null;
-        
-        if (!isLoggedOut) {
-          // 2. Try to auto-click Run All after a short delay
-          setTimeout(() => {
-            const runAllBtn = document.querySelector('colab-toolbar-button#run-all') || document.querySelector('colab-toolbar-button[aria-label="Run all"]');
-            if (runAllBtn) {
-              runAllBtn.click();
-              // A dialog might appear "Warning: This notebook was not authored by Google."
-              setTimeout(() => {
-                const runAnywayBtn = document.getElementById('ok');
-                if (runAnywayBtn) runAnywayBtn.click();
-              }, 1000);
-              
-              // Also check for "No GPU warning" dialog and click "Cancel" or "Ok" if it appears
-              setTimeout(() => {
-                 const okBtn = document.getElementById('ok');
-                 if (okBtn && document.body.innerText.includes('Cannot connect to GPU')) {
-                     okBtn.click();
-                 }
-              }, 2000);
-            }
-          }, 3000);
+        if (isLoggedOut) {
+          return true; // Requires login
         }
-        return isLoggedOut;
+
+        function clickElement(el) {
+          try { el.focus(); } catch(e) {}
+          try {
+            el.click();
+          } catch(e) {
+            // Dispatch mouse events fallback
+            const events = ['mousedown', 'mouseup', 'click'];
+            events.forEach(name => {
+              const ev = new MouseEvent(name, { bubbles: true, cancelable: true, view: window });
+              el.dispatchEvent(ev);
+            });
+          }
+        }
+
+        // Poll every 2 seconds to search and click Run All, Connect & Run Anyway
+        let attempts = 0;
+        const interval = setInterval(() => {
+          attempts++;
+          if (attempts > 30) {
+            clearInterval(interval);
+            return;
+          }
+
+          // A. Find "Run anyway" button in the warning dialog
+          const confirmBtn = findElementDeep(document.body, (el) => {
+            const text = (el.textContent || '').trim().toLowerCase();
+            const id = el.id || '';
+            const label = (el.getAttribute && el.getAttribute('aria-label') || '').toLowerCase();
+            return id === 'ok' || 
+                   text === 'run anyway' || 
+                   text.includes('run standard') || 
+                   label.includes('run anyway') || 
+                   (el.getAttribute && el.getAttribute('dialogaction') === 'ok') ||
+                   (el.classList && el.classList.contains('ok-button'));
+          });
+
+          if (confirmBtn) {
+            console.log("[AutoRun] Found confirmation dialog button, clicking it.");
+            clickElement(confirmBtn);
+          }
+
+          // B. Find "Connect" button at the top right if disconnected
+          const connectBtn = findElementDeep(document.body, (el) => {
+            if (!el.tagName) return false;
+            const tag = el.tagName.toLowerCase();
+            const text = (el.textContent || '').trim().toLowerCase();
+            return tag === 'colab-connect-button' || 
+                   text === 'connect' || 
+                   text === 'reconnect' ||
+                   text.includes('connect to hosted') ||
+                   (el.id && el.id.includes('connect'));
+          });
+
+          if (connectBtn) {
+            const text = (connectBtn.textContent || '').trim().toLowerCase();
+            if (text.includes('connect') || text.includes('reconnect')) {
+              console.log("[AutoRun] Found Connect button, clicking it.");
+              clickElement(connectBtn);
+            }
+          }
+
+          // C. Find "Run All" toolbar button
+          const runAllBtn = findElementDeep(document.body, (el) => {
+            if (!el.tagName) return false;
+            const tag = el.tagName.toLowerCase();
+            const id = el.id || '';
+            const label = (el.getAttribute && el.getAttribute('aria-label') || '').toLowerCase();
+            const title = (el.title || '').toLowerCase();
+            const text = (el.textContent || '').trim().toLowerCase();
+            
+            return tag === 'colab-run-button' ||
+                   id === 'run-all' ||
+                   label.includes('run all') ||
+                   title.includes('run all') ||
+                   text === 'run all' ||
+                   (tag === 'paper-button' && text.includes('run all')) ||
+                   (tag === 'button' && text.includes('run all')) ||
+                   (el.classList && el.classList.contains('run-all'));
+          });
+
+          if (runAllBtn) {
+            console.log("[AutoRun] Found Run All button, clicking it.");
+            clickElement(runAllBtn);
+          }
+
+          // D. Check for GPU limit modal
+          const gpuLimitText = findElementDeep(document.body, (el) => {
+            const text = (el.textContent || '').trim().toLowerCase();
+            return text.includes('cannot connect to gpu backend') || text.includes('usage limits in colab');
+          });
+
+          if (gpuLimitText) {
+            console.log("[AutoRun] GPU Limit detected!");
+            document.title = 'GPU_LIMIT_REACHED';
+          }
+        }, 2000);
+
+        return false;
       })();
     `).then(isLoggedOut => {
       if (isLoggedOut) {
-        fileLog('[Colab] User needs to login. Showing window.');
-        colabWindow.show();
+        fileLog('[Colab] User needs to login. Showing window for login.');
+        colabWindow.show(); // Keep visible for login
       } else {
-        fileLog('[Colab] User is logged in. Auto-running in hidden mode.');
+        fileLog('[Colab] User is logged in. Auto-running; will hide window in 6s.');
+        // Hide after 6 seconds (keyboard event + DOM clicker had time to run)
+        setTimeout(() => {
+          if (colabWindow && !colabWindow.isDestroyed() && !colabWindow.isVisible()) return;
+          if (colabWindow && !colabWindow.isDestroyed()) {
+            colabWindow.hide();
+            fileLog('[Colab] Auto-hidden after run trigger.');
+          }
+        }, 6000);
       }
     }).catch(err => fileLog('[Colab] Inject Error:', err.message));
   });
@@ -1524,6 +1687,14 @@ ipcMain.handle('start-colab', async (event, url) => {
 
   // Watch for main page title updates (fallback)
   colabWindow.on('page-title-updated', (e, title) => {
+    if (title === 'GPU_LIMIT_REACHED') {
+      fileLog('[Colab] GPU Limit Reached detected from page.');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('colab-status', { status: 'gpu-limit' });
+      }
+      return;
+    }
+
     if (title.startsWith('GRADIO_LINK:')) {
       const link = title.replace('GRADIO_LINK:', '').trim();
       if (successfulLink) return;
@@ -1539,6 +1710,7 @@ ipcMain.handle('start-colab', async (event, url) => {
         if (res.ok) {
           fileLog('[Colab] Verified live link via title:', link);
           successfulLink = link;
+          activeColabUrl = link;
           if (colabScanInterval) {
             clearInterval(colabScanInterval);
             colabScanInterval = null;
@@ -1568,7 +1740,7 @@ ipcMain.handle('start-colab', async (event, url) => {
       return;
     }
     
-    scanFramesForGradioLink(colabWindow.webContents.mainFrame, (link) => {
+    scanFramesForGradioLink(colabWindow.webContents, (link) => {
       if (successfulLink) return;
       if (activePings.has(link)) return;
 
@@ -1583,6 +1755,7 @@ ipcMain.handle('start-colab', async (event, url) => {
         if (res.ok) {
           fileLog('[Colab] Verified live link via frame scan:', link);
           successfulLink = link;
+          activeColabUrl = link;
           if (colabScanInterval) {
             clearInterval(colabScanInterval);
             colabScanInterval = null;
@@ -1601,6 +1774,218 @@ ipcMain.handle('start-colab', async (event, url) => {
       }).finally(() => {
         activePings.delete(link);
       });
+    }, (errorMsg) => {
+      fileLog('[Colab] Frame scan error:', errorMsg);
+      if (errorMsg === 'gpu-limit') {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('colab-status', { status: 'gpu-limit' });
+      } else {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('colab-status', { status: 'disconnected', error: errorMsg });
+      }
+      if (colabScanInterval) {
+        clearInterval(colabScanInterval);
+        colabScanInterval = null;
+      }
+    });
+  }, 3000);
+
+  colabWindow.on('closed', () => {
+    fileLog('[Colab] Window fully closed (destroy called).');
+    if (colabScanInterval) {
+      clearInterval(colabScanInterval);
+      colabScanInterval = null;
+    }
+    colabWindow = null;
+    // Only send disconnected if NOT already connected (stop-colab was called intentionally)
+    if (mainWindow && !mainWindow.isDestroyed() && !successfulLink) {
+      activeColabUrl = null;
+      mainWindow.webContents.send('colab-status', { status: 'disconnected' });
+    }
+  });
+
+  return { success: true };
+});
+
+ipcMain.handle('get-colab-url', async () => {
+  return { url: activeColabUrl };
+});
+
+ipcMain.handle('start-kaggle', async (event, url) => {
+  if (colabWindow) {
+    colabWindow.destroy(); 
+  }
+  if (colabScanInterval) {
+    clearInterval(colabScanInterval);
+    colabScanInterval = null;
+  }
+  
+  colabWindow = new BrowserWindow({
+    width: 1100,
+    height: 800,
+    show: false,
+    skipTaskbar: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      partition: 'persist:colab' // Share same partition so it doesn't need double login
+    },
+    title: 'Kaggle Fallback GPU Engine'
+  });
+
+  colabWindow.setMenu(null);
+  
+  // Intercept window close
+  colabWindow.on('close', (e) => {
+    if (!colabWindow) return;
+    e.preventDefault();
+    colabWindow.hide();
+    fileLog('[Kaggle] Window hidden by user close request.');
+  });
+
+  colabWindow.loadURL(url);
+
+  colabWindow.webContents.on('did-finish-load', () => {
+    const currentUrl = colabWindow.webContents.getURL();
+    if (currentUrl === 'https://www.kaggle.com/' || currentUrl === 'https://www.kaggle.com') {
+      fileLog('[Kaggle] Ended up on home page, redirecting back to notebook...');
+      colabWindow.loadURL(url);
+      return;
+    }
+
+    colabWindow.webContents.executeJavaScript(`
+      (() => {
+        function findElementDeep(root, predicate) {
+          if (!root) return null;
+          if (predicate(root)) return root;
+          let node = root.firstElementChild;
+          while (node) {
+            let res = findElementDeep(node, predicate);
+            if (res) return res;
+            node = node.nextElementSibling;
+          }
+          if (root.shadowRoot) {
+            let res = findElementDeep(root.shadowRoot, predicate);
+            if (res) return res;
+          }
+          return null;
+        }
+
+        const isLoggedOut = document.body.innerText.includes('Sign In') || 
+                            document.body.innerText.includes('Register') || 
+                            document.title === 'Kaggle: Your Home for Data Science' ||
+                            window.location.pathname.includes('/account/login');
+
+        if (isLoggedOut) {
+          if (!window.location.pathname.includes('/account/login')) {
+            window.location.href = 'https://www.kaggle.com/account/login?returnUrl=' + encodeURIComponent(window.location.pathname + window.location.search);
+          }
+          return true;
+        }
+
+        function clickElement(el) {
+          try { el.click(); } catch(e) {}
+        }
+
+        let attempts = 0;
+        const interval = setInterval(() => {
+          attempts++;
+          if (attempts > 30) {
+            clearInterval(interval);
+            return;
+          }
+
+          // If we are on the View page (URL doesn't end with /edit), look for "Copy & Edit" or "Edit"
+          if (!window.location.pathname.includes('/edit')) {
+            const editBtn = findElementDeep(document.body, (el) => {
+              if (!el.tagName) return false;
+              const text = (el.textContent || '').trim().toLowerCase();
+              return el.tagName === 'BUTTON' && (text === 'copy & edit' || text === 'edit' || text === 'edit notebook');
+            });
+            if (editBtn) {
+              console.log("[AutoRun] Kaggle Edit button found! Forking/Editing...");
+              clickElement(editBtn);
+            }
+          } else {
+            // We are on the Editor page, look for "Run All"
+            const runAllBtn = findElementDeep(document.body, (el) => {
+              if (!el.tagName) return false;
+              const text = (el.textContent || '').trim().toLowerCase();
+              const title = (el.title || '').toLowerCase();
+              const aria = (el.getAttribute && el.getAttribute('aria-label') || '').toLowerCase();
+              return (el.tagName === 'BUTTON' && (text === 'run all' || title.includes('run all') || aria.includes('run all')));
+            });
+
+            if (runAllBtn) {
+              console.log("[AutoRun] Kaggle Run All button found!");
+              clickElement(runAllBtn);
+            }
+          }
+
+          // Check if Kaggle GPU quota exceeded (30h limit)
+          const limitText = findElementDeep(document.body, (el) => {
+            const text = (el.textContent || '').trim().toLowerCase();
+            return text.includes('quota exceeded') || text.includes('exceeded your gpu quota');
+          });
+
+          if (limitText) {
+            document.title = 'KAGGLE_LIMIT_REACHED';
+          }
+        }, 2500);
+
+        return false;
+      })();
+    `).then(isLoggedOut => {
+      if (isLoggedOut) {
+        fileLog('[Kaggle] User needs to login.');
+        colabWindow.show();
+      } else {
+        fileLog('[Kaggle] User is logged in. Auto-running...');
+        setTimeout(() => {
+          if (colabWindow && !colabWindow.isDestroyed()) colabWindow.hide();
+        }, 8000);
+      }
+    }).catch(err => fileLog('[Kaggle] Inject Error:', err.message));
+  });
+
+  const activePings = new Set();
+  let successfulLink = null;
+
+  colabWindow.on('page-title-updated', (e, title) => {
+    if (title === 'KAGGLE_LIMIT_REACHED') {
+      fileLog('[Kaggle] GPU Limit Reached.');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('colab-status', { status: 'disconnected', error: 'Kaggle GPU Quota Exceeded' });
+      }
+      return;
+    }
+  });
+
+  colabScanInterval = setInterval(() => {
+    if (!colabWindow || colabWindow.isDestroyed()) return;
+    scanFramesForGradioLink(colabWindow.webContents, (link) => {
+      if (successfulLink) return;
+      if (activePings.has(link)) return;
+
+      activePings.add(link);
+      fileLog('[Kaggle] Found link via frame scan:', link);
+
+      fetch(link.replace(/\/$/, '') + '/system_stats', {
+        headers: { 'bypass-tunnel-reminder': 'true' },
+        signal: AbortSignal.timeout(5000)
+      }).then(res => {
+        if (res.ok) {
+          fileLog('[Kaggle] Verified link:', link);
+          successfulLink = link;
+          activeColabUrl = link;
+          if (colabScanInterval) {
+            clearInterval(colabScanInterval);
+            colabScanInterval = null;
+          }
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('colab-status', { status: 'connected', url: link });
+          }
+          if (colabWindow) colabWindow.hide();
+        }
+      }).catch(() => {}).finally(() => activePings.delete(link));
     });
   }, 3000);
 
@@ -1610,7 +1995,8 @@ ipcMain.handle('start-colab', async (event, url) => {
       colabScanInterval = null;
     }
     colabWindow = null;
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow && !mainWindow.isDestroyed() && !successfulLink) {
+      activeColabUrl = null;
       mainWindow.webContents.send('colab-status', { status: 'disconnected' });
     }
   });
@@ -1618,13 +2004,14 @@ ipcMain.handle('start-colab', async (event, url) => {
   return { success: true };
 });
 
+
 ipcMain.handle('stop-colab', async () => {
   if (colabScanInterval) {
     clearInterval(colabScanInterval);
     colabScanInterval = null;
   }
   if (colabWindow) {
-    colabWindow.close();
+    colabWindow.destroy(); // Destroy window directly to bypass hide interceptor
     colabWindow = null;
   }
   return { success: true };

@@ -13,11 +13,11 @@ const DEFAULT_COLAB_URL =
   "https://colab.research.google.com/github/Kaowsar-Azad/Mata-data-generator/blob/main/SDXL_RealESRGAN.ipynb";
 
 const STYLES = [
-  { id: "realistic", label: "📸 Realistic / Photography", apiModel: "flux-realism", tag: "realistic photography, highly detailed, 8k resolution, photorealistic, RAW photo, cinematic lighting, sharp focus, professional camera, natural skin texture, intricate details" },
-  { id: "3d",        label: "🎮 3D Render / Animation",   apiModel: "flux-3d",      tag: "3d render, octane render, unreal engine 5, masterpiece, Pixar style, ray tracing, 4k, beautiful lighting, high detail" },
-  { id: "vector",    label: "✏️ Vector Illustration",     apiModel: "flux",         tag: "vector art, flat illustration, Adobe Illustrator style, clean lines, vibrant colors, minimalist, sharp edges" },
-  { id: "anime",     label: "🌸 Anime / Manga",           apiModel: "flux-anime",   tag: "anime style, studio ghibli, highly detailed, beautiful lighting, cel shaded, vibrant colors, manga illustration" },
-  { id: "none",      label: "⚡ Raw Prompt",              apiModel: "flux-realism", tag: "" }
+  { id: "realistic", label: "📸 Realistic / Photography", tag: "RAW photo, photorealistic, ultra realistic, hyperrealistic, DSLR, 50mm lens, natural lighting, skin pores, subsurface scattering, film grain, sharp focus, 8k uhd", neg: "painting, illustration, 3d render, cartoon, anime, drawing, plastic, smooth, artificial, overexposed, blurry, watermark" },
+  { id: "3d",        label: "🎮 3D Render / Animation",   tag: "3d render, octane render, unreal engine 5, physically based rendering, volumetric lighting, ray tracing, 4k, detailed textures, subsurface scattering, high poly", neg: "flat, 2d, cartoon, photo, realistic, sketch, watermark, blurry, low poly" },
+  { id: "vector",    label: "✏️ Vector Illustration",     tag: "flat vector illustration, clean lines, solid colors, adobe illustrator style, geometric shapes, minimalist, professional graphic design, no gradients", neg: "photo, realistic, 3d, blurry, noisy, painterly, sketch, watermark, gradient" },
+  { id: "anime",     label: "🌸 Anime / Manga",           tag: "anime, manga, cel shaded, studio ghibli, clean lines, vibrant colors, anime style illustration, 2d animation, detailed face, expressive eyes", neg: "photo, realistic, 3d render, western cartoon, blurry, low quality, watermark" },
+  { id: "none",      label: "⚡ Raw Prompt",              tag: "", neg: "" }
 ];
 
 const ASPECT_RATIOS = [
@@ -51,16 +51,19 @@ function blobToDataUrl(blob) {
 }
 
 // ─── Build ComfyUI SDXL Workflow
-function buildSdxlWorkflow({ width, height, prompt, denoise, mode, uploadedImageName, steps }) {
+function buildSdxlWorkflow({ width, height, prompt, negativePrompt, denoise, mode, uploadedImageName, steps }) {
   const seed = Math.floor(Math.random() * 1_000_000_000);
-  const cfg = 7.5;
+  // SDXL optimal: CFG 5-7, euler_ancestral + karras gives natural look
+  const cfg = 6.5;
+  const baseNeg = "(worst quality, low quality:1.4), (plastic skin:1.3), (waxy:1.3), deformed, ugly, blurry, watermark, signature, duplicate, mutated, extra limbs, bad anatomy, disfigured, oversaturated, overexposed";
+  const finalNeg = negativePrompt ? `${negativePrompt}, ${baseNeg}` : baseNeg;
 
   const workflow = {
-    "3": { class_type: "KSampler", inputs: { seed, steps, cfg, sampler_name: "dpmpp_2m", scheduler: "karras", denoise: mode === "img2img" ? denoise : 1.0, model: ["4", 0], positive: ["6", 0], negative: ["7", 0], latent_image: mode === "img2img" ? ["10", 0] : ["5", 0] } },
+    "3": { class_type: "KSampler", inputs: { seed, steps, cfg, sampler_name: "euler_ancestral", scheduler: "karras", denoise: mode === "img2img" ? denoise : 1.0, model: ["4", 0], positive: ["6", 0], negative: ["7", 0], latent_image: mode === "img2img" ? ["10", 0] : ["5", 0] } },
     "4": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "sd_xl_base_1.0.safetensors" } },
     "5": mode === "txt2img" ? { class_type: "EmptyLatentImage", inputs: { width, height, batch_size: 1 } } : { class_type: "LoadImage", inputs: { image: uploadedImageName } },
     "6": { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: ["4", 1] } },
-    "7": { class_type: "CLIPTextEncode", inputs: { text: "ugly, blurry, poor quality, watermark, signature", clip: ["4", 1] } },
+    "7": { class_type: "CLIPTextEncode", inputs: { text: finalNeg, clip: ["4", 1] } },
     "8": { class_type: "VAEDecode", inputs: { samples: ["3", 0], vae: ["11", 0] } },
     "9": { class_type: "SaveImage", inputs: { filename_prefix: "sdxl_out", images: ["8", 0] } },
     "11": { class_type: "VAELoader", inputs: { vae_name: "sdxl_vae.safetensors" } }
@@ -97,6 +100,11 @@ export function AiImageGenerator({ apiKeys }) {
     return () => clearInterval(interval);
   }, [status]);
 
+  // Kaggle Fallback Settings
+  const [kaggleUrl, setKaggleUrl] = useState(() => localStorage.getItem("kaggle_url") || "");
+  const [autoFallback, setAutoFallback] = useState(() => localStorage.getItem("auto_fallback") === "true");
+  const [showSettings, setShowSettings] = useState(false);
+
   // Generation settings
   const [mode, setMode]                   = useState("txt2img");
   const [initImage, setInitImage]         = useState(null);
@@ -104,7 +112,7 @@ export function AiImageGenerator({ apiKeys }) {
   const [prompt, setPrompt]               = useState("");
   const [selectedStyle, setSelectedStyle] = useState(STYLES[0]);
   const [aspectRatio, setAspectRatio]     = useState(ASPECT_RATIOS[0]);
-  const [steps, setSteps]                 = useState(20);
+  const [steps, setSteps]                 = useState(30);
   const [batchCount, setBatchCount]       = useState(1);
 
   // State
@@ -149,6 +157,17 @@ export function AiImageGenerator({ apiKeys }) {
         } else if (data.status === 'disconnected') {
           setStatus('disconnected');
           setServerUrl("");
+        } else if (data.status === 'gpu-limit') {
+          setStatus('disconnected');
+          setServerUrl("");
+          const fallbackEnabled = localStorage.getItem("auto_fallback") === "true";
+          const savedUrl = localStorage.getItem("kaggle_url");
+          if (fallbackEnabled && savedUrl) {
+            setError("Colab GPU Limit Reached! Auto-switching to Kaggle Server...");
+            handleStartKaggle(savedUrl);
+          } else {
+            setError("Colab GPU Limit Reached! Enable Kaggle Auto-Fallback in ⚙️ Settings or try again later.");
+          }
         }
       });
       return cleanup;
@@ -203,6 +222,17 @@ export function AiImageGenerator({ apiKeys }) {
     setStatus("disconnected");
     setServerUrl("");
   };
+
+  const handleStartKaggle = async (urlToUse) => {
+    const url = typeof urlToUse === 'string' ? urlToUse : kaggleUrl;
+    if (!window.electronAPI) { setError("Electron Desktop App প্রয়োজন।"); return; }
+    if (!url) { setError("Kaggle Notebook URL দিন।"); return; }
+    setStatus("connecting");
+    setError(null);
+    try { await window.electronAPI.startKaggle(url); }
+    catch (err) { setStatus("disconnected"); setError(err.message); }
+  };
+
 
   // ── Manual Connect ───────────────────────────────────────────────────
   const handleManualConnect = async () => {
@@ -288,9 +318,11 @@ export function AiImageGenerator({ apiKeys }) {
     
     try {
       const { width, height } = aspectRatio;
+      const qualityBoost = "masterpiece, best quality, highly detailed";
       const finalPrompt = selectedStyle.tag
-        ? `${prompt.trim()}, ${selectedStyle.tag}`
-        : prompt.trim();
+        ? `${prompt.trim()}, ${selectedStyle.tag}, ${qualityBoost}`
+        : `${prompt.trim()}, ${qualityBoost}`;
+      const negativePrompt = selectedStyle.neg || "";
 
       // ─────────────────────────────────────────────────────────────────
       // ENGINE 2: CLOUD GPU (ComfyUI / Colab)
@@ -356,7 +388,7 @@ export function AiImageGenerator({ apiKeys }) {
         setGenStatus(batchCount > 1 ? `ইমেজ তৈরি করছে (${currentImageIndex}/${batchCount})...` : "Workflow সাবমিট করছে...");
 
         const workflow = buildSdxlWorkflow({
-          width, height, prompt: finalPrompt, denoise: mode === "img2img" ? denoising : 1.0, mode, uploadedImageName, steps
+          width, height, prompt: finalPrompt, negativePrompt, denoise: mode === "img2img" ? denoising : 1.0, mode, uploadedImageName, steps
         });
 
         const submitRes = await fetch(`${api}/prompt`, {
@@ -635,6 +667,43 @@ export function AiImageGenerator({ apiKeys }) {
                       <ExternalLink size={12} /> Open in Browser
                     </button>
                   </div>
+                </div>
+                
+                {/* ── Kaggle Fallback Settings ── */}
+                <div style={{ marginTop: "1rem", background: "rgba(0,0,0,0.1)", border: "1px solid var(--glass-border)", borderRadius: "0.5rem", padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setShowSettings(!showSettings)}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: 600, color: "var(--text-1)", fontSize: "0.85rem" }}>
+                      <Settings2 size={15} color="var(--primary)" /> Kaggle GPU Fallback (30h/week)
+                    </div>
+                    <div style={{ fontSize: "0.8rem", color: autoFallback ? "var(--success)" : "var(--text-3)" }}>
+                      {autoFallback ? "Enabled" : "Disabled"}
+                    </div>
+                  </div>
+                  
+                  {showSettings && (
+                    <div style={{ borderTop: "1px solid var(--glass-border)", paddingTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.75rem", animation: "fadeIn 0.2s ease-out" }}>
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-2)", lineHeight: 1.5 }}>
+                        Colab-এর লিমিট শেষ হলে অ্যাপটি নিজে থেকেই অফিশিয়াল Kaggle নোটবুকটি আপনার অ্যাকাউন্টে কপি করে সার্ভার রান করবে। আপনার শুধু জিমেইল দিয়ে লগইন করা থাকা লাগবে।
+                      </div>
+                      
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8rem", color: "var(--text-1)", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={autoFallback}
+                          onChange={(e) => {
+                            setAutoFallback(e.target.checked);
+                            localStorage.setItem("auto_fallback", e.target.checked);
+                          }}
+                          style={{ accentColor: "var(--primary)" }}
+                        />
+                        Colab কাজ না করলে অটোমেটিক Kaggle চালু করুন (Recommended)
+                      </label>
+
+                      <button onClick={() => handleStartKaggle("https://www.kaggle.com/prantopranto/notebookc1bc2188cc")} disabled={status === "connecting"} style={{ alignSelf: "flex-start", padding: "0.4rem 0.8rem", background: "var(--surface-3)", border: "1px solid var(--primary)", color: "var(--primary)", borderRadius: "0.4rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                        <Cpu size={12} /> ম্যানুয়ালি Kaggle সার্ভার চালু করুন
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

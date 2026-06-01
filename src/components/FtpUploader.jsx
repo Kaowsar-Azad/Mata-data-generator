@@ -83,6 +83,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSpeed, setUploadSpeed] = useState(null); // bytes/sec
   const [currentJobId, setCurrentJobId] = useState(null);
+  const jobIdRef = useRef(null);
   const fileInputRef = useRef(null);
   const dropZoneRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -98,7 +99,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 5000);
+    }, type === 'warning' || type === 'error' ? 12000 : 5000);
   };
 
   const isAdobeConfig = (config) => {
@@ -282,9 +283,13 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
   };
 
   const clearAll = () => {
-    if (currentJobId && window.electronAPI?.cancelFtp) {
-      window.electronAPI.cancelFtp(currentJobId);
+    // If a job is currently running or pending, cancel it
+    if (jobIdRef.current && jobIdRef.current !== 'CANCELLED' && window.electronAPI?.cancelFtp) {
+      window.electronAPI.cancelFtp(jobIdRef.current);
     }
+    // Flag to stop any pending asynchronous operations (like validation)
+    jobIdRef.current = 'CANCELLED';
+
     files.forEach(f => { if (f.previewUrl) URL.revokeObjectURL(f.previewUrl); });
     setFiles([]);
     setUploadSpeed(null);
@@ -294,30 +299,104 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
 
   const uploadFiles = async () => {
     if (!window.electronAPI || files.length === 0 || activeConfigs.length === 0) return;
+    
+    // Assign job ID early so it can be cancelled even during validation
+    const newJobId = Math.random().toString(36).substr(2, 9);
+    jobIdRef.current = newJobId;
+    setCurrentJobId(newJobId);
+
     setIsUploading(true);
     setUploadSpeed(null);
 
     const t0 = Date.now();
 
     const pendingFiles = files.filter(f => f.status !== 'success');
-    const filePaths = pendingFiles.map(f => f.path).filter(Boolean);
+
+    // --- SMART VALIDATION ENGINE ---
+    const validatedFiles = [];
+    const rejectedFiles = [];
+    
+    for (let f of pendingFiles) {
+      const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
+      let errorMsg = null;
+      
+      // Video Validation
+      if (ext === '.mp4' || ext === '.mov') {
+        if (f.size > 3900 * 1024 * 1024) {
+          errorMsg = "ভিডিওর সাইজ ৩.৯ জিবি এর বেশি হতে পারবে না।";
+        } else if (window.electronAPI && window.electronAPI.checkVideoCodec) {
+          try {
+            const codec = await window.electronAPI.checkVideoCodec(f.path);
+            if (!['h264', 'hevc'].includes(codec)) {
+              errorMsg = `ভিডিও কোডেক সাপোর্ট করে না (${codec})। Adobe Stock এর জন্য H.264 বা H.265 (HEVC) প্রয়োজন।`;
+            }
+          } catch(e) {
+            console.error("Codec check failed", e);
+          }
+        }
+      } 
+      // Image Validation (JPEG/JPG)
+      else if (ext === '.jpg' || ext === '.jpeg') {
+        if (f.size > 45 * 1024 * 1024) {
+          errorMsg = "ছবির সাইজ ৪৫ মেগাবাইটের বেশি হতে পারবে না।";
+        } else {
+          // Check Resolution
+          try {
+            const dims = await new Promise((resolve) => {
+              const img = new Image();
+              img.onload = () => resolve({ w: img.width, h: img.height });
+              img.onerror = () => resolve({ w: 0, h: 0 });
+              img.src = f.previewUrl || URL.createObjectURL(f.file);
+            });
+            const mp = (dims.w * dims.h) / 1000000;
+            if (mp > 0 && mp < 4) {
+              errorMsg = `রেজোলিউশন খুব ছোট (${mp.toFixed(1)} MP)। নূন্যতম ৪ মেগাপিক্সেল প্রয়োজন।`;
+            } else if (mp > 100) {
+              errorMsg = `রেজোলিউশন খুব বড় (${mp.toFixed(1)} MP)। সর্বোচ্চ ১০০ মেগাপিক্সেল অনুমোদিত।`;
+            }
+          } catch(e) {
+            console.error("Resolution check failed", e);
+          }
+        }
+      }
+      
+      // If cancelled during validation, abort everything
+      if (jobIdRef.current === 'CANCELLED') return;
+
+      if (errorMsg) {
+        rejectedFiles.push({ ...f, status: 'error', error: errorMsg });
+      } else {
+        validatedFiles.push(f);
+      }
+    }
+    
+    // Update state with rejected files
+    if (rejectedFiles.length > 0) {
+      setFiles(prev => prev.map(item => {
+        const rejected = rejectedFiles.find(rf => rf.id === item.id);
+        return rejected ? rejected : item;
+      }));
+    }
+
+    const filePaths = validatedFiles.map(f => f.path).filter(Boolean);
 
     if (filePaths.length === 0) {
       setIsUploading(false);
+      if (rejectedFiles.length > 0) showToast("সবগুলো ফাইল ভ্যালিডেশন ফেইল করেছে!", "error");
       return;
     }
 
     // Calculate total size for speed estimation
-    const totalSize = pendingFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+    const totalSize = validatedFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+
+    // If cancelled before we reach here, abort
+    if (jobIdRef.current === 'CANCELLED') return;
 
     setFiles(prev => prev.map(item =>
-      pendingFiles.some(pf => pf.id === item.id)
+      validatedFiles.some(pf => pf.id === item.id)
         ? { ...item, status: 'uploading', progress: {}, error: null }
         : item
     ));
-
-    const newJobId = Math.random().toString(36).substr(2, 9);
-    setCurrentJobId(newJobId);
 
     try {
       const uploadPromises = activeConfigs.map(async (conf) => {
@@ -325,7 +404,12 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
         if (!res.success) {
           throw new Error(`Failed on ${conf.websiteName || conf.host}: ${res.error}`);
         }
-        return { host: conf.websiteName || conf.host, fileErrors: res.fileErrors || {} };
+        return { 
+          host: conf.websiteName || conf.host, 
+          fileErrors: res.fileErrors || {},
+          renamedFiles: res.renamedFiles || {},
+          csvPath: res.csvPath || null
+        };
       });
 
       const uploadResults = await Promise.all(uploadPromises);
@@ -335,9 +419,15 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
         setUploadSpeed(totalSize / elapsed);
       }
 
-      // Combine errors from all servers
+      // Combine errors and track renamed files
       const fileErrorsMap = {}; // { [filePath]: { [host]: error } }
+      const allRenamedFiles = [];
+      const generatedCsvPaths = [];
+      
       for (const res of uploadResults) {
+        if (res.csvPath) {
+          generatedCsvPaths.push(res.csvPath);
+        }
         for (const [filePath, err] of Object.entries(res.fileErrors)) {
           if (err) {
             const normalizedPath = filePath.replace(/\\/g, '/');
@@ -345,6 +435,20 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
             fileErrorsMap[normalizedPath][res.host] = err;
           }
         }
+        if (res.renamedFiles) {
+          for (const [filePath, info] of Object.entries(res.renamedFiles)) {
+             allRenamedFiles.push({ host: res.host, ...info });
+          }
+        }
+      }
+
+      if (allRenamedFiles.length > 0) {
+        const msg = allRenamedFiles.map(r => `[${r.host}] Failed: ${r.failedName} ➔ New: ${r.newName}`).join('\n');
+        showToast(`Adobe Stock Update:\n${msg}\nPlease delete the failed original files manually from the portal!`, 'warning');
+      }
+
+      if (generatedCsvPaths.length > 0) {
+        showToast(`অ্যাডোবি স্টকের জন্য CSV ফাইল তৈরি হয়েছে:\n${generatedCsvPaths[0]}`, 'success');
       }
 
       setFiles(prev => prev.map(item => {
@@ -964,9 +1068,9 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
             {t.type === 'success' ? (
               <CheckCircle2 style={{ width: '1.25rem', height: '1.25rem', flexShrink: 0 }} />
             ) : (
-              <X style={{ width: '1.25rem', height: '1.25rem', flexShrink: 0 }} />
+              <AlertTriangle style={{ width: '1.25rem', height: '1.25rem', flexShrink: 0 }} />
             )}
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, flexGrow: 1, wordBreak: 'break-word', lineHeight: '1.3' }}>{t.message}</span>
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, flexGrow: 1, wordBreak: 'break-word', lineHeight: '1.3', whiteSpace: 'pre-wrap' }}>{t.message}</span>
             <button 
               onClick={() => setToasts(prev => prev.filter(item => item.id !== t.id))}
               style={{

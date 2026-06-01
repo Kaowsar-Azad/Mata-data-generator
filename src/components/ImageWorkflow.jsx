@@ -436,6 +436,14 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     setImages((prev) => prev.filter((img) => img.id !== id));
     // Clean up hash entry and remove any duplicate pairs referencing this id
     delete hashMapRef.current[id];
+    
+    // Clean up cellRefs to prevent memory leaks
+    Object.keys(cellRefs.current).forEach(key => {
+      if (key.startsWith(id + '_')) {
+        delete cellRefs.current[key];
+      }
+    });
+
     setDuplicatePairs((prev) => prev.filter((p) => p.id1 !== id && p.id2 !== id));
   };
 
@@ -444,6 +452,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     setUploadBatchIds([]);
     setActiveJobId(null);
     hashMapRef.current = {};
+    cellRefs.current = {}; // Prevent memory leak
     setDuplicatePairs([]);
     setDismissedDuplicates(false);
   };
@@ -923,25 +932,64 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             if (!ftpRes.success) {
               throw new Error(`Failed on ${conf.websiteName || conf.host}: ${ftpRes.error}`);
             }
+            return { host: conf.websiteName || conf.host, fileErrors: ftpRes.fileErrors || {} };
           });
           
-          await Promise.all(uploadPromises);
-          
-          // Success
-          setImages(prev => prev.map(item => {
-            const isEmbedded = embeddedImages.some(ei => ei.id === item.id);
-            if (isEmbedded) {
-              return { ...item, embeddingStatus: "success" };
-            }
-            return item;
-          }));
+          const uploadResults = await Promise.all(uploadPromises);
 
-          if (embeddedImages.length === 1) {
-            showToast(`"${embeddedImages[0].renamedName || embeddedImages[0].file.name}" সফলভাবে FTP-তে আপলোড করা হয়েছে!`, "success");
-          } else if (embeddedImages.length > 1) {
-            showToast(`${embeddedImages.length}টি ফাইল সফলভাবে FTP-তে আপলোড করা হয়েছে!`, "success");
+          // Combine errors from all servers
+          const fileErrorsMap = {}; // { [filePath]: { [host]: error } }
+          for (const res of uploadResults) {
+            for (const [filePath, err] of Object.entries(res.fileErrors)) {
+              if (err) {
+                const normalizedPath = filePath.replace(/\\/g, '/');
+                if (!fileErrorsMap[normalizedPath]) fileErrorsMap[normalizedPath] = {};
+                fileErrorsMap[normalizedPath][res.host] = err;
+              }
+            }
           }
 
+          // Update image states based on whether they had upload errors
+          setImages(prev => prev.map(item => {
+            const isEmbedded = embeddedImages.some(ei => ei.id === item.id);
+            if (!isEmbedded) return item;
+
+            const primaryPath = (item.renamedPath || item.file?.path || '').replace(/\\/g, '/');
+            const visualPath = (item.renamedVisualPath || item.visualFile?.path || '').replace(/\\/g, '/');
+
+            const primaryErrors = fileErrorsMap[primaryPath];
+            const visualErrors = item.isEps && visualPath !== primaryPath ? fileErrorsMap[visualPath] : null;
+
+            const mergedErrors = { ...(primaryErrors || {}), ...(visualErrors || {}) };
+
+            if (Object.keys(mergedErrors).length > 0) {
+              const errMsg = Object.entries(mergedErrors).map(([h, err]) => `${h}: ${err}`).join(', ');
+              return { ...item, embeddingStatus: "error", embeddingError: errMsg };
+            } else {
+              return { ...item, embeddingStatus: "success", embeddingError: null };
+            }
+          }));
+
+          // Calculate batch success/failure counts
+          const failedCount = embeddedImages.filter(img => {
+            const primaryPath = (img.renamedPath || img.file?.path || '').replace(/\\/g, '/');
+            const visualPath = (img.renamedVisualPath || img.visualFile?.path || '').replace(/\\/g, '/');
+            const primaryErrors = fileErrorsMap[primaryPath];
+            const visualErrors = img.isEps && visualPath !== primaryPath ? fileErrorsMap[visualPath] : null;
+            return (primaryErrors && Object.keys(primaryErrors).length > 0) || (visualErrors && Object.keys(visualErrors).length > 0);
+          }).length;
+
+          const successCount = embeddedImages.length - failedCount;
+
+          if (failedCount > 0) {
+            showToast(`মেটাডাটা এম্বেড হয়েছে, কিন্তু ${failedCount}টি ফাইল আপলোড ব্যর্থ হয়েছে।`, "error");
+          } else {
+            if (successCount === 1) {
+              showToast(`"${embeddedImages[0].renamedName || embeddedImages[0].file.name}" সফলভাবে FTP-তে আপলোড করা হয়েছে!`, "success");
+            } else {
+              showToast(`${successCount}টি ফাইল সফলভাবে FTP-তে আপলোড করা হয়েছে!`, "success");
+            }
+          }
 
         } catch (uploadErr) {
           // Set all to error
@@ -2604,11 +2652,16 @@ function MetaField({ label, value, onChange, isTextArea, isKeywords }) {
   };
 
   const getKeywordScore = (keyword) => {
+    const kl = keyword.toLowerCase().trim();
+    const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]);
+    if (junk.has(kl)) return 10; 
+    const wordCount = kl.split(' ').length;
+    let score = 60 + (wordCount > 1 ? 15 : 0);
+    if (kl.length >= 4 && kl.length <= 15) score += 10;
     let hash = 0;
-    for (let i = 0; i < keyword.length; i++) {
-      hash = keyword.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return Math.max(12, Math.min(99, 100 - (keyword.length * 2) + (Math.abs(hash) % 30) - 15));
+    for (let i = 0; i < kl.length; i++) hash = kl.charCodeAt(i) + ((hash << 5) - hash);
+    score += (Math.abs(hash) % 15);
+    return Math.min(99, score);
   };
 
   const removeKeyword = (idxToRemove) => {

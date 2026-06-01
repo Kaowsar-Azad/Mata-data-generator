@@ -376,12 +376,18 @@ function postProcessMetadata(metadata, promptSettings) {
     title = `${title} ${s.suffixText.trim()}`;
   }
 
-  // Enforce title max chars based on settings, but NEVER exceed 200 (Adobe Stock hard limit)
-  let maxTitle = s.titleMaxChars || 200;
-  if (maxTitle > 200) maxTitle = 200;
+  // Enforce title max chars and words based on Xpiks/Adobe Stock best practices
+  let maxTitle = s.titleMaxChars || 150;
+  if (maxTitle > 150) maxTitle = 150;
   
   if (title.length > maxTitle) {
     title = title.substring(0, maxTitle).replace(/\s+\S*$/, "");
+  }
+  
+  // Enforce max 25 words to prevent "Title has too many words" warning
+  const words = title.split(/\s+/);
+  if (words.length > 25) {
+    title = words.slice(0, 25).join(' ');
   }
   
   // Enforce minimum title length (only if not in smart mode)

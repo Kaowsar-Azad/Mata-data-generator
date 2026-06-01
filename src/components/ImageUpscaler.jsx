@@ -60,7 +60,7 @@ export function ImageUpscaler() {
               }
             }
           }
-        } catch (err) {}
+        } catch (err) { console.warn("[ImageUpscaler] Initial connection check failed:", err.message); }
         setServerStatus('disconnected');
       };
       fetchServerUrl();
@@ -80,7 +80,7 @@ export function ImageUpscaler() {
         setError(null);
         return;
       }
-    } catch (err) {}
+    } catch (err) { console.warn("[ImageUpscaler] Manual connection check failed:", err.message); }
     setServerStatus('disconnected');
     setError("সার্ভারে কানেক্ট করা যায়নি। URL টি সঠিক কিনা দেখুন।");
   };

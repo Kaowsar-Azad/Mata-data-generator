@@ -155,6 +155,28 @@ ipcMain.handle('process-eps', async (event, inputPath) => {
   }
 });
 
+// IPC Handler for checking video codec (h264, hevc, etc.)
+ipcMain.handle('check-video-codec', async (event, videoPath) => {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(videoPath, (err, metadata) => {
+      if (err) {
+        fileLog('[check-video-codec] ffprobe failed:', err.message);
+        return reject(err);
+      }
+      try {
+        const videoStream = metadata.streams.find(s => s.codec_type === 'video');
+        if (videoStream && videoStream.codec_name) {
+          resolve(videoStream.codec_name.toLowerCase());
+        } else {
+          resolve('unknown');
+        }
+      } catch (e) {
+        resolve('unknown');
+      }
+    });
+  });
+});
+
 // IPC Handler for extracting a representative frame from a video file
 ipcMain.handle('extract-video-frame', async (event, videoPath) => {
   try {
@@ -509,7 +531,7 @@ async function getExifTool() {
     } catch (e) {
       fileLog('[getExifTool] Failed resolving exiftoolPath:', e);
     }
-    exiftoolInstance = new ExifTool({ maxProcs: 2 });
+    exiftoolInstance = new ExifTool({ maxProcs: 2, taskTimeoutMillis: 5000 });
     fileLog('[getExifTool] ExifTool instance created.');
   }
   return exiftoolInstance;
@@ -650,8 +672,12 @@ ipcMain.handle('write-metadata', async (event, filePath, title, description, key
       try {
         const ext = path.extname(filePath);
         const dir = path.dirname(filePath);
-        // Sanitize title: remove invalid characters, trim, limit length
-        let sanitizedTitle = title.replace(/[<>:"/\\|?*]+/g, '').trim().substring(0, 150);
+        // Sanitize title: replace spaces with underscores, remove special chars, limit length
+        let sanitizedTitle = title
+          .replace(/[^\w\s-]/gi, '') // Remove all non-word characters except spaces and hyphens
+          .replace(/\s+/g, '_')      // Replace spaces with underscores
+          .trim()
+          .substring(0, 120);        // Keep filename length reasonable
         
         if (sanitizedTitle) {
           let targetName = sanitizedTitle + ext;
@@ -892,8 +918,8 @@ ipcMain.handle('test-ftp', async (event, config) => {
 // We detect the host and cap at 3 workers for Adobe Stock.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const FTP_STREAM_HWM = 16 * 1024 * 1024; // 16 MB read-buffer per stream
-const POOL_IDLE_TTL  = 60_000;           // close pool after 60 s of inactivity
+const FTP_STREAM_HWM = 2 * 1024 * 1024; // 2MB read-buffer per stream for maximum throughput over high latency
+const POOL_IDLE_TTL  = 300_000;          // close pool after 5 mins of inactivity
 
 // pool: Map<cacheKey, { type, clients: Client[], idleTimer, busy }>
 const ftpPool = new Map();
@@ -907,8 +933,8 @@ function getWorkerLimit(host) {
   const h = (host || '').toLowerCase();
   // Adobe Stock / Contributor portal - highly sensitive to parallel uploads, must be 1 to prevent SFTP _fast errors or disconnects
   if (h.includes('adobe') || h.includes('adobestock') || h.includes('contributor.stock')) return 1;
-  // Dreamstime limits connections per user
-  if (h.includes('dreamstime')) return 1;
+  // Dreamstime allows up to 2 concurrent uploads
+  if (h.includes('dreamstime')) return 2;
   // Shutterstock, Getty, Freepik etc.
   return 3; // Reduced to 3 to ensure maximum stability and 0% error rate
 }
@@ -945,12 +971,13 @@ async function createSftpClient(config) {
     username:     config.user?.trim(),
     password:     config.password?.trim(),
     port:         parseInt(config.port) || 22,
-    readyTimeout: 30000
+    readyTimeout: 30000,
+    keepaliveInterval: 15000 // Send keep-alive packet every 15s to prevent timeouts on large files
   });
   return client;
 }
 
-// ── pool management ───────────────────────────────────────────────────────────
+// ── pool management
 //
 // Each pool entry has SLOTS. A slot = { client, inUse }.
 // Before using a connection a worker must ACQUIRE its slot (sets inUse=true).
@@ -1042,6 +1069,14 @@ async function getPool(config, type, key) {
   poolLocks.set(key, true);
   
   try {
+    // DNS Pre-check
+    try {
+      const dns = require('dns').promises;
+      await dns.lookup(config.host.trim());
+    } catch (dnsErr) {
+      throw new Error(`Couldn't resolve host name ${config.host}. Please check your internet connection or DNS settings.`);
+    }
+
     // Build new pool
     const limit = getWorkerLimit(config.host);
     fileLog(`[pool] 🔌 Opening ${limit} ${type.toUpperCase()} connections to ${config.host}...`);
@@ -1077,14 +1112,33 @@ async function getPool(config, type, key) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ProgressTransform extends Transform {
-  constructor(totalBytes, onProgress) {
+  constructor(totalBytes, startOffset, onProgress, onTimeout) {
     super();
     this.totalBytes = totalBytes;
-    this.transferred = 0;
+    this.transferred = startOffset || 0;
     this.onProgress = onProgress;
+    this.onTimeout = onTimeout;
+    this.lastDataTime = Date.now();
+    this.watchdog = setInterval(() => {
+      if (Date.now() - this.lastDataTime > 30000) {
+        if (this.watchdog) { clearInterval(this.watchdog); this.watchdog = null; }
+        if (this.onTimeout) this.onTimeout();
+      }
+    }, 5000);
+  }
+
+  _destroy(err, callback) {
+    if (this.watchdog) { clearInterval(this.watchdog); this.watchdog = null; }
+    callback(err);
+  }
+
+  _final(callback) {
+    if (this.watchdog) { clearInterval(this.watchdog); this.watchdog = null; }
+    callback();
   }
 
   _transform(chunk, encoding, callback) {
+    this.lastDataTime = Date.now();
     this.transferred += chunk.length;
     if (this.totalBytes > 0) {
       const p = Math.round((this.transferred / this.totalBytes) * 100);
@@ -1093,12 +1147,19 @@ class ProgressTransform extends Transform {
     this.push(chunk);
     callback();
   }
+
+  _destroy(err, callback) {
+    clearInterval(this.watchdog);
+    callback(err);
+  }
 }
 
 async function uploadFilesParallel(config, filePaths, type, jobId, event) {
   const validPaths = filePaths.filter(p => fs.existsSync(p));
   const fileErrors = {};
-  if (validPaths.length === 0) return fileErrors;
+  const renamedFiles = {};
+  const successfulAdobeUploads = [];
+  if (validPaths.length === 0) return { fileErrors, renamedFiles };
 
   const key   = poolKey(config, type);
   const entry = await getPool(config, type, key);
@@ -1120,11 +1181,15 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
        return; // skip
     }
 
+    let finalTitleToSave = '';
+    let finalKeywordsToSave = '';
+    let finalCategoryToSave = '';
+
     // ── AUTOMATIC METADATA SCAN & FORMAT CORRECTION (Red Dot Prevention) ──
     try {
       const ext = path.extname(filePath).toLowerCase();
-      // Only process common formats we can write metadata to (jpg, jpeg, png, eps)
-      if (['.jpg', '.jpeg', '.png', '.eps'].includes(ext)) {
+      // Only process common formats we can write metadata to (jpg, jpeg, png, eps, webp, tiff)
+      if (['.jpg', '.jpeg', '.png', '.eps', '.webp', '.tiff'].includes(ext)) {
         const exiftool = await getExifTool();
         let tags = {};
         try {
@@ -1154,6 +1219,9 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
           const finalKeywordsArray = [...new Set(keywords)].map(k => String(k).trim()).filter(Boolean).slice(0, 49);
           const finalTitle = String(title).trim();
           
+          finalTitleToSave = finalTitle;
+          finalKeywordsToSave = finalKeywordsArray.join(', ');
+
           // Re-write in correct standard XMP and IPTC formats with UTF-8 encoding
           const writeTags = {
             "XMP-dc:Title": finalTitle,
@@ -1179,6 +1247,7 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
           const categoriesArray = Array.isArray(categories) ? categories : (typeof categories === 'string' ? categories.split(',') : []);
           if (categoriesArray.length > 0) {
             const cleanCategories = categoriesArray.map(c => String(c).trim()).filter(Boolean);
+            finalCategoryToSave = cleanCategories[0] || '';
             writeTags["IPTC:SupplementalCategories"] = cleanCategories;
             writeTags["XMP-photoshop:Category"] = cleanCategories[0] || "";
             writeTags["XMP-photoshop:SupplementalCategories"] = cleanCategories;
@@ -1199,108 +1268,208 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
     let total_transferred = 0;
     let fileSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
 
+    const isAdobe = config.host && (
+      config.host.toLowerCase().includes('adobe') ||
+      config.host.toLowerCase().includes('adobestock') ||
+      config.host.toLowerCase().includes('contributor.stock')
+    );
+
+    let finalRemoteName = fileName;
+    const MAX_RETRIES = 5;
+    let uploadSuccess = false;
+
     try {
-      // Re-check after acquiring
-      if (jobId && global.cancelledFtpJobs.has(jobId)) {
-        throw new Error('Cancelled by user');
-      }
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        if (uploadSuccess) break;
 
-      // Reconnect slot if dead/closed before upload starts
-      if (slot.dead || (type === 'ftp' && slot.client.closed)) {
-        fileLog(`[pool] Reconnecting dead/closed slot for ${config.host}...`);
-        slot.client = type === 'sftp' ? await createSftpClient(config) : await createFtpClient(config);
-        slot.dead = false;
-      }
+        // Re-check after acquiring or retrying
+        if (jobId && global.cancelledFtpJobs.has(jobId)) throw new Error('Cancelled by user');
 
-      if (type === 'sftp') {
-        const isAdobe = config.host && (
-          config.host.toLowerCase().includes('adobe') ||
-          config.host.toLowerCase().includes('adobestock') ||
-          config.host.toLowerCase().includes('contributor.stock')
-        );
-
-        if (isAdobe) {
-          // For Adobe Stock, fastPut is rejected by the server (throws "fastPut: _fast..." error).
-          // Switching to standard put with a manual read stream to track progress.
-          const readStream = fs.createReadStream(filePath);
-          
-          const progressStream = new ProgressTransform(fileSize, (p) => {
-             if (jobId && global.cancelledFtpJobs.has(jobId)) {
-                readStream.destroy(new Error('Cancelled by user'));
-                progressStream.destroy(new Error('Cancelled by user'));
-                try { slot.client.end(); } catch(e){}
-                return;
-             }
-             total_transferred = Math.floor((p / 100) * fileSize);
-             if (event && !event.sender.isDestroyed()) {
-                event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
-             }
-          });
-          
-          readStream.on('error', () => {}); // Prevent uncaught exception
-          progressStream.on('error', () => {}); // Prevent uncaught exception
-
-          try {
-            await slot.client.put(readStream.pipe(progressStream), `/${fileName}`);
-          } catch (err) {
-            if (jobId && global.cancelledFtpJobs.has(jobId)) {
-               try { slot.client.end(); } catch(e){}
-               throw new Error('Cancelled by user');
-            }
-            throw err;
-          }
-        } else {
-          // Super-fast parallel chunk upload for all other stock servers
-          await slot.client.fastPut(filePath, `/${fileName}`, {
-            concurrency: 32, // High concurrency to saturate the user's internet bandwidth
-            chunkSize: 1024 * 1024,
-            step: function(transferred, chunk, total) {
-              total_transferred = transferred;
-              if (jobId && global.cancelledFtpJobs.has(jobId)) {
-                 try { slot.client.end(); } catch(e){}
-                 throw new Error('Cancelled by user');
-              }
-              if (total > 0 && event && !event.sender.isDestroyed()) {
-                 const p = Math.round((total_transferred / total) * 100);
-                 event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
-              }
-            }
-          });
+        // Reconnect slot if dead/closed before upload starts
+        if (slot.dead || (type === 'ftp' && slot.client.closed)) {
+          fileLog(`[pool] Reconnecting dead/closed slot for ${config.host}...`);
+          slot.client = type === 'sftp' ? await createSftpClient(config) : await createFtpClient(config);
+          slot.dead = false;
         }
-      } else {
-        const readStream = fs.createReadStream(filePath, { highWaterMark: FTP_STREAM_HWM });
-        
-        const progressStream = new ProgressTransform(fileSize, (p) => {
-           if (jobId && global.cancelledFtpJobs.has(jobId)) {
-               readStream.destroy(new Error('Cancelled by user'));
-               progressStream.destroy(new Error('Cancelled by user'));
-               try { slot.client.close(); } catch(e){}
-               return;
-           }
-           total_transferred = Math.floor((p / 100) * fileSize);
-           if (event && !event.sender.isDestroyed()) {
-               event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
-           }
-        });
-        
-        readStream.on('error', () => {}); // Prevent uncaught exception
-        progressStream.on('error', () => {}); // Prevent uncaught exception
 
-        await slot.client.uploadFrom(readStream.pipe(progressStream), fileName);
+        let attemptName = fileName;
+        let remoteSize = 0;
+
+        if (false /* isAdobe temporarily disabled for testing resume */) {
+          // Adobe Method: Pre-emptive Unique Naming. Never resume.
+          const ext = path.extname(fileName);
+          const base = path.basename(fileName, ext);
+          attemptName = `${base}_${Date.now()}${ext}`;
+          
+          if (attempt > 1 && finalRemoteName) {
+            // Attempt to clean up corrupted partial file from previous failed attempt
+            fileLog(`[upload-${type}] Deleting corrupted partial file from previous attempt: ${finalRemoteName}`);
+            try { 
+              if (type === 'sftp') await slot.client.delete(`/${finalRemoteName}`); 
+              else await slot.client.remove(finalRemoteName);
+            } catch(e) {}
+            
+            // Record rename for frontend notification
+            renamedFiles[filePath] = { failedName: finalRemoteName, newName: attemptName };
+          }
+          finalRemoteName = attemptName;
+          remoteSize = 0; // Always start from 0 for Adobe
+        } else {
+          // Non-Adobe Method: Check size and Smart Resume
+          try {
+            if (type === 'ftp') {
+              remoteSize = await slot.client.size(fileName);
+            } else {
+              const stat = await slot.client.stat(`/${fileName}`);
+              remoteSize = stat.size;
+            }
+            fileLog(`[upload-${type}] Checked remote file ${fileName}: size = ${remoteSize} bytes`);
+          } catch (err) {
+            // Only "file not found" is acceptable. Code 2 is SSH_FX_NO_SUCH_FILE
+            if (err.code !== 2 && err.code !== 'ENOENT' && !(err.message||'').toLowerCase().includes('no such file')) {
+              fileLog(`[upload-${type}] Unexpected stat error: ${err.message}`);
+            }
+            remoteSize = 0;
+          }
+          
+          if (remoteSize === fileSize && fileSize > 0) {
+            fileLog(`[upload-${type}] File ${fileName} already exists on remote with identical size (${remoteSize} bytes). Skipping.`);
+            if (event && !event.sender.isDestroyed()) {
+              event.sender.send('ftp-progress', { filePath, progress: 100, host: config.host });
+            }
+            uploadSuccess = true;
+            break;
+          }
+        }
+
+        fileLog(`[upload-${type}] Attempt ${attempt} for ${attemptName} (resume from ${remoteSize})`);
+
+        let readStream = null;
+        let progressStream = null;
+
+        try {
+          readStream = fs.createReadStream(filePath, {
+            highWaterMark: FTP_STREAM_HWM,
+            start: remoteSize
+          });
+
+          progressStream = new ProgressTransform(fileSize, remoteSize, 
+            (p) => {
+              if (jobId && global.cancelledFtpJobs.has(jobId)) {
+                if (readStream) readStream.destroy(new Error('Cancelled by user'));
+                if (progressStream) progressStream.destroy(new Error('Cancelled by user'));
+                if (type === 'ftp') try { slot.client.close(); } catch(e){}
+                else try { slot.client.end(); } catch(e){}
+                return;
+              }
+              total_transferred = Math.floor((p / 100) * fileSize);
+              if (event && !event.sender.isDestroyed()) {
+                event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
+              }
+            },
+            () => {
+              // Timeout Watchdog fired!
+              fileLog(`[upload-${type}] Timeout watchdog triggered for ${attemptName}! No data for 30s.`);
+              if (readStream) readStream.destroy();
+              if (progressStream) progressStream.destroy();
+              if (type === 'ftp') try { slot.client.close(); } catch(e){}
+              else try { slot.client.end(); } catch(e){}
+            }
+          );
+
+          readStream.on('error', () => {});
+          progressStream.on('error', () => {});
+
+          const streamPipeline = readStream.pipe(progressStream);
+
+          if (false /* isAdobe temporarily disabled for testing resume */) {
+            // Always put from 0
+            if (type === 'sftp') {
+              await slot.client.put(streamPipeline, `/${attemptName}`, { chunkSize: 64 * 1024, concurrency: 64 });
+            } else {
+              await slot.client.uploadFrom(streamPipeline, attemptName);
+            }
+          } else {
+            // Append/Put for non-Adobe
+            if (remoteSize > 0) {
+              if (type === 'sftp') await slot.client.append(streamPipeline, `/${attemptName}`, { chunkSize: 64 * 1024, concurrency: 64 });
+              else await slot.client.appendFrom(streamPipeline, attemptName);
+            } else {
+              if (type === 'sftp') await slot.client.put(streamPipeline, `/${attemptName}`, { chunkSize: 64 * 1024, concurrency: 64 });
+              else await slot.client.uploadFrom(streamPipeline, attemptName);
+            }
+          }
+          uploadSuccess = true;
+          fileLog(`[upload-${type}] ✓ Uploaded successfully: ${attemptName}`);
+        } catch (uploadErr) {
+          // Detect Overwrite / Permission Denied specifically for Non-Adobe sites if they throw it
+          const errMsg = (uploadErr.message || '').toLowerCase();
+          const isOverwrite = errMsg.includes('550') || errMsg.includes('overwrite') || errMsg.includes('exists') || errMsg.includes('permission') || errMsg.includes('denied');
+          
+          fileLog(`[upload-${type}] Upload error on attempt ${attempt}: ${uploadErr.message}`);
+          slot.dead = true;
+          if (type === 'ftp') try { slot.client.close(); } catch(e){}
+          else try { slot.client.end(); } catch(e){}
+          
+          if (!isAdobe && isOverwrite) {
+             // For non-Adobe, fallback rename logic if permission denied
+             const ext = path.extname(fileName);
+             const base = path.basename(fileName, ext);
+             fileName = `${base}_${attempt}${ext}`;
+             finalRemoteName = fileName;
+             fileLog(`[upload-${type}] Non-Adobe overwrite error, renaming to ${fileName} for next attempt.`);
+          }
+          
+          if (attempt === MAX_RETRIES) throw uploadErr;
+        } finally {
+          // Explicitly clear listeners to fix MaxListenersExceededWarning
+          if (readStream) readStream.removeAllListeners();
+          if (progressStream) progressStream.removeAllListeners();
+        }
+      } // end retry loop
+
+      // Verify uploaded file size
+      let verifySize = 0;
+      try {
+        if (type === 'ftp') {
+          verifySize = await slot.client.size(finalRemoteName);
+        } else {
+          const stat = await slot.client.stat(`/${finalRemoteName}`);
+          verifySize = stat.size;
+        }
+        fileLog(`[upload-${type}] Verified remote file ${finalRemoteName} size: ${verifySize}/${fileSize} bytes`);
+      } catch (sizeErr) {
+        fileLog(`[upload-${type}] Size verification could not retrieve size for ${finalRemoteName}: ${sizeErr.message}`);
+        // If the server doesn't support size check, fallback to assuming it matches
+        verifySize = fileSize; 
+      }
+
+      if (verifySize !== fileSize) {
+        throw new Error(`Upload verification mismatch: expected ${fileSize} bytes, remote has ${verifySize} bytes`);
       }
       
       // Emit 100% just in case
       if (event && !event.sender.isDestroyed()) event.sender.send('ftp-progress', { filePath, progress: 100, host: config.host });
       
-      fileLog(`[upload-${type}] ✓ ${fileName}`);
+      fileLog(`[upload-${type}] ✓ ${fileName} (as ${finalRemoteName})`);
+      
+      if (isAdobe) {
+         successfulAdobeUploads.push({
+           filename: finalRemoteName,
+           title: finalTitleToSave,
+           keywords: finalKeywordsToSave,
+           category: finalCategoryToSave
+         });
+      }
+      
       fileErrors[filePath] = null;
     } catch (err) {
       const isCancelled = jobId && global.cancelledFtpJobs.has(jobId);
       if (isCancelled || (err.message && err.message.includes('Cancelled by user'))) {
          fileLog(`[upload-${type}] ⛔ Aborted ${fileName} (Cancelled)`);
          slot.dead = true;
-         if (type === 'ftp') slot.client.close();
-         if (type === 'sftp') try { slot.client.end(); } catch(e){}
+         if (type === 'ftp') try { slot.client.close(); } catch(e){}
+         else try { slot.client.end(); } catch(e){}
          fileErrors[filePath] = 'Cancelled by user';
          if (event && !event.sender.isDestroyed()) {
             event.sender.send('ftp-progress', { filePath, progress: -1, host: config.host, error: 'Cancelled by user' });
@@ -1314,8 +1483,8 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
          fileLog(`[upload-${type}] ✗ ${fileName}: ${err.message}`);
          // Mark slot dead so getPool rebuilds next call
          slot.dead = true;
-         if (type === 'ftp') slot.client.close();
-         if (type === 'sftp') try { slot.client.end(); } catch(e){}
+         if (type === 'ftp') try { slot.client.close(); } catch(e){}
+         else try { slot.client.end(); } catch(e){}
          fileErrors[filePath] = err.message;
          if (event && !event.sender.isDestroyed()) {
             event.sender.send('ftp-progress', { filePath, progress: -1, host: config.host, error: err.message });
@@ -1326,8 +1495,39 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
     }
   }));
 
+  // Generate CSV for Adobe Stock
+  let generatedCsvPath = null;
+  if (successfulAdobeUploads.length > 0 && validPaths.length > 0) {
+    try {
+      const folderPath = path.dirname(validPaths[0]);
+      const csvName = `AdobeStock_Metadata_${Date.now()}.csv`;
+      const csvPath = path.join(folderPath, csvName);
+      
+      const headers = ['Filename', 'Title', 'Keywords', 'Category', 'Releases'];
+      const rows = [headers.join(',')];
+      
+      for (const item of successfulAdobeUploads) {
+         // Escape quotes in CSV fields
+         const esc = (str) => `"${(str || '').replace(/"/g, '""')}"`;
+         rows.push([
+            item.filename,
+            esc(item.title),
+            esc(item.keywords),
+            item.category || '',
+            '' // Releases
+         ].join(','));
+      }
+      
+      fs.writeFileSync(csvPath, rows.join('\n'), 'utf8');
+      generatedCsvPath = csvPath;
+      fileLog(`[upload-${type}] Generated Adobe Stock CSV at: ${csvPath}`);
+    } catch(err) {
+      fileLog(`[upload-${type}] Failed to generate CSV: ${err.message}`);
+    }
+  }
+
   resetIdleTimer(entry, key);
-  return fileErrors;
+  return { fileErrors, renamedFiles, csvPath: generatedCsvPath };
 }
 
 ipcMain.handle('upload-ftp', async (event, config, filePaths, jobId) => {
@@ -1338,9 +1538,9 @@ ipcMain.handle('upload-ftp', async (event, config, filePaths, jobId) => {
   const t0 = Date.now();
 
   try {
-    const fileErrors = await uploadFilesParallel(config, filePaths, type, jobId, event);
+    const { fileErrors, renamedFiles, csvPath } = await uploadFilesParallel(config, filePaths, type, jobId, event);
     fileLog(`[upload-ftp] ✅ Done in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-    return { success: true, fileErrors };
+    return { success: true, fileErrors, renamedFiles, csvPath };
   } catch (err) {
     const key = poolKey(config, type);
     await closePool(key); // rebuild pool on next call

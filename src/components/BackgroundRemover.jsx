@@ -15,22 +15,31 @@ export function BackgroundRemover() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [apiKey, setApiKey] = useState("");
+  const [hfToken, setHfToken] = useState("");
   const fileInputRef = useRef(null);
 
-  // Load key: Electron secure storage → localStorage fallback
+  // Load keys: Electron secure storage → localStorage fallback
   useEffect(() => {
-    const loadKey = async () => {
-      // Try Electron secure storage first
+    const loadKeys = async () => {
+      // Try Electron secure storage first for remove.bg
       const fromSecure = await getKeySecurely('removebg');
       if (fromSecure) {
         setApiKey(fromSecure);
-        return;
+      } else {
+        const fromLocal = localStorage.getItem(STORAGE_REMOVEBG_KEY);
+        if (fromLocal) setApiKey(fromLocal);
       }
-      // Fallback: localStorage (browser / dev mode)
-      const fromLocal = localStorage.getItem(STORAGE_REMOVEBG_KEY);
-      if (fromLocal) setApiKey(fromLocal);
+
+      // Try Electron secure storage first for Hugging Face
+      const hfSecure = await getKeySecurely('hf');
+      if (hfSecure) {
+        setHfToken(hfSecure);
+      } else {
+        const hfLocal = localStorage.getItem("hf_token");
+        if (hfLocal) setHfToken(hfLocal);
+      }
     };
-    loadKey();
+    loadKeys();
   }, []);
 
   const persistKey = async (v) => {
@@ -38,6 +47,13 @@ export function BackgroundRemover() {
     // Save to both: localStorage for browser, secureStorage for Electron
     localStorage.setItem(STORAGE_REMOVEBG_KEY, v);
     await saveKeySecurely('removebg', v);
+  };
+
+  const persistHfToken = async (v) => {
+    setHfToken(v);
+    // Save to both: localStorage for browser, secureStorage for Electron
+    localStorage.setItem("hf_token", v);
+    await saveKeySecurely('hf', v);
   };
 
 
@@ -98,7 +114,14 @@ export function BackgroundRemover() {
         const blob = await removeBackgroundViaLocalServer(file);
         setResultBlob(blob);
         setResultUrl(URL.createObjectURL(blob));
-
+      } else if (mode === "hf") {
+        const trimmed = hfToken.trim();
+        if (!trimmed) {
+          throw new Error("Hugging Face API Token দিন (নিচের ঘরে)।");
+        }
+        const blob = await removeBackgroundViaHfSpace(file, trimmed);
+        setResultBlob(blob);
+        setResultUrl(URL.createObjectURL(blob));
       } else {
         const trimmed = apiKey.trim();
         if (!trimmed) {
@@ -133,7 +156,7 @@ export function BackgroundRemover() {
           Background Remover
         </h2>
         <p className="text-muted" style={{ fontSize: "0.88rem", maxWidth: "52rem" }}>
-          দুটি মোড: <strong>লোকাল</strong> (সম্পূর্ণ ফ্রি) এবং <strong>remove.bg API</strong> (সেরা মান)।
+          তিনটি মোড: <strong>লোকাল</strong> (সম্পূর্ণ ফ্রি), <strong>Hugging Face AI</strong> (সম্পূর্ণ ফ্রি ও প্রিমিয়াম কোয়ালিটি) এবং <strong>remove.bg API</strong> (সেরা মান)।
         </p>
       </div>
 
@@ -151,7 +174,17 @@ export function BackgroundRemover() {
             style={{ fontSize: "0.78rem", padding: "0.4rem 0.75rem", display: "flex", alignItems: "center", gap: "0.35rem" }}
           >
             <Sparkles style={{ width: "0.85rem", height: "0.85rem" }} />
-            লোকাল (ফ্রি)
+            লোকাল (ফ্রি & অফলাইন)
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMode("hf")}
+            className={mode === "hf" ? "btn-primary" : "btn-outline"}
+            style={{ fontSize: "0.78rem", padding: "0.4rem 0.75rem", display: "flex", alignItems: "center", gap: "0.35rem" }}
+          >
+            <Sparkles style={{ width: "0.85rem", height: "0.85rem", color: "var(--secondary)" }} />
+            Hugging Face AI (ফ্রি & প্রিমিয়াম)
           </button>
 
           <button
@@ -164,6 +197,26 @@ export function BackgroundRemover() {
             remove.bg API
           </button>
         </div>
+        {mode === "hf" && (
+          <div style={{ flex: "1 1 220px", minWidth: "200px", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+            <label style={{ fontSize: "0.65rem", color: "var(--primary)", fontWeight: 700 }}>Hugging Face Token</label>
+            <input
+              type="password"
+              value={hfToken}
+              onChange={(e) => persistHfToken(e.target.value)}
+              placeholder="hf_... টোকেন পেস্ট করুন (সম্পূর্ণ ফ্রি)"
+              style={{
+                width: "100%",
+                padding: "0.45rem 0.55rem",
+                fontSize: "0.78rem",
+                borderRadius: "0.4rem",
+                border: "1px solid var(--glass-border)",
+                background: "var(--surface-2)",
+                color: "var(--text-1)",
+              }}
+            />
+          </div>
+        )}
         {mode === "api" && (
           <div style={{ flex: "1 1 220px", minWidth: "200px", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
             <label style={{ fontSize: "0.65rem", color: "var(--primary)", fontWeight: 700 }}>remove.bg API Key (Gemini key নয়)</label>
@@ -277,6 +330,11 @@ export function BackgroundRemover() {
           {mode === "local" && (
             <p style={{ marginTop: "0.65rem", fontSize: "0.68rem", color: "var(--text-3)" }}>
               প্রথম চালানোতে এআই মডেল ডাউনলোড হতে পারে। ডেস্কটপে সম্পূর্ণ অফলাইনে চলবে; ব্রাউজারে চালাতে সার্ভার রানিং আছে কিনা নিশ্চিত করুন।
+            </p>
+          )}
+          {mode === "hf" && (
+            <p style={{ marginTop: "0.65rem", fontSize: "0.68rem", color: "var(--text-3)" }}>
+              Hugging Face API সম্পূর্ণ ফ্রি এবং এটি BRIA RMBG-1.4 ব্যবহার করে স্টুডিও-কোয়ালিটি ব্যাকগ্রাউন্ড রিমুভাল প্রদান করে। টোকেন পেতে <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer" style={{ color: "var(--primary)" }}>এখানে ক্লিক করুন</a>।
             </p>
           )}
         </div>

@@ -13,7 +13,31 @@ import { AiImageGenerator } from './components/AiImageGenerator'
 import { Sparkles, Zap, Image as ImageIcon, Eraser, Box, ChevronLeft, ChevronRight, Server, Key, Camera, Maximize, Cpu } from 'lucide-react'
 
 function App() {
-  const [apiKeys, setApiKeys] = useState([])
+  const [apiKeys, setApiKeys] = useState(() => {
+    try {
+      const saved = localStorage.getItem("all_api_keys");
+      const providerSaved = localStorage.getItem("selected_api_providers");
+      if (saved) {
+        const allKeys = JSON.parse(saved);
+        const activeProviders = providerSaved ? JSON.parse(providerSaved) : ['gemini'];
+        const combinedKeys = [];
+        activeProviders.forEach(p => {
+          (allKeys[p] || []).forEach(k => {
+            combinedKeys.push({ provider: p, key: k });
+          });
+        });
+        if (combinedKeys.length > 0) return combinedKeys;
+        
+        const firstProviderWithKeys = Object.keys(allKeys).find(p => allKeys[p] && allKeys[p].length > 0);
+        if (firstProviderWithKeys) {
+          return allKeys[firstProviderWithKeys].map(k => ({ provider: firstProviderWithKeys, key: k }));
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load apiKeys from localStorage:", e);
+    }
+    return [];
+  });
   const [apiProvider, setApiProvider] = useState(() => {
     try {
       const saved = localStorage.getItem("selected_api_providers");

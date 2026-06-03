@@ -7,10 +7,11 @@ import { recordApiUsage } from "./apiUsageTracker.js";
  */
 
 const modelsToTry = [
+  "gemini-3.5-flash",
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash",
   "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
-  "gemini-1.5-flash",
-  "gemini-1.5-pro"
+  "gemini-2.0-flash-lite"
 ];
 
 // Fallback dynamic fetch
@@ -620,7 +621,8 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
     const keyItem = apiKeys[currentKeyIndex];
     
     // Support both new {provider, key} object format and legacy string format
-    const currentProvider = typeof keyItem === 'object' ? keyItem.provider : apiProvider;
+    let currentProvider = typeof keyItem === 'object' ? keyItem.provider : apiProvider;
+    if (Array.isArray(currentProvider)) currentProvider = currentProvider[0] || 'gemini';
     const apiKey = typeof keyItem === 'object' ? keyItem.key : keyItem;
 
     // Branch to OpenAI compatible providers if not Gemini
@@ -708,13 +710,16 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
 
         if (
           error.message.includes("API_KEY_INVALID") ||
+          error.message.toLowerCase().includes("key not valid") ||
+          error.message.toLowerCase().includes("invalid key") ||
           error.message.includes("403") ||
           error.message.includes("429") ||
-          error.message.includes("quota")
+          error.message.toLowerCase().includes("quota") ||
+          error.message.toLowerCase().includes("limit")
         ) {
-          console.warn(`[Rate Limit/Quota] Model ${modelName} on key ${currentKeyIndex} exhausted. Trying next model...`);
+          console.warn(`[Key Exhausted] Key index ${currentKeyIndex} is invalid or exhausted. Proceeding to next key.`);
           keyHitRateLimit = true;
-          continue; // Try next model instead of breaking the loop
+          break; // Break the inner model loop to try the next key
         }
 
         if (error.message.includes("400")) {
@@ -753,30 +758,29 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
 export async function generatePromptFromImage(imageBuffer, mimeType, apiKeys, apiProvider = "gemini", promptSettings = {}) {
   const mode = promptSettings.promptSimilarityMode || 'Exact Match';
   
-  let modeInstruction = "";
-  if (mode === "Unique Variation") {
-    modeInstruction = `\n- UNIQUE VARIATION MODE (CRITICAL): DO NOT create an exact match of this image. Instead, slightly alter the subjects, camera angles, colors, or background details so the resulting image will be a UNIQUE but thematically similar variation. This is to avoid duplicate content on stock sites. Describe a related concept but make it visually distinct.`;
-  } else {
-    modeInstruction = `\n- EXACT MATCH MODE: Create a prompt that will recreate this exact image as closely and accurately as possible.`;
-  }
+  const modeInstruction = mode === "Unique Variation" 
+    ? `\nUNIQUE VARIATION MODE (CRITICAL): Do not describe the exact image. Instead, invent a visually distinct but thematically related variation. Change the subject's pose, the camera angle, the lighting, or the environment significantly to ensure the resulting image is entirely unique and avoid duplicate stock content.`
+    : `\nEXACT MATCH MODE (CRITICAL): Describe this exact image as meticulously as possible to act as a 1:1 recreation recipe.`;
 
-  const prompt = `Analyze this image in detail and create a comprehensive, descriptive prompt that could be used to recreate this image in an AI model like Midjourney or Stable Diffusion.
+  const prompt = `You are an expert AI image prompt engineer specializing in Midjourney v6 and Stable Diffusion. Your task is to analyze the provided image and reverse-engineer it into a highly detailed, professional text-to-image prompt.
+${modeInstruction}
 
-Focus on:
-1. Main subject, actions, and positioning.
-2. Lighting, camera angles, and atmosphere.
-3. Artistic style, medium, and color palette.
-4. Essential background details.
-5. HUMAN ANATOMY (If humans are present): Describe the facial features, gaze direction, eyes, pupils, exact hand/finger placement, and skin texture in extreme detail to ensure flawless anatomical generation.
+Construct your prompt using the following structure, blended into a single continuous, highly descriptive paragraph. Do not use bullet points or line breaks in the final output.
+
+1. Subject & Core Action: Clearly state what the main subject is, their exact physical appearance (age, ethnicity, attire, expression, exact pose), and what they are doing. 
+2. Environment & Background: Describe the setting, foreground, background elements, and atmosphere in detail.
+3. Camera & Composition: Include precise photography terminology (e.g., 35mm lens, f/1.8, cinematic shot, extreme close-up, low angle, macro photography, rule of thirds, depth of field, bokeh, sharp focus).
+4. Lighting & Color Palette: Specify lighting types (e.g., golden hour, neon lighting, volumetric lighting, rim lighting, soft diffused light, studio lighting, dramatic shadows) and the exact color grading or dominant colors.
+5. Artistic Style & Medium: Note the medium (e.g., hyper-realistic photography, 3D render in Unreal Engine 5, flat vector illustration, watercolor, cyberpunk aesthetic, vintage film aesthetic, ultra-detailed 8k resolution).
+6. Human Anatomy (If humans are present): Explicitly describe precise anatomical features to force the AI to render them correctly (e.g., "perfectly formed hands with exactly 5 fingers, symmetrical facial features, highly detailed eyes with distinct pupils and iris reflections, realistic skin texture with pores").
 
 CRITICAL RULES:
-- HUMAN SUBJECTS: If humans are in the image, use terms that encourage perfect anatomy (e.g., "perfectly detailed eyes", "correctly proportioned hands", "5 fingers", "cinematic lighting on face", "sharp focus on pupils").
-- EXCLUDE ANY WATERMARKS: Completely ignore any watermarks, logos, or copyright text present in the image. Do not mention them in the prompt.
-- SAFETY COMPLIANCE: Do not include any violent, explicit, offensive, or risky words that might trigger safety filters in AI image generators. Keep the language completely safe and policy-compliant.${modeInstruction}
-- Output the entire prompt as a SINGLE, continuous paragraph. 
-- DO NOT use multiple paragraphs, sections, bullet points, or line breaks.
-- Avoid being excessively wordy; keep it descriptive but focused.
-- Return ONLY the raw prompt text. No introductory text, quotes, or markdown.`;
+- Output ONLY the raw text of the final prompt. Do not include introductory text, quotes, or markdown formatting.
+- Do NOT use multiple paragraphs, sections, bullet points, or line breaks. It must be ONE single continuous paragraph of text.
+- WATERMARKS: Completely ignore any watermarks, logos, or copyright text. Do not mention them.
+- SAFETY: Keep all language perfectly safe and policy-compliant (no explicit, violent, or risky terms).
+- Use rich, evocative visual adjectives (e.g., "glowing," "textured," "dynamic").
+- Aim for a length of roughly 60 to 120 words for optimal AI generation.`;
 
   let lastError = null;
   const startKeyIndex = globalKeyIndex;
@@ -786,10 +790,15 @@ CRITICAL RULES:
 
   for (let k = 0; k < apiKeys.length; k++) {
     const currentKeyIndex = (startKeyIndex + k) % apiKeys.length;
-    const apiKey = apiKeys[currentKeyIndex];
+    const keyItem = apiKeys[currentKeyIndex];
+    
+    // Support both new {provider, key} object format and legacy string format
+    let currentProvider = typeof keyItem === 'object' ? keyItem.provider : apiProvider;
+    if (Array.isArray(currentProvider)) currentProvider = currentProvider[0] || 'gemini';
+    const apiKey = typeof keyItem === 'object' ? keyItem.key : keyItem;
 
     // OpenAI Compatible Route (Groq, etc.)
-    if (apiProvider !== "gemini") {
+    if (currentProvider !== "gemini") {
       try {
         const enrichedPrompt = `You are an Expert AI Prompt Engineer specialized in Midjourney and Stable Diffusion. 
 Your task is to analyze the attached image and write a MASTERPIECE prompt.
@@ -800,8 +809,8 @@ ADVICE FOR EXCELLENCE:
 Use professional photography terms (e.g. "85mm lens", "soft bokeh", "rim lighting", "high dynamic range"). 
 Be vivid and poetic but stay within a single paragraph.`;
 
-        console.log(`[Attempt] Provider: ${apiProvider} (Image to Prompt) using key index ${currentKeyIndex}`);
-        const text = await fetchOpenAICompatible(apiProvider, apiKey, enrichedPrompt, imageBuffer, mimeType, false);
+        console.log(`[Attempt] Provider: ${currentProvider} (Image to Prompt) using key index ${currentKeyIndex}`);
+        const text = await fetchOpenAICompatible(currentProvider, apiKey, enrichedPrompt, imageBuffer, mimeType, false);
         return text;
       } catch (error) {
         lastError = error;
@@ -844,14 +853,19 @@ Be vivid and poetic but stay within a single paragraph.`;
 
         return out;
       } catch (error) {
+        console.warn(`[Fail] ${modelName} on key ${currentKeyIndex} (ImageToPrompt): ${error.message}`);
         lastError = error;
 
         if (
           error.message.includes("API_KEY_INVALID") ||
+          error.message.toLowerCase().includes("key not valid") ||
+          error.message.toLowerCase().includes("invalid key") ||
           error.message.includes("403") ||
           error.message.includes("429") ||
-          error.message.includes("quota")
+          error.message.toLowerCase().includes("quota") ||
+          error.message.toLowerCase().includes("limit")
         ) {
+          console.warn(`[Key Exhausted] Key index ${currentKeyIndex} is invalid or exhausted. Proceeding to next key.`);
           break; // Break inner model loop to smoothly test the NEXT API key in the outer loop
         }
 
@@ -901,7 +915,8 @@ Return ONLY a valid JSON object matching this schema:
     const currentKeyIndex = (startKeyIndex + k) % apiKeys.length;
     const keyItem = apiKeys[currentKeyIndex];
     
-    const currentProvider = typeof keyItem === 'object' ? keyItem.provider : apiProvider;
+    let currentProvider = typeof keyItem === 'object' ? keyItem.provider : apiProvider;
+    if (Array.isArray(currentProvider)) currentProvider = currentProvider[0] || 'gemini';
     const apiKey = typeof keyItem === 'object' ? keyItem.key : keyItem;
 
     if (currentProvider !== "gemini") {
@@ -958,13 +973,18 @@ Return ONLY a valid JSON object matching this schema:
 
         return parsed;
       } catch (error) {
+        console.warn(`[Fail] ${modelName} on key ${currentKeyIndex} (SecurityScan): ${error.message}`);
         lastError = error;
         if (
           error.message.includes("API_KEY_INVALID") ||
+          error.message.toLowerCase().includes("key not valid") ||
+          error.message.toLowerCase().includes("invalid key") ||
           error.message.includes("403") ||
           error.message.includes("429") ||
-          error.message.includes("quota")
+          error.message.toLowerCase().includes("quota") ||
+          error.message.toLowerCase().includes("limit")
         ) {
+          console.warn(`[Key Exhausted] Key index ${currentKeyIndex} is invalid or exhausted. Proceeding to next key.`);
           break; // Break inner loop, go to next key
         }
         if (error.message.includes("400") || error.message.includes("404")) continue;

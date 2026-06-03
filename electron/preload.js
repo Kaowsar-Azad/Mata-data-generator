@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   generateEpsJpg: (filePath, addWhiteBgToPng) => ipcRenderer.invoke('generate-eps-jpg', filePath, addWhiteBgToPng),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFiles: (options) => ipcRenderer.invoke('select-files', options),
-  saveFile: (filePath, bufferArray) => ipcRenderer.invoke('save-file', filePath, bufferArray)
+  saveFile: (filePath, bufferArray) => ipcRenderer.invoke('save-file', filePath, bufferArray),
+  setUploadConcurrency: (concurrency) => ipcRenderer.invoke('set-upload-concurrency', concurrency),
+  upscaleLocalNcnn: (filePath, scale, modelName, format, saveDir) => ipcRenderer.invoke('upscale-local-ncnn', filePath, scale, modelName, format, saveDir)
 });
 

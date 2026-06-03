@@ -817,107 +817,8 @@ app.post('/api/convert-to-eps', express.json({ limit: '20mb' }), async (req, res
   }
 });
 
-app.post('/api/upscale', upload.single('file'), async (req, res) => {
-  const cleanup = () => {
-    if (req.file?.path) {
-      try { fs.unlinkSync(req.file.path); } catch (_) {}
-    }
-  };
 
-  try {
-    const scale = parseInt(req.body.scale) || 2;
-    const localPath = req.body.filePath;
-    let inputPath = req.file?.path;
 
-    if (!inputPath && localPath) {
-      if (fs.existsSync(localPath)) {
-        inputPath = localPath;
-      } else {
-        return res.status(400).json({ error: `File not found on system: ${localPath}` });
-      }
-    }
-
-    if (!inputPath) {
-      return res.status(400).json({ error: 'No image uploaded or file path not found' });
-    }
-    
-    console.log(`[Upscale] Starting ${scale}x upscaling for: ${inputPath}...`);
-    
-    // 1. Get original metadata
-    const origMeta = await sharp(inputPath).metadata();
-    const targetWidth = Math.round(origMeta.width * scale);
-    const targetHeight = Math.round(origMeta.height * scale);
-
-    console.log(`[Upscale] Target size: ${targetWidth}x${targetHeight}`);
-
-    // Try Cloud AI first (Hugging Face)
-    try {
-      console.log('[Cloud Upscale] Trying Hugging Face Space...');
-      // Timeout helper
-      const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), ms));
-      
-      const processCloud = async () => {
-        // Try finegrain image enhancer
-        const client = await Client.connect("finegrain/finegrain-image-enhancer");
-        // We guess the predict signature: usually [image_file, prompt/settings] or similar
-        // Since we aren't 100% sure, if this fails it falls back to Local
-        const result = await client.predict("/predict", [
-            handle_file(inputPath),
-            scale // Upscale factor
-        ]);
-        
-        const outUrl = result.data?.[0]?.url || result.data?.[0]?.path;
-        if (!outUrl) throw new Error("No output image");
-        
-        const response = await fetch(outUrl);
-        const arrayBuf = await response.arrayBuffer();
-        return Buffer.from(arrayBuf);
-      };
-
-      const hfBuffer = await Promise.race([processCloud(), timeout(4000)]);
-      console.log('[Cloud Upscale] Success!');
-      
-      cleanup();
-      res.setHeader('Content-Type', origMeta.format === 'png' ? 'image/png' : 'image/jpeg');
-      return res.status(200).send(hfBuffer);
-    } catch (cloudErr) {
-      console.warn('[Cloud Upscale Failed] Falling back to Local High-Fidelity Engine...', cloudErr.message);
-    }
-
-    // 2. LOCAL HIGH-FIDELITY FALLBACK (Lanczos3 + Edge Enhancement)
-    console.log('[Local Upscale] Executing Local High-Fidelity Pipeline...');
-    
-    let pipeline = sharp(inputPath)
-      // Fast shrink off ensures highest quality sampling
-      .resize(targetWidth, targetHeight, {
-        kernel: sharp.kernel.lanczos3,
-        fastShrinkOnLoad: false,
-        withoutEnlargement: false
-      });
-
-    // Apply unsharp mask to restore edge crispness that scaling loses,
-    // without introducing noise (using threshold)
-    pipeline = pipeline.sharpen({
-      sigma: 1.5,
-      m1: 1.2,
-      m2: 0.7,
-      x1: 2,
-      y2: 10,
-      y3: 20
-    });
-
-    const outputBuffer = await (origMeta.format === 'png' ? pipeline.png().toBuffer() : pipeline.jpeg({ quality: 100 }).toBuffer());
-    
-    cleanup();
-    res.setHeader('Content-Type', origMeta.format === 'png' ? 'image/png' : 'image/jpeg');
-    return res.status(200).send(outputBuffer);
-
-  } catch (error) {
-    cleanup();
-    console.error('[Upscale] ERROR:', error?.message);
-    return res.status(500).json({ error: error?.message || 'Upscaling failed' });
-  }
-});
 
 // Auto-retry port if busy (EADDRINUSE)
 function startServer(tryPort) {
@@ -930,7 +831,7 @@ function startServer(tryPort) {
     console.log(`   • POST /api/removebg       — remove.bg API proxy (header X-Removebg-Key)`);
     console.log(`   • POST /api/remove-bg-local — free local removal (Node, @imgly/background-removal-node)`);
     console.log(`   • POST /api/vectorize      — Image → SVG (VTracer / ImageTracer)`);
-    console.log(`   • POST /api/upscale        — AI Image Upscaler (Cloud + Local HF)`);
+
     console.log(`========================================\n`);
   });
   server.on('error', (err) => {

@@ -124,6 +124,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   };
 
   useEffect(() => {
+    const savedConcurrency = parseInt(localStorage.getItem('ftp_concurrency') || '3');
+    if (window.electronAPI?.setUploadConcurrency) {
+      window.electronAPI.setUploadConcurrency(savedConcurrency).catch(e => console.error(e));
+    }
+
     if (window.electronAPI?.onFtpProgress) {
       const unsubscribe = window.electronAPI.onFtpProgress(({ filePath, progress, host }) => {
         setImages(prev => prev.map(img => {
@@ -568,7 +573,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             } else if (img.visualFile) {
               const dataUrl = await resizeImageToBase64(img.visualFile, 800);
               base64 = dataUrl.split(",")[1];
-              mimeType = img.visualFile.type;
+              mimeType = "image/jpeg";
             } else if (img.isEps) {
               let epsData = img.epsData;
               if (!epsData) {

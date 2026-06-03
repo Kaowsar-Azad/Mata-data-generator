@@ -133,10 +133,24 @@ export async function removeBackgroundViaLocalServer(file) {
  * @param {File} file
  * @returns {Promise<Blob>}
  */
-export async function removeBackgroundViaHfSpace(file) {
-  // If we ever want to implement Electron IPC for this, we can do it later.
-  // For now, we will just use the standard Express proxy which electron handles fine via port 3002.
-  
+export async function removeBackgroundViaHfSpace(file, token) {
+  if (window.electronAPI && window.electronAPI.removeBgHf) {
+    console.log('[removeBg] Running in Electron. Using Native IPC removeBgHf...');
+    if (!file.path) {
+      throw new Error("File path is missing. Drag and drop the file directly.");
+    }
+    const res = await window.electronAPI.removeBgHf(file.path, token);
+    if (!res.success) {
+      throw new Error(res.error || "Hugging Face background removal failed in Electron");
+    }
+    const byteString = atob(res.base64);
+    const ab = new Uint8Array(byteString.length);
+    for (let i = 0; i < byteString.length; i++) {
+      ab[i] = byteString.charCodeAt(i);
+    }
+    return new Blob([ab], { type: res.mimeType || 'image/png' });
+  }
+
   const base = getRemoveBgProxyBase();
   const fd = new FormData();
   fd.append('file', file, file.name || 'upload.png');
@@ -145,6 +159,7 @@ export async function removeBackgroundViaHfSpace(file) {
   try {
     res = await fetch(`${base}/api/removebg-hf-space`, {
       method: 'POST',
+      headers: { 'X-HF-Token': token },
       body: fd,
     });
   } catch (err) {

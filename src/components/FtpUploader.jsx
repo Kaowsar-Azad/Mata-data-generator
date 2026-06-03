@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Server, ShieldCheck, Loader2, Save, Upload, Trash2, CheckCircle2, X,
-  ExternalLink, Info, RefreshCw, Zap, AlertCircle, CloudUpload, Link,
+  ExternalLink, Info, RefreshCw, Zap, AlertCircle, AlertTriangle, CloudUpload, Link,
   ChevronDown, ChevronUp, Key, Globe
 } from "lucide-react";
+
 
 const POPULAR_AGENCIES = [
   {
@@ -79,14 +80,49 @@ function formatBytes(bytes) {
 
 
 export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, setEditingConfig }) {
-  const [files, setFiles] = useState([]);
-  const [isUploading, setIsUploading] = useState(false);
+  const [files, setFiles] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('ftp_upload_state');
+      if (saved) {
+        return JSON.parse(saved).map(f => ({
+          ...f,
+          previewUrl: f.path ? `file://${f.path.replace(/\\/g, '/')}` : null
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to load ftp state', e);
+    }
+    return [];
+  });
+  const [isUploading, setIsUploading] = useState(() => sessionStorage.getItem('ftp_is_uploading') === 'true');
   const [uploadSpeed, setUploadSpeed] = useState(null); // bytes/sec
-  const [currentJobId, setCurrentJobId] = useState(null);
-  const jobIdRef = useRef(null);
+  const [currentJobId, setCurrentJobId] = useState(() => sessionStorage.getItem('ftp_current_job_id') || null);
+  const jobIdRef = useRef(sessionStorage.getItem('ftp_current_job_id') || null);
+
+  useEffect(() => {
+    const filesToSave = files.map(f => ({ ...f, file: undefined, previewUrl: undefined }));
+    sessionStorage.setItem('ftp_upload_state', JSON.stringify(filesToSave));
+  }, [files]);
+
+  useEffect(() => {
+    sessionStorage.setItem('ftp_current_job_id', currentJobId || '');
+    jobIdRef.current = currentJobId;
+  }, [currentJobId]);
+
+  useEffect(() => {
+    sessionStorage.setItem('ftp_is_uploading', isUploading ? 'true' : 'false');
+  }, [isUploading]);
   const fileInputRef = useRef(null);
   const dropZoneRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [concurrency, setConcurrency] = useState(() => parseInt(localStorage.getItem('ftp_concurrency') || '2'));
+
+  useEffect(() => {
+    if (window.electronAPI?.setUploadConcurrency) {
+      window.electronAPI.setUploadConcurrency(concurrency).catch(e => console.error(e));
+    }
+    localStorage.setItem('ftp_concurrency', concurrency.toString());
+  }, [concurrency]);
 
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -114,11 +150,22 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
     setTestResult(null);
   }, [editingConfig?.id]);
 
+  // Prevent UI getting stuck if renderer reloaded and all active uploads finished
+  useEffect(() => {
+    if (isUploading && files.length > 0) {
+      const allDone = files.every(f => f.status === 'success' || f.status === 'error');
+      if (allDone) {
+        setIsUploading(false);
+        setCurrentJobId(null);
+      }
+    }
+  }, [files, isUploading]);
+
   useEffect(() => {
     return () => {
-      if (currentJobId && window.electronAPI?.cancelFtp) {
-        window.electronAPI.cancelFtp(currentJobId);
-      }
+      // NOTE: We don't cancel FTP on unmount anymore because the user might just switch tabs 
+      // or the renderer might be reloading. The main process handles job lifecycle.
+      // If we cancel here, we kill active uploads when the laptop sleeps.
     };
   }, [currentJobId]);
 
@@ -436,7 +483,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
           }
         }
         if (res.renamedFiles) {
-          for (const [filePath, info] of Object.entries(res.renamedFiles)) {
+          for (const [, info] of Object.entries(res.renamedFiles)) {
              allRenamedFiles.push({ host: res.host, ...info });
           }
         }
@@ -869,6 +916,31 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                   <Trash2 style={{ width: '0.75rem', height: '0.75rem' }} /> Clear
                 </button>
               )}
+
+              {/* Concurrency Selector */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginLeft: '0.5rem', padding: '0.2rem 0.5rem', background: 'var(--surface-2)', borderRadius: '0.5rem', border: '1px solid var(--glass-border)' }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', fontWeight: 600 }}>Threads:</span>
+                {[1, 2].map(val => (
+                  <button
+                    key={val}
+                    onClick={() => setConcurrency(val)}
+                    style={{
+                      padding: '0.15rem 0.45rem',
+                      fontSize: '0.7rem',
+                      fontWeight: 800,
+                      border: 'none',
+                      borderRadius: '0.25rem',
+                      background: concurrency === val ? 'var(--primary)' : 'transparent',
+                      color: concurrency === val ? '#fff' : 'var(--text-2)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s'
+                    }}
+                    title={`Upload up to ${val} file(s) in parallel`}
+                  >
+                    {val}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div style={{ display: 'flex', gap: '0.65rem' }}>

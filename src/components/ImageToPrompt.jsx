@@ -120,7 +120,7 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
           try {
             const dataUrl = await resizeImageToBase64(img.file, 800);
             const base64 = dataUrl.split(",")[1];
-            const mimeType = img.file.type;
+            const mimeType = "image/jpeg";
 
             const generatedPrompt = await generatePromptFromImage(base64, mimeType, apiKeys, apiProvider || "gemini", promptSettings);
 

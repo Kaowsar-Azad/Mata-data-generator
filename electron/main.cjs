@@ -348,6 +348,116 @@ ipcMain.handle('generate-eps-jpg', async (event, inputPath, addWhiteBgToPng = tr
   }
 });
 
+// IPC Handler for Local GPU Upscaling (Upscayl / realesrgan-ncnn-vulkan)
+ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName = 'realesrgan-x4plus', format = 'jpg', saveDir = null) => {
+  try {
+    const binDir = app.isPackaged 
+      ? path.join(process.resourcesPath, 'bin', 'upscayl') 
+      : path.join(__dirname, '..', 'bin', 'upscayl');
+
+    // Prefer upscayl-bin.exe (newer, more features), fall back to realesrgan-ncnn-vulkan.exe
+    const isUpscaylBin = fs.existsSync(path.join(binDir, 'upscayl-bin.exe'));
+    let exePath = isUpscaylBin
+      ? path.join(binDir, 'upscayl-bin.exe')
+      : path.join(binDir, 'realesrgan-ncnn-vulkan.exe');
+    
+    if (!fs.existsSync(exePath)) {
+      throw new Error(`Local upscaler engine not found at: ${exePath}`);
+    }
+
+    const parsedPath = path.parse(inputPath);
+    const outputFormat = (format && format.toLowerCase() === 'png') ? 'png' : 'jpg';
+    let outputPath = saveDir
+      ? path.join(saveDir, `${parsedPath.name}_${scale}x_LocalGPU.${outputFormat}`)
+      : path.join(os.tmpdir(), `${parsedPath.name}_upscaled_${scale}x.${outputFormat}`);
+
+    // Model scale: animevideov3 has dedicated x2/x3/x4 variants. All others are x4 models.
+    // For x4 models, always run at 4x to get true AI upscaling; then output-scale handles final size.
+    let finalModelName = modelName;
+    let modelScale = 4; // Most models are 4x
+    if (modelName === 'realesr-animevideov3') {
+      const clampedScale = Math.min(4, Math.max(2, parseInt(scale)));
+      finalModelName = `realesr-animevideov3-x${clampedScale}`;
+      modelScale = clampedScale;
+    }
+
+    let args;
+    if (isUpscaylBin) {
+      // upscayl-bin uses -z (model scale) and -s (output scale) separately
+      // IMPORTANT: -c is COMPRESSION (0-100), NOT a toggle — omit it to use default lossless
+      args = [
+        '-i', inputPath,
+        '-o', outputPath,
+        '-z', modelScale.toString(),     // model-scale: must match the model (e.g. 4 for realesrgan-x4plus)
+        '-s', scale.toString(),           // output-scale: final output resolution ratio
+        '-m', 'models',
+        '-n', finalModelName,
+        '-f', outputFormat,
+        '-v'  // verbose so we can track progress %
+      ];
+    } else {
+      // realesrgan-ncnn-vulkan uses only -s for both model and output scale
+      args = [
+        '-i', inputPath,
+        '-o', outputPath,
+        '-s', scale.toString(),
+        '-m', 'models',
+        '-n', finalModelName,
+        '-f', outputFormat,
+        '-v'
+      ];
+    }
+
+    fileLog(`[upscale-local-ncnn] Engine: ${isUpscaylBin ? 'upscayl-bin' : 'realesrgan-ncnn-vulkan'}`);
+    fileLog(`[upscale-local-ncnn] Running: ${exePath} ${args.join(' ')}`);
+
+    return new Promise((resolve, reject) => {
+      const proc = spawn(exePath, args, { cwd: binDir });
+      let errOutput = '';
+      
+      const handleData = (data) => {
+        const str = data.toString();
+        errOutput += str;
+        const match = str.match(/(\d+(?:\.\d+)?)\s*%/);
+        if (match) {
+          const progressVal = parseFloat(match[1]);
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('upscale-progress', { filePath: inputPath, progress: progressVal });
+          }
+        }
+      };
+
+      proc.stdout.on('data', handleData);
+      proc.stderr.on('data', handleData);
+      
+      proc.on('close', async (code) => {
+        if (code === 0 && fs.existsSync(outputPath)) {
+          if (saveDir) {
+            resolve({ success: true, path: outputPath, format: outputFormat, engine: 'localNcnn' });
+          } else {
+            try {
+              const buffer = fs.readFileSync(outputPath);
+              fs.unlinkSync(outputPath);
+              resolve({ success: true, base64: buffer.toString('base64'), format: outputFormat });
+            } catch (e) {
+              reject(new Error(`Failed to read upscaled file: ${e.message}`));
+            }
+          }
+        } else {
+          reject(new Error(`Upscaler failed (exit code ${code}). Details: ${errOutput.trim()}`));
+        }
+      });
+      
+      proc.on('error', (err) => {
+        reject(new Error(`Execution error: ${err.message}`));
+      });
+    });
+  } catch (error) {
+    fileLog('[upscale-local-ncnn] Error:', error.message);
+    return { success: false, error: error.message };
+  }
+});
+
 // IPC Handler for local background removal via Node
 ipcMain.handle('remove-bg-local', async (event, inputPath) => {
   try {
@@ -927,6 +1037,38 @@ const ftpPool = new Map();
 // track jobs that the user has cancelled
 global.cancelledFtpJobs = new Set();
 
+// Concurrency control variables for dynamic throttle
+let activeUploads = 0;
+const uploadWaiters = [];
+
+function wakeAllUploadWaiters() {
+  while (uploadWaiters.length > 0) {
+    const resolve = uploadWaiters.shift();
+    if (resolve) resolve();
+  }
+}
+
+global.uploadConcurrency = 3;
+
+async function acquireUploadSlot(host) {
+  while (true) {
+    const currentMax = Math.min(global.uploadConcurrency || 3, getWorkerLimit(host));
+    if (activeUploads < currentMax) {
+      activeUploads++;
+      return;
+    }
+    await new Promise(resolve => uploadWaiters.push(resolve));
+  }
+}
+
+function releaseUploadSlot() {
+  activeUploads = Math.max(0, activeUploads - 1);
+  if (uploadWaiters.length > 0) {
+    const next = uploadWaiters.shift();
+    if (next) next();
+  }
+}
+
 // ── server-specific settings ─────────────────────────────────────────────────
 
 function getWorkerLimit(host) {
@@ -1166,155 +1308,159 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
 
   fileLog(`[upload-${type}] ${validPaths.length} file(s) queued into ${entry.slots.length}-slot pool`);
 
-  // Upload each file: acquire a free slot → upload → release
-  await Promise.all(validPaths.map(async (filePath) => {
-    let fileName = path.basename(filePath);
-    // Dreamstime and some other stock sites reject .jpeg extensions, they require .jpg
-    if (fileName.toLowerCase().endsWith('.jpeg')) {
-      fileName = fileName.substring(0, fileName.length - 5) + '.jpg';
-    }
-    
-    // Check before acquiring slot
-    if (jobId && global.cancelledFtpJobs.has(jobId)) {
-       fileLog(`[upload-${type}] ⛔ Skipped ${fileName} (Job Cancelled)`);
-       fileErrors[filePath] = 'Cancelled by user';
-       return; // skip
-    }
+  // We process the files using a queue index to maintain exact serial order
+  let nextFileIndex = 0;
+  const limit = entry.slots.length; // number of workers = number of slots in the pool
 
-    let finalTitleToSave = '';
-    let finalKeywordsToSave = '';
-    let finalCategoryToSave = '';
-
-    // ── AUTOMATIC METADATA SCAN & FORMAT CORRECTION (Red Dot Prevention) ──
-    try {
-      const ext = path.extname(filePath).toLowerCase();
-      // Only process common formats we can write metadata to (jpg, jpeg, png, eps, webp, tiff)
-      if (['.jpg', '.jpeg', '.png', '.eps', '.webp', '.tiff'].includes(ext)) {
-        const exiftool = await getExifTool();
-        let tags = {};
-        try {
-          tags = await exiftool.read(filePath);
-        } catch (e) {
-          fileLog('[upload-metadata] Failed reading tags from:', fileName, e);
-        }
-        
-        const title = tags.Title || tags.ObjectName || tags.XPTitle || '';
-        
-        let keywords = [];
-        const rawKeywords = tags.Subject || tags.Keywords || tags.XPKeywords || [];
-        if (Array.isArray(rawKeywords)) {
-          keywords = rawKeywords;
-        } else if (typeof rawKeywords === 'string') {
-          keywords = rawKeywords.split(/[,;]/).map(k => k.trim()).filter(Boolean);
-        }
-        
-        const hasTitle = title && String(title).trim().length > 0;
-        const hasKeywords = keywords.length > 0;
-        
-        if (hasTitle || hasKeywords) {
-          // File has metadata. Check and format it correctly to avoid Red Dot issues on Adobe Stock
-          fileLog(`[upload-metadata] Formatting existing metadata for ${fileName} (Title: ${hasTitle}, Keywords: ${keywords.length})`);
-          
-          // Deduplicate and clean up keywords
-          const finalKeywordsArray = [...new Set(keywords)].map(k => String(k).trim()).filter(Boolean).slice(0, 49);
-          const finalTitle = String(title).trim();
-          
-          finalTitleToSave = finalTitle;
-          finalKeywordsToSave = finalKeywordsArray.join(', ');
-
-          // Re-write in correct standard XMP and IPTC formats with UTF-8 encoding
-          const writeTags = {
-            "XMP-dc:Title": finalTitle,
-            "XMP-dc:Subject": finalKeywordsArray,
-            "IPTC:ObjectName": finalTitle,
-            "IPTC:Keywords": finalKeywordsArray,
-            "EXIF:XPTitle": finalTitle,
-            "EXIF:XPKeywords": finalKeywordsArray.join('; ')
-          };
-          
-          // If description exists, preserve and rewrite it in correct fields
-          const description = tags.Description || tags.Caption || tags['Caption-Abstract'] || tags.ImageDescription || tags.XPComment;
-          if (description) {
-            const finalDesc = String(description).trim();
-            writeTags["XMP-dc:Description"] = finalDesc;
-            writeTags["IPTC:Caption-Abstract"] = finalDesc;
-            writeTags["EXIF:ImageDescription"] = finalDesc;
-            writeTags["EXIF:XPComment"] = finalDesc;
-          }
-          
-          // If supplemental categories exist, preserve them
-          const categories = tags.SupplementalCategories || tags['XMP-photoshop:SupplementalCategories'] || [];
-          const categoriesArray = Array.isArray(categories) ? categories : (typeof categories === 'string' ? categories.split(',') : []);
-          if (categoriesArray.length > 0) {
-            const cleanCategories = categoriesArray.map(c => String(c).trim()).filter(Boolean);
-            finalCategoryToSave = cleanCategories[0] || '';
-            writeTags["IPTC:SupplementalCategories"] = cleanCategories;
-            writeTags["XMP-photoshop:Category"] = cleanCategories[0] || "";
-            writeTags["XMP-photoshop:SupplementalCategories"] = cleanCategories;
-          }
-          
-          fileLog('[upload-metadata] Re-writing formatted tags to ensure Adobe Stock compatibility:', writeTags);
-          await exiftool.write(filePath, writeTags, ["-overwrite_original", "-codedcharacterset=utf8"]);
-          fileLog('[upload-metadata] Metadata formatting completed for:', fileName);
-        } else {
-          fileLog(`[upload-metadata] File ${fileName} has no metadata. Uploading as-is without adding metadata.`);
-        }
+  // Create N worker loops to process files in parallel, each worker pulls sequentially
+  const workers = Array.from({ length: limit }, async (_, workerId) => {
+    while (true) {
+      if (jobId && global.cancelledFtpJobs.has(jobId)) {
+        break;
       }
-    } catch (metadataErr) {
-      fileLog('[upload-metadata error] Failed to process metadata:', metadataErr);
-    }
+      
+      const index = nextFileIndex++;
+      if (index >= validPaths.length) {
+        break;
+      }
 
-    const slot = await acquireSlot(entry); // blocks until a connection is free
-    let total_transferred = 0;
-    let fileSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+      const filePath = validPaths[index];
+      let fileName = path.basename(filePath);
+      if (fileName.toLowerCase().endsWith('.jpeg')) {
+        fileName = fileName.substring(0, fileName.length - 5) + '.jpg';
+      }
 
-    const isAdobe = config.host && (
-      config.host.toLowerCase().includes('adobe') ||
-      config.host.toLowerCase().includes('adobestock') ||
-      config.host.toLowerCase().includes('contributor.stock')
-    );
+      // Check before acquiring slot
+      if (jobId && global.cancelledFtpJobs.has(jobId)) {
+        fileLog(`[upload-${type}] ⛔ Skipped ${fileName} (Job Cancelled)`);
+        fileErrors[filePath] = 'Cancelled by user';
+        continue;
+      }
 
-    let finalRemoteName = fileName;
-    const MAX_RETRIES = 5;
-    let uploadSuccess = false;
+      let finalTitleToSave = '';
+      let finalKeywordsToSave = '';
+      let finalCategoryToSave = '';
 
-    try {
-      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        if (uploadSuccess) break;
-
-        // Re-check after acquiring or retrying
-        if (jobId && global.cancelledFtpJobs.has(jobId)) throw new Error('Cancelled by user');
-
-        // Reconnect slot if dead/closed before upload starts
-        if (slot.dead || (type === 'ftp' && slot.client.closed)) {
-          fileLog(`[pool] Reconnecting dead/closed slot for ${config.host}...`);
-          slot.client = type === 'sftp' ? await createSftpClient(config) : await createFtpClient(config);
-          slot.dead = false;
-        }
-
-        let attemptName = fileName;
-        let remoteSize = 0;
-
-        if (false /* isAdobe temporarily disabled for testing resume */) {
-          // Adobe Method: Pre-emptive Unique Naming. Never resume.
-          const ext = path.extname(fileName);
-          const base = path.basename(fileName, ext);
-          attemptName = `${base}_${Date.now()}${ext}`;
-          
-          if (attempt > 1 && finalRemoteName) {
-            // Attempt to clean up corrupted partial file from previous failed attempt
-            fileLog(`[upload-${type}] Deleting corrupted partial file from previous attempt: ${finalRemoteName}`);
-            try { 
-              if (type === 'sftp') await slot.client.delete(`/${finalRemoteName}`); 
-              else await slot.client.remove(finalRemoteName);
-            } catch(e) {}
-            
-            // Record rename for frontend notification
-            renamedFiles[filePath] = { failedName: finalRemoteName, newName: attemptName };
+      // ── AUTOMATIC METADATA SCAN & FORMAT CORRECTION (Red Dot Prevention) ──
+      try {
+        const ext = path.extname(filePath).toLowerCase();
+        // Only process common formats we can write metadata to (jpg, jpeg, png, eps, webp, tiff)
+        if (['.jpg', '.jpeg', '.png', '.eps', '.webp', '.tiff'].includes(ext)) {
+          const exiftool = await getExifTool();
+          let tags = {};
+          try {
+            tags = await exiftool.read(filePath);
+          } catch (e) {
+            fileLog('[upload-metadata] Failed reading tags from:', fileName, e);
           }
-          finalRemoteName = attemptName;
-          remoteSize = 0; // Always start from 0 for Adobe
-        } else {
+          
+          const title = tags.Title || tags.ObjectName || tags.XPTitle || '';
+          
+          let keywords = [];
+          const rawKeywords = tags.Subject || tags.Keywords || tags.XPKeywords || [];
+          if (Array.isArray(rawKeywords)) {
+            keywords = rawKeywords;
+          } else if (typeof rawKeywords === 'string') {
+            keywords = rawKeywords.split(/[,;]/).map(k => k.trim()).filter(Boolean);
+          }
+          
+          const hasTitle = title && String(title).trim().length > 0;
+          const hasKeywords = keywords.length > 0;
+          
+          if (hasTitle || hasKeywords) {
+            // File has metadata. Check and format it correctly to avoid Red Dot issues on Adobe Stock
+            fileLog(`[upload-metadata] Formatting existing metadata for ${fileName} (Title: ${hasTitle}, Keywords: ${keywords.length})`);
+            
+            // Deduplicate and clean up keywords
+            const finalKeywordsArray = [...new Set(keywords)].map(k => String(k).trim()).filter(Boolean).slice(0, 49);
+            const finalTitle = String(title).trim();
+            
+            finalTitleToSave = finalTitle;
+            finalKeywordsToSave = finalKeywordsArray.join(', ');
+
+            // Re-write in correct standard XMP and IPTC formats with UTF-8 encoding
+            const writeTags = {
+              "XMP-dc:Title": finalTitle,
+              "XMP-dc:Subject": finalKeywordsArray,
+              "IPTC:ObjectName": finalTitle,
+              "IPTC:Keywords": finalKeywordsArray,
+              "EXIF:XPTitle": finalTitle,
+              "EXIF:XPKeywords": finalKeywordsArray.join('; ')
+            };
+            
+            // If description exists, preserve and rewrite it in correct fields
+            const description = tags.Description || tags.Caption || tags['Caption-Abstract'] || tags.ImageDescription || tags.XPComment;
+            if (description) {
+              const finalDesc = String(description).trim();
+              writeTags["XMP-dc:Description"] = finalDesc;
+              writeTags["IPTC:Caption-Abstract"] = finalDesc;
+              writeTags["EXIF:ImageDescription"] = finalDesc;
+              writeTags["EXIF:XPComment"] = finalDesc;
+            }
+            
+            // If supplemental categories exist, preserve them
+            const categories = tags.SupplementalCategories || tags['XMP-photoshop:SupplementalCategories'] || [];
+            const categoriesArray = Array.isArray(categories) ? categories : (typeof categories === 'string' ? categories.split(',') : []);
+            if (categoriesArray.length > 0) {
+              const cleanCategories = categoriesArray.map(c => String(c).trim()).filter(Boolean);
+              finalCategoryToSave = cleanCategories[0] || '';
+              writeTags["IPTC:SupplementalCategories"] = cleanCategories;
+              writeTags["XMP-photoshop:Category"] = cleanCategories[0] || "";
+              writeTags["XMP-photoshop:SupplementalCategories"] = cleanCategories;
+            }
+            
+            fileLog('[upload-metadata] Re-writing formatted tags to ensure Adobe Stock compatibility:', writeTags);
+            await exiftool.write(filePath, writeTags, ["-overwrite_original", "-codedcharacterset=utf8"]);
+            fileLog('[upload-metadata] Metadata formatting completed for:', fileName);
+          } else {
+            fileLog(`[upload-metadata] File ${fileName} has no metadata. Uploading as-is without adding metadata.`);
+          }
+        }
+      } catch (metadataErr) {
+        fileLog('[upload-metadata error] Failed to process metadata:', metadataErr);
+      }
+
+      // Acquire concurrency slot first
+      await acquireUploadSlot(config.host);
+
+      // Check cancellation again
+      if (jobId && global.cancelledFtpJobs.has(jobId)) {
+        releaseUploadSlot();
+        fileErrors[filePath] = 'Cancelled by user';
+        continue;
+      }
+
+      const slot = await acquireSlot(entry); // blocks until a connection is free
+      let total_transferred = 0;
+      const fileSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+
+      const isAdobe = config.host && (
+        config.host.toLowerCase().includes('adobe') ||
+        config.host.toLowerCase().includes('adobestock') ||
+        config.host.toLowerCase().includes('contributor.stock')
+      );
+
+      let finalRemoteName = fileName;
+      const MAX_RETRIES = 5;
+      let uploadSuccess = false;
+
+      try {
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+          if (uploadSuccess) break;
+
+          // Re-check after acquiring or retrying
+          if (jobId && global.cancelledFtpJobs.has(jobId)) throw new Error('Cancelled by user');
+
+          // Reconnect slot if dead/closed before upload starts
+          if (slot.dead || (type === 'ftp' && slot.client.closed)) {
+            fileLog(`[pool] Reconnecting dead/closed slot for ${config.host}...`);
+            slot.client = type === 'sftp' ? await createSftpClient(config) : await createFtpClient(config);
+            slot.dead = false;
+          }
+
+          let attemptName = fileName;
+          let remoteSize = 0;
+
           // Non-Adobe Method: Check size and Smart Resume
           try {
             if (type === 'ftp') {
@@ -1340,160 +1486,145 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
             uploadSuccess = true;
             break;
           }
-        }
 
-        fileLog(`[upload-${type}] Attempt ${attempt} for ${attemptName} (resume from ${remoteSize})`);
+          fileLog(`[upload-${type}] Worker ${workerId} uploading ${attemptName} (Attempt ${attempt}/${MAX_RETRIES})`);
+          total_transferred = 0;
 
-        let readStream = null;
-        let progressStream = null;
-
-        try {
-          readStream = fs.createReadStream(filePath, {
-            highWaterMark: FTP_STREAM_HWM,
-            start: remoteSize
-          });
-
-          progressStream = new ProgressTransform(fileSize, remoteSize, 
-            (p) => {
-              if (jobId && global.cancelledFtpJobs.has(jobId)) {
-                if (readStream) readStream.destroy(new Error('Cancelled by user'));
-                if (progressStream) progressStream.destroy(new Error('Cancelled by user'));
-                if (type === 'ftp') try { slot.client.close(); } catch(e){}
-                else try { slot.client.end(); } catch(e){}
-                return;
-              }
-              total_transferred = Math.floor((p / 100) * fileSize);
-              if (event && !event.sender.isDestroyed()) {
-                event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
-              }
-            },
-            () => {
-              // Timeout Watchdog fired!
-              fileLog(`[upload-${type}] Timeout watchdog triggered for ${attemptName}! No data for 30s.`);
-              if (readStream) readStream.destroy();
-              if (progressStream) progressStream.destroy();
-              if (type === 'ftp') try { slot.client.close(); } catch(e){}
-              else try { slot.client.end(); } catch(e){}
-            }
-          );
-
-          readStream.on('error', () => {});
-          progressStream.on('error', () => {});
-
-          const streamPipeline = readStream.pipe(progressStream);
-
-          if (false /* isAdobe temporarily disabled for testing resume */) {
-            // Always put from 0
+          try {
             if (type === 'sftp') {
-              await slot.client.put(streamPipeline, `/${attemptName}`, { chunkSize: 64 * 1024, concurrency: 64 });
+              // We use fastPut for SFTP to gain speed and get native progress tracking
+              await slot.client.fastPut(filePath, `/${attemptName}`, {
+                concurrency: 64,
+                chunkSize: 64 * 1024,
+                step: (transferred, chunk, total) => {
+                  if (jobId && global.cancelledFtpJobs.has(jobId)) {
+                    throw new Error('Cancelled by user');
+                  }
+                  total_transferred = transferred;
+                  const p = Math.round((transferred / total) * 100);
+                  if (event && !event.sender.isDestroyed()) {
+                    event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
+                  }
+                }
+              });
             } else {
-              await slot.client.uploadFrom(streamPipeline, attemptName);
+              let lastProgress = 0;
+              slot.client.trackProgress(info => {
+                if (jobId && global.cancelledFtpJobs.has(jobId)) {
+                  slot.client.trackProgress();
+                  try { slot.client.close(); } catch (_) {}
+                  return;
+                }
+                total_transferred = info.bytesOverall;
+                if (fileSize > 0) {
+                  const p = Math.min(Math.round((info.bytesOverall / fileSize) * 100), 99); // cap at 99 until fully finished
+                  if (p !== lastProgress) {
+                    lastProgress = p;
+                    if (event && !event.sender.isDestroyed()) {
+                      event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
+                    }
+                  }
+                }
+              });
+              await slot.client.uploadFrom(filePath, attemptName);
             }
+            uploadSuccess = true;
+            fileLog(`[upload-${type}] ✓ Uploaded successfully: ${attemptName}`);
+          } catch (uploadErr) {
+            // Detect Overwrite / Permission Denied specifically for Non-Adobe sites if they throw it
+            const errMsg = (uploadErr.message || '').toLowerCase();
+            const isOverwrite = errMsg.includes('550') || errMsg.includes('overwrite') || errMsg.includes('exists') || errMsg.includes('permission') || errMsg.includes('denied');
+            
+            fileLog(`[upload-${type}] Upload error on attempt ${attempt}: ${uploadErr.message}`);
+            slot.dead = true;
+            if (type === 'ftp') try { slot.client.close(); } catch(e){}
+            else try { slot.client.end(); } catch(e){}
+            
+            if (!isAdobe && isOverwrite) {
+               // For non-Adobe, fallback rename logic if permission denied
+               const ext = path.extname(fileName);
+               const base = path.basename(fileName, ext);
+               fileName = `${base}_${attempt}${ext}`;
+               finalRemoteName = fileName;
+               fileLog(`[upload-${type}] Non-Adobe overwrite error, renaming to ${fileName} for next attempt.`);
+            }
+            
+            if (attempt === MAX_RETRIES) throw uploadErr;
+          } finally {
+            if (type === 'ftp') {
+              slot.client.trackProgress();
+            }
+          }
+        } // end retry loop
+
+        // Verify uploaded file size
+        let verifySize = 0;
+        try {
+          if (type === 'ftp') {
+            verifySize = await slot.client.size(finalRemoteName);
           } else {
-            // Append/Put for non-Adobe
-            if (remoteSize > 0) {
-              if (type === 'sftp') await slot.client.append(streamPipeline, `/${attemptName}`, { chunkSize: 64 * 1024, concurrency: 64 });
-              else await slot.client.appendFrom(streamPipeline, attemptName);
-            } else {
-              if (type === 'sftp') await slot.client.put(streamPipeline, `/${attemptName}`, { chunkSize: 64 * 1024, concurrency: 64 });
-              else await slot.client.uploadFrom(streamPipeline, attemptName);
-            }
+            const stat = await slot.client.stat(`/${finalRemoteName}`);
+            verifySize = stat.size;
           }
-          uploadSuccess = true;
-          fileLog(`[upload-${type}] ✓ Uploaded successfully: ${attemptName}`);
-        } catch (uploadErr) {
-          // Detect Overwrite / Permission Denied specifically for Non-Adobe sites if they throw it
-          const errMsg = (uploadErr.message || '').toLowerCase();
-          const isOverwrite = errMsg.includes('550') || errMsg.includes('overwrite') || errMsg.includes('exists') || errMsg.includes('permission') || errMsg.includes('denied');
-          
-          fileLog(`[upload-${type}] Upload error on attempt ${attempt}: ${uploadErr.message}`);
-          slot.dead = true;
-          if (type === 'ftp') try { slot.client.close(); } catch(e){}
-          else try { slot.client.end(); } catch(e){}
-          
-          if (!isAdobe && isOverwrite) {
-             // For non-Adobe, fallback rename logic if permission denied
-             const ext = path.extname(fileName);
-             const base = path.basename(fileName, ext);
-             fileName = `${base}_${attempt}${ext}`;
-             finalRemoteName = fileName;
-             fileLog(`[upload-${type}] Non-Adobe overwrite error, renaming to ${fileName} for next attempt.`);
-          }
-          
-          if (attempt === MAX_RETRIES) throw uploadErr;
-        } finally {
-          // Explicitly clear listeners to fix MaxListenersExceededWarning
-          if (readStream) readStream.removeAllListeners();
-          if (progressStream) progressStream.removeAllListeners();
+          fileLog(`[upload-${type}] Verified remote file ${finalRemoteName} size: ${verifySize}/${fileSize} bytes`);
+        } catch (sizeErr) {
+          fileLog(`[upload-${type}] Size verification could not retrieve size for ${finalRemoteName}: ${sizeErr.message}`);
+          verifySize = fileSize; 
         }
-      } // end retry loop
 
-      // Verify uploaded file size
-      let verifySize = 0;
-      try {
-        if (type === 'ftp') {
-          verifySize = await slot.client.size(finalRemoteName);
+        if (verifySize !== fileSize) {
+          throw new Error(`Upload verification mismatch: expected ${fileSize} bytes, remote has ${verifySize} bytes`);
+        }
+        
+        // Emit 100% just in case
+        if (event && !event.sender.isDestroyed()) event.sender.send('ftp-progress', { filePath, progress: 100, host: config.host });
+        
+        fileLog(`[upload-${type}] ✓ ${fileName} (as ${finalRemoteName})`);
+        
+        if (isAdobe) {
+           successfulAdobeUploads.push({
+             filename: finalRemoteName,
+             title: finalTitleToSave,
+             keywords: finalKeywordsToSave,
+             category: finalCategoryToSave
+           });
+        }
+        
+        fileErrors[filePath] = null;
+      } catch (err) {
+        const isCancelled = jobId && global.cancelledFtpJobs.has(jobId);
+        if (isCancelled || (err.message && err.message.includes('Cancelled by user'))) {
+           fileLog(`[upload-${type}] ⛔ Aborted ${fileName} (Cancelled)`);
+           slot.dead = true;
+           if (type === 'ftp') try { slot.client.close(); } catch(e){}
+           else try { slot.client.end(); } catch(e){}
+           fileErrors[filePath] = 'Cancelled by user';
+           if (event && !event.sender.isDestroyed()) {
+              event.sender.send('ftp-progress', { filePath, progress: -1, host: config.host, error: 'Cancelled by user' });
+           }
+        } else if ((err.code === 'ECONNRESET' || err.message.includes('ECONNRESET')) && total_transferred >= fileSize && fileSize > 0) {
+           // Server closed connection after receiving the whole file
+           fileLog(`[upload-${type}] ⚠️ ${fileName}: Connection reset after transfer (ignoring). Treated as success.`);
+           if (event && !event.sender.isDestroyed()) event.sender.send('ftp-progress', { filePath, progress: 100, host: config.host });
+           fileErrors[filePath] = null;
         } else {
-          const stat = await slot.client.stat(`/${finalRemoteName}`);
-          verifySize = stat.size;
+           fileLog(`[upload-${type}] ✗ ${fileName}: ${err.message}`);
+           slot.dead = true;
+           if (type === 'ftp') try { slot.client.close(); } catch(e){}
+           else try { slot.client.end(); } catch(e){}
+           fileErrors[filePath] = err.message;
+           if (event && !event.sender.isDestroyed()) {
+              event.sender.send('ftp-progress', { filePath, progress: -1, host: config.host, error: err.message });
+           }
         }
-        fileLog(`[upload-${type}] Verified remote file ${finalRemoteName} size: ${verifySize}/${fileSize} bytes`);
-      } catch (sizeErr) {
-        fileLog(`[upload-${type}] Size verification could not retrieve size for ${finalRemoteName}: ${sizeErr.message}`);
-        // If the server doesn't support size check, fallback to assuming it matches
-        verifySize = fileSize; 
+      } finally {
+        releaseSlot(entry, slot); // always release so other waiters can proceed
+        releaseUploadSlot();     // always release concurrency slot so other waiting workers can proceed
       }
-
-      if (verifySize !== fileSize) {
-        throw new Error(`Upload verification mismatch: expected ${fileSize} bytes, remote has ${verifySize} bytes`);
-      }
-      
-      // Emit 100% just in case
-      if (event && !event.sender.isDestroyed()) event.sender.send('ftp-progress', { filePath, progress: 100, host: config.host });
-      
-      fileLog(`[upload-${type}] ✓ ${fileName} (as ${finalRemoteName})`);
-      
-      if (isAdobe) {
-         successfulAdobeUploads.push({
-           filename: finalRemoteName,
-           title: finalTitleToSave,
-           keywords: finalKeywordsToSave,
-           category: finalCategoryToSave
-         });
-      }
-      
-      fileErrors[filePath] = null;
-    } catch (err) {
-      const isCancelled = jobId && global.cancelledFtpJobs.has(jobId);
-      if (isCancelled || (err.message && err.message.includes('Cancelled by user'))) {
-         fileLog(`[upload-${type}] ⛔ Aborted ${fileName} (Cancelled)`);
-         slot.dead = true;
-         if (type === 'ftp') try { slot.client.close(); } catch(e){}
-         else try { slot.client.end(); } catch(e){}
-         fileErrors[filePath] = 'Cancelled by user';
-         if (event && !event.sender.isDestroyed()) {
-            event.sender.send('ftp-progress', { filePath, progress: -1, host: config.host, error: 'Cancelled by user' });
-         }
-      } else if ((err.code === 'ECONNRESET' || err.message.includes('ECONNRESET')) && total_transferred >= fileSize && fileSize > 0) {
-         // Server closed connection after receiving the whole file (common on Dreamstime)
-         fileLog(`[upload-${type}] ⚠️ ${fileName}: Connection reset after transfer (ignoring). Treated as success.`);
-         if (event && !event.sender.isDestroyed()) event.sender.send('ftp-progress', { filePath, progress: 100, host: config.host });
-         fileErrors[filePath] = null;
-      } else {
-         fileLog(`[upload-${type}] ✗ ${fileName}: ${err.message}`);
-         // Mark slot dead so getPool rebuilds next call
-         slot.dead = true;
-         if (type === 'ftp') try { slot.client.close(); } catch(e){}
-         else try { slot.client.end(); } catch(e){}
-         fileErrors[filePath] = err.message;
-         if (event && !event.sender.isDestroyed()) {
-            event.sender.send('ftp-progress', { filePath, progress: -1, host: config.host, error: err.message });
-         }
-      }
-    } finally {
-      releaseSlot(entry, slot); // always release so other waiters can proceed
     }
-  }));
+  });
+
+  await Promise.all(workers);
 
   // Generate CSV for Adobe Stock
   let generatedCsvPath = null;
@@ -1507,7 +1638,6 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
       const rows = [headers.join(',')];
       
       for (const item of successfulAdobeUploads) {
-         // Escape quotes in CSV fields
          const esc = (str) => `"${(str || '').replace(/"/g, '""')}"`;
          rows.push([
             item.filename,
@@ -1557,7 +1687,15 @@ ipcMain.handle('cancel-ftp', (event, jobId) => {
   if (jobId) {
     global.cancelledFtpJobs.add(jobId);
     fileLog(`[upload-ftp] 🛑 Cancelled job: ${jobId}`);
+    wakeAllUploadWaiters(); // Wake up any workers waiting on concurrency throttle so they can cancel
   }
+  return true;
+});
+
+ipcMain.handle('set-upload-concurrency', (event, concurrency) => {
+  global.uploadConcurrency = parseInt(concurrency) || 3;
+  fileLog(`[upload-ftp] Concurrency limit updated to ${global.uploadConcurrency}`);
+  wakeAllUploadWaiters(); // Wake up any waiting workers to start new uploads
   return true;
 });
 

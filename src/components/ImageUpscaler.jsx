@@ -6,7 +6,7 @@ export function ImageUpscaler() {
   const [outputFolder, setOutputFolder] = useState("");
   const [scale, setScale] = useState(2);
   const [isCustomScale, setIsCustomScale] = useState(false);
-  const [customScaleValue, setCustomScaleValue] = useState(3);
+  const [customScaleValue, setCustomScaleValue] = useState(6);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState(null);
@@ -16,6 +16,14 @@ export function ImageUpscaler() {
   const [serverStatus, setServerStatus] = useState("disconnected"); // 'connected' | 'disconnected' | 'checking'
   const [manualUrl, setManualUrl] = useState("");
   const [showManualInput, setShowManualInput] = useState(false);
+  const [upscaleMethod, setUpscaleMethod] = useState("localNcnn"); // 'localNcnn' or 'comfy'
+
+  const [localModel, setLocalModel] = useState("realesrgan-x4plus");
+  const [outputFormat, setOutputFormat] = useState("jpg");
+  const [currentFileProgress, setCurrentFileProgress] = useState(0);
+  const [completedCount, setCompletedCount] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(-1);
+
 
   // Listen to Colab status from Electron (same server as AiImageGenerator)
   useEffect(() => {
@@ -66,6 +74,26 @@ export function ImageUpscaler() {
       fetchServerUrl();
     }
   }, []);
+
+  // Listen to local upscaler progress events
+  useEffect(() => {
+    if (window.electronAPI?.onUpscaleProgress) {
+      const cleanup = window.electronAPI.onUpscaleProgress((data) => {
+        setCurrentFileProgress(data.progress);
+        if (selectedFiles.length > 0) {
+          setProgress(prev => {
+            const currentOverall = Math.round((completedCount / selectedFiles.length) * 100 + (data.progress / selectedFiles.length));
+            return Math.min(99, currentOverall);
+          });
+          if (activeIndex >= 0 && activeIndex < selectedFiles.length) {
+            const fileObj = selectedFiles[activeIndex];
+            setStatusText(`Processing ${fileObj.name} (${activeIndex + 1}/${selectedFiles.length}) - ${Math.round(data.progress)}%...`);
+          }
+        }
+      });
+      return cleanup;
+    }
+  }, [completedCount, selectedFiles.length, activeIndex]);
 
   const handleManualConnect = async () => {
     if (!manualUrl.trim()) return;
@@ -150,7 +178,7 @@ export function ImageUpscaler() {
       return fileObj;
     };
 
-    if (comfyServerUrl) {
+    if (upscaleMethod === 'comfy' && comfyServerUrl) {
       try {
         setStatusText(`Uploading ${fileObj.name} to Cloud GPU...`);
         const blob = await getFileBlob();
@@ -230,7 +258,7 @@ export function ImageUpscaler() {
           
           const saveRes = await window.electronAPI.saveFile(savePath, new Uint8Array(arrayBuffer));
           if (!saveRes.success) throw new Error(saveRes.error);
-          return { success: true, path: savePath };
+          return { success: true, path: savePath, engine: 'gpu' };
         } else {
           const blobOutput = new Blob([arrayBuffer], { type: imgRes.headers.get('content-type') || 'image/jpeg' });
           const url = URL.createObjectURL(blobOutput);
@@ -242,66 +270,49 @@ export function ImageUpscaler() {
           a.download = `${baseName}_${currentScale}x_RealESRGAN${ext}`;
           a.click();
           URL.revokeObjectURL(url);
-          return { success: true };
+          return { success: true, engine: 'gpu' };
         }
       } catch (err) {
         console.warn("ComfyUI upscaling failed, falling back to local...", err);
       }
     }
 
-    const formData = new FormData();
-    formData.append('scale', currentScale);
-
-    if (fileObj.isElectron) {
-      formData.append('filePath', fileObj.path);
-    } else {
-      formData.append('file', fileObj);
+    if (upscaleMethod === 'localNcnn' && window.electronAPI) {
+      setStatusText(`Upscaling ${fileObj.name} with Local GPU (NCNN)...`);
+      if (!fileObj.isElectron) {
+        throw new Error("Local GPU upscaling only supports local files. Please select a file from your computer.");
+      }
+      
+      const resData = await window.electronAPI.upscaleLocalNcnn(fileObj.path, currentScale, localModel, outputFormat, outputFolder);
+      if (!resData.success) {
+        throw new Error(resData.error || "Local GPU upscaling failed");
+      }
+      
+      if (outputFolder) {
+        // If outputFolder is used, the backend saves the file directly (to avoid base64 OOM issues)
+        return { success: true, path: resData.path, engine: 'localNcnn' };
+      } else {
+        const url = `data:image/${resData.format || 'jpeg'};base64,${resData.base64}`;
+        const a = document.createElement('a');
+        a.href = url;
+        const lastDot = fileObj.name.lastIndexOf('.');
+        const ext = `.${resData.format || 'jpg'}`;
+        const baseName = lastDot > -1 ? fileObj.name.substring(0, lastDot) : fileObj.name;
+        a.download = `${baseName}_${currentScale}x_LocalGPU${ext}`;
+        a.click();
+        return { success: true, engine: 'localNcnn' };
+      }
     }
 
-    const res = await fetch('http://127.0.0.1:3002/api/upscale', {
-      method: 'POST',
-      body: formData
-    });
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || res.statusText);
-    }
-
-    const arrayBuffer = await res.arrayBuffer();
-
-    if (window.electronAPI && outputFolder) {
-      // Save via Electron IPC
-      const pathSeparator = outputFolder.includes('\\') ? '\\' : '/';
-      const lastDot = fileObj.name.lastIndexOf('.');
-      const ext = lastDot > -1 ? fileObj.name.substring(lastDot) : '.jpg';
-      const baseName = lastDot > -1 ? fileObj.name.substring(0, lastDot) : fileObj.name;
-      const savePath = `${outputFolder}${pathSeparator}${baseName}_${currentScale}x${ext}`;
-      
-      const saveRes = await window.electronAPI.saveFile(savePath, new Uint8Array(arrayBuffer));
-      if (!saveRes.success) throw new Error(saveRes.error);
-      
-      return { success: true, path: savePath };
-    } else {
-      // Web fallback: trigger download
-      const blob = new Blob([arrayBuffer], { type: res.headers.get('content-type') || 'image/jpeg' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const lastDot = fileObj.name.lastIndexOf('.');
-      const ext = lastDot > -1 ? fileObj.name.substring(lastDot) : '.jpg';
-      const baseName = lastDot > -1 ? fileObj.name.substring(0, lastDot) : fileObj.name;
-      a.download = `${baseName}_${currentScale}x${ext}`;
-      a.click();
-      URL.revokeObjectURL(url);
-      
-      return { success: true };
-    }
+    const blob = await getFileBlob();
+    // Fallback: if Electron is available, we should not reach here without a proper method
+    throw new Error("No upscaler method available. Please use Local GPU mode.");
   };
+
 
   const startUpscaling = async () => {
     if (selectedFiles.length === 0) return;
-    if (!comfyServerUrl) {
+    if (upscaleMethod === 'comfy' && !comfyServerUrl) {
       setError("Cloud GPU সার্ভারে কানেক্ট করুন। 'Cloud GPU Image Gen' পেজ থেকে সার্ভার চালু করুন অথবা Manual বাটনে URL দিন।");
       return;
     }
@@ -312,6 +323,9 @@ export function ImageUpscaler() {
 
     setIsProcessing(true);
     setProgress(0);
+    setCompletedCount(0);
+    setCurrentFileProgress(0);
+    setActiveIndex(-1);
     setError(null);
     
     // Initialize results log with pending states
@@ -327,6 +341,8 @@ export function ImageUpscaler() {
     for (let i = 0; i < selectedFiles.length; i++) {
       const fileObj = selectedFiles[i];
       setStatusText(`Processing ${fileObj.name} (${i + 1}/${selectedFiles.length})...`);
+      setActiveIndex(i);
+      setCurrentFileProgress(0);
       
       setResults(prev => {
         const updated = [...prev];
@@ -339,7 +355,7 @@ export function ImageUpscaler() {
         
         setResults(prev => {
           const updated = [...prev];
-          updated[i] = { ...updated[i], status: 'success', path: resData.path };
+          updated[i] = { ...updated[i], status: 'success', path: resData.path, engine: resData.engine };
           return updated;
         });
       } catch (err) {
@@ -351,11 +367,13 @@ export function ImageUpscaler() {
       }
 
       completed++;
+      setCompletedCount(completed);
       setProgress(Math.round((completed / selectedFiles.length) * 100));
     }
 
     setStatusText("Upscaling complete!");
     setIsProcessing(false);
+    setActiveIndex(-1);
   };
 
   const retryUpscale = async (index) => {
@@ -364,6 +382,9 @@ export function ImageUpscaler() {
 
     setIsProcessing(true);
     setStatusText(`Retrying ${resultItem.name}...`);
+    setCurrentFileProgress(0);
+    setActiveIndex(index);
+    setCompletedCount(0);
     
     setResults(prev => {
       const updated = [...prev];
@@ -381,7 +402,7 @@ export function ImageUpscaler() {
       
       setResults(prev => {
         const updated = [...prev];
-        updated[index] = { ...updated[index], status: 'success', path: resData.path };
+        updated[index] = { ...updated[index], status: 'success', path: resData.path, engine: resData.engine };
         return updated;
       });
       setStatusText("Retry complete!");
@@ -394,6 +415,7 @@ export function ImageUpscaler() {
       setStatusText("Retry failed.");
     } finally {
       setIsProcessing(false);
+      setActiveIndex(-1);
     }
   };
 
@@ -573,6 +595,101 @@ export function ImageUpscaler() {
           }}>
             <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 1rem 0' }}>Settings</h3>
             
+            {/* Upscale Method Selector */}
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.5rem' }}>Upscale Engine</label>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => setUpscaleMethod('localNcnn')}
+                  disabled={isProcessing}
+                  style={{
+                    flex: '1 1 auto',
+                    padding: '0.55rem',
+                    background: upscaleMethod === 'localNcnn' ? 'var(--primary)' : 'var(--surface-2)',
+                    color: upscaleMethod === 'localNcnn' ? '#fff' : 'var(--text-1)',
+                    border: `1px solid ${upscaleMethod === 'localNcnn' ? 'var(--primary)' : 'var(--glass-border)'}`,
+                    borderRadius: '0.5rem',
+                    cursor: isProcessing ? 'not-allowed' : 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.78rem',
+                    transition: 'all 0.2s'
+                  }}
+                >💻 Local GPU (Real-ESRGAN)</button>
+                <button
+                  onClick={() => setUpscaleMethod('comfy')}
+                  disabled={isProcessing}
+                  style={{
+                    flex: 1,
+                    padding: '0.55rem',
+                    background: upscaleMethod === 'comfy' ? 'var(--primary)' : 'var(--surface-2)',
+                    color: upscaleMethod === 'comfy' ? '#fff' : 'var(--text-1)',
+                    border: `1px solid ${upscaleMethod === 'comfy' ? 'var(--primary)' : 'var(--glass-border)'}`,
+                    borderRadius: '0.5rem',
+                    cursor: isProcessing ? 'not-allowed' : 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.78rem',
+                    transition: 'all 0.2s'
+                  }}
+                >⚡ Cloud GPU (ComfyUI)</button>
+              </div>
+            </div>
+            
+            {/* Model Selector - Only for Local GPU */}
+            {upscaleMethod === 'localNcnn' && (
+              <>
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.5rem' }}>Local AI Model</label>
+                  <select
+                    value={localModel}
+                    disabled={isProcessing}
+                    onChange={(e) => setLocalModel(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.6rem 0.75rem',
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '0.5rem',
+                      color: 'var(--text-1)',
+                      fontSize: '0.8rem',
+                      cursor: isProcessing ? 'not-allowed' : 'pointer',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="realesrgan-x4plus">📸 General Photo (realesrgan-x4plus - Upscayl Default)</option>
+                    <option value="remacri">📸 General Photo Alternative (Remacri)</option>
+                    <option value="ultrasharp">✨ Ultrasharp (Aggressive enhancement)</option>
+                    <option value="ultramix_balanced">⚖️ Ultramix Balanced (Smooth & sharp)</option>
+                    <option value="realesr-animevideov3">⚡ Fast (realesr-animevideov3 - recommended for Intel / Low-end)</option>
+                    <option value="realesrgan-x4plus-anime">🎨 Anime / Vector (realesrgan-x4plus-anime)</option>
+                  </select>
+                </div>
+
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.5rem' }}>Output Format</label>
+                  <select
+                    value={outputFormat}
+                    disabled={isProcessing}
+                    onChange={(e) => setOutputFormat(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.6rem 0.75rem',
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '0.5rem',
+                      color: 'var(--text-1)',
+                      fontSize: '0.8rem',
+                      cursor: isProcessing ? 'not-allowed' : 'pointer',
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="jpg">🖼️ JPG / JPEG (Smaller size - Recommended for Adobe Stock)</option>
+                    <option value="png">🖼️ PNG (Lossless - Large file size, supports transparency)</option>
+                  </select>
+                </div>
+              </>
+            )}
+            
+
             <div style={{ marginBottom: '1.25rem' }}>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.5rem' }}>Upscale Factor</label>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -772,7 +889,12 @@ export function ImageUpscaler() {
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                   <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-1)' }}>{res.name}</span>
                   {res.status === 'success' ? (
-                    <span style={{ fontSize: '0.75rem', color: 'var(--success)' }}>Saved to: {res.path || "Downloads"}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: 600 }}>
+                        {res.engine === 'gpu' ? '⚡ Upscaled with Cloud GPU (Success)' : res.engine === 'localNcnn' ? '💻 Upscaled with Local GPU / Real-ESRGAN (Success)' : '✅ Upscaled Successfully'}
+                      </span>
+                      {res.path && <span style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>Saved to: {res.path}</span>}
+                    </div>
                   ) : (res.status === 'error' ? (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginTop: '0.25rem' }}>
                       <span style={{ fontSize: '0.75rem', color: 'var(--danger)' }}>Error: {res.error}</span>
@@ -801,7 +923,7 @@ export function ImageUpscaler() {
                   ) : (
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       {res.status === 'processing' ? (
-                        <><Loader2 className="spin" style={{ width: '0.75rem', height: '0.75rem', color: 'var(--primary)' }} /> Processing...</>
+                        <><Loader2 className="spin" style={{ width: '0.75rem', height: '0.75rem', color: 'var(--primary)' }} /> Processing {activeIndex === i && currentFileProgress > 0 ? `(${Math.round(currentFileProgress)}%)` : ''}...</>
                       ) : (
                         <>Pending...</>
                       )}

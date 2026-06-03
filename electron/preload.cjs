@@ -43,6 +43,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => {
       ipcRenderer.removeListener('colab-status', listener);
     };
-  }
+  },
+  onUpscaleProgress: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('upscale-progress', listener);
+    return () => {
+      ipcRenderer.removeListener('upscale-progress', listener);
+    };
+  },
+  setUploadConcurrency: (concurrency) => ipcRenderer.invoke('set-upload-concurrency', concurrency),
+  upscaleLocalNcnn: (filePath, scale, modelName, format, saveDir) => ipcRenderer.invoke('upscale-local-ncnn', filePath, scale, modelName, format, saveDir)
 });
 

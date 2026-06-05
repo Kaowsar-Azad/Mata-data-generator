@@ -349,6 +349,111 @@ ipcMain.handle('generate-eps-jpg', async (event, inputPath, addWhiteBgToPng = tr
 });
 
 // IPC Handler for Local GPU Upscaling (Upscayl / realesrgan-ncnn-vulkan)
+// Helper functions for Mata AI Upscaling
+function detectIntelGPU() {
+  try {
+    const { execSync } = require('child_process');
+    const stdout = execSync('wmic path win32_VideoController get name').toString();
+    return stdout.toLowerCase().includes('intel');
+  } catch (e) {
+    return false;
+  }
+}
+
+function isVectorOrAnimeFile(filePath) {
+  const name = (filePath || '').toLowerCase();
+  return (
+    name.includes('anime') ||
+    name.includes('vector') ||
+    name.includes('cartoon') ||
+    name.includes('illustration') ||
+    name.includes('illust') ||
+    name.includes('drawing') ||
+    name.includes('art') ||
+    name.includes('clip') ||
+    name.includes('graphic') ||
+    name.endsWith('.svg') ||
+    name.endsWith('.ai') ||
+    name.endsWith('.eps')
+  );
+}
+
+async function upscaleLocalHighFidelitySharp(inputPath, outputPath, scale, outputFormat) {
+  fileLog(`[upscale-local-high-fidelity-sharp] Running Local High-Fidelity Sharp pipeline for ${inputPath} (Scale: ${scale}x)`);
+  
+  const origMeta = await sharp(inputPath).metadata();
+  const targetWidth = Math.round(origMeta.width * scale);
+  const targetHeight = Math.round(origMeta.height * scale);
+
+  let pipeline = sharp(inputPath)
+    .resize(targetWidth, targetHeight, {
+      kernel: sharp.kernel.lanczos3,
+      fastShrinkOnLoad: false,
+      withoutEnlargement: false
+    });
+
+  // Apply unsharp mask to restore edge crispness that scaling loses
+  pipeline = pipeline.sharpen({
+    sigma: 1.5,
+    m1: 1.2,
+    m2: 0.7,
+    x1: 2,
+    y2: 10,
+    y3: 20
+  });
+
+  if (outputFormat === 'png') {
+    await pipeline.png().toFile(outputPath);
+  } else {
+    await pipeline.jpeg({ quality: 100 }).toFile(outputPath);
+  }
+  
+  fileLog(`[upscale-local-high-fidelity-sharp] High-fidelity sharp upscale complete: ${outputPath}`);
+}
+
+async function upscaleCloudHF(inputPath, scale, outputPath) {
+  fileLog(`[upscale-cloud-hf] Connecting to finegrain/finegrain-image-enhancer Space...`);
+  const { Client, handle_file } = await import('@gradio/client');
+  const client = await Client.connect("finegrain/finegrain-image-enhancer");
+  
+  fileLog(`[upscale-cloud-hf] Sending process request (scale: ${scale})...`);
+  const result = await client.predict("/process", [
+    handle_file(inputPath), // input_image
+    "highly detailed, sharp focus, clean, 4k", // prompt
+    "blurry, low quality, noise, grain, text", // negative_prompt
+    42, // seed
+    parseFloat(scale), // upscale_factor
+    0.6, // controlnet_scale
+    1.0, // controlnet_decay
+    6.0, // condition_scale
+    112, // tile_width
+    144, // tile_height
+    0.35, // denoise_strength
+    18, // num_inference_steps
+    "DDIM" // solver
+  ]);
+  
+  if (!result || !result.data || !result.data[0] || !result.data[0][1]) {
+    throw new Error('Invalid response from Hugging Face Space upscaler');
+  }
+
+  const outUrl = result.data[0][1].url || result.data[0][1].path;
+  if (!outUrl) {
+    throw new Error('No output URL found in Hugging Face result');
+  }
+
+  fileLog(`[upscale-cloud-hf] Downloading result from: ${outUrl}`);
+  const response = await fetch(outUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download Hugging Face result: ${response.statusText}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  fs.writeFileSync(outputPath, Buffer.from(arrayBuffer));
+  fileLog(`[upscale-cloud-hf] Saved cloud upscaled result to: ${outputPath}`);
+}
+
+// IPC Handler for Local GPU Upscaling (Upscayl / realesrgan-ncnn-vulkan)
 ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName = 'realesrgan-x4plus', format = 'jpg', saveDir = null) => {
   try {
     const binDir = app.isPackaged 
@@ -360,16 +465,71 @@ ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName =
     let exePath = isUpscaylBin
       ? path.join(binDir, 'upscayl-bin.exe')
       : path.join(binDir, 'realesrgan-ncnn-vulkan.exe');
-    
+
+    const parsedPath = path.parse(inputPath);
+    const outputFormat = (format && format.toLowerCase() === 'png') ? 'png' : 'jpg';
+    const filenameSuffix = modelName === 'mata_ai' ? 'MataAI' : 'LocalGPU';
+    let outputPath = saveDir
+      ? path.join(saveDir, `${parsedPath.name}_${scale}x_${filenameSuffix}.${outputFormat}`)
+      : path.join(os.tmpdir(), `${parsedPath.name}_upscaled_${scale}x.${outputFormat}`);
+
+    // Auto-create output directory if it doesn't exist (e.g. "Upscaled" subfolder)
+    const outDir = path.dirname(outputPath);
+    if (!fs.existsSync(outDir)) {
+      fs.mkdirSync(outDir, { recursive: true });
+    }
+
+    let isMataAi = false;
+    if (modelName === 'mata_ai') {
+      isMataAi = true;
+      const isVector = isVectorOrAnimeFile(inputPath);
+      const isIntel = detectIntelGPU();
+      
+      if (!isVector) {
+        // Photo: Phase 1 - Try Cloud AI (Hugging Face) for Best Quality + Speed
+        try {
+          fileLog(`[Mata AI] Running Cloud AI (Hugging Face Space) for photo...`);
+          const cloudPromise = upscaleCloudHF(inputPath, scale, outputPath);
+          // Increased timeout to 60s since logs show HuggingFace takes ~30s
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Cloud upscaling timed out (60s limit reached)')), 60000)
+          );
+          
+          await Promise.race([cloudPromise, timeoutPromise]);
+          fileLog(`[Mata AI] ✅ Cloud upscaling success!`);
+          
+          if (saveDir) {
+            return { success: true, path: outputPath, format: outputFormat, engine: 'cloudHF' };
+          } else {
+            const buffer = fs.readFileSync(outputPath);
+            fs.unlinkSync(outputPath);
+            return { success: true, base64: buffer.toString('base64'), format: outputFormat };
+          }
+        } catch (cloudErr) {
+          fileLog(`[Mata AI] ⚠️ Cloud upscaling failed/timed out: ${cloudErr.message}. Falling back to local NCNN...`);
+        }
+
+        // Photo: Phase 2 - Fallback to Local GPU
+        if (isIntel) {
+          fileLog(`[Mata AI] Integrated Intel GPU detected. Running fast AI model 'realesr-animevideov3' to ensure speed.`);
+          modelName = 'realesr-animevideov3';
+        } else {
+          fileLog(`[Mata AI] Dedicated GPU detected. Running high-quality 'ultrasharp' model.`);
+          modelName = 'ultrasharp';
+        }
+      } else {
+        // Vector: run local NCNN with 'realesrgan-x4plus-anime'
+        fileLog(`[Mata AI] Vector/Anime file detected. Running 'realesrgan-x4plus-anime'.`);
+        modelName = 'realesrgan-x4plus-anime';
+      }
+    }
+
     if (!fs.existsSync(exePath)) {
       throw new Error(`Local upscaler engine not found at: ${exePath}`);
     }
 
-    const parsedPath = path.parse(inputPath);
-    const outputFormat = (format && format.toLowerCase() === 'png') ? 'png' : 'jpg';
-    let outputPath = saveDir
-      ? path.join(saveDir, `${parsedPath.name}_${scale}x_LocalGPU.${outputFormat}`)
-      : path.join(os.tmpdir(), `${parsedPath.name}_upscaled_${scale}x.${outputFormat}`);
+    let finalInputPath = inputPath;
+    let tempResizedPath = null;
 
     // Model scale: animevideov3 has dedicated x2/x3/x4 variants. All others are x4 models.
     // For x4 models, always run at 4x to get true AI upscaling; then output-scale handles final size.
@@ -383,27 +543,26 @@ ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName =
 
     let args;
     if (isUpscaylBin) {
-      // upscayl-bin uses -z (model scale) and -s (output scale) separately
-      // IMPORTANT: -c is COMPRESSION (0-100), NOT a toggle — omit it to use default lossless
       args = [
-        '-i', inputPath,
+        '-i', finalInputPath,
         '-o', outputPath,
-        '-z', modelScale.toString(),     // model-scale: must match the model (e.g. 4 for realesrgan-x4plus)
-        '-s', scale.toString(),           // output-scale: final output resolution ratio
+        '-z', modelScale.toString(),
+        '-s', scale.toString(),
         '-m', 'models',
         '-n', finalModelName,
         '-f', outputFormat,
-        '-v'  // verbose so we can track progress %
+        '-t', '128',
+        '-v'
       ];
     } else {
-      // realesrgan-ncnn-vulkan uses only -s for both model and output scale
       args = [
-        '-i', inputPath,
+        '-i', finalInputPath,
         '-o', outputPath,
         '-s', scale.toString(),
         '-m', 'models',
         '-n', finalModelName,
         '-f', outputFormat,
+        '-t', '128',
         '-v'
       ];
     }
@@ -431,25 +590,69 @@ ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName =
       proc.stderr.on('data', handleData);
       
       proc.on('close', async (code) => {
-        if (code === 0 && fs.existsSync(outputPath)) {
+        // Clean up temp resized file
+        if (tempResizedPath && fs.existsSync(tempResizedPath)) {
+          try {
+            fs.unlinkSync(tempResizedPath);
+          } catch (e) {
+            fileLog(`[upscale-local-ncnn] Failed to delete temp resized file: ${e.message}`);
+          }
+        }
+
+        const fileCreated = fs.existsSync(outputPath);
+        if (fileCreated) {
           if (saveDir) {
             resolve({ success: true, path: outputPath, format: outputFormat, engine: 'localNcnn' });
           } else {
+            let buffer;
             try {
+              buffer = fs.readFileSync(outputPath);
+            } catch(e) {
+              return reject(new Error(`Failed to read output file: ${e.message}`));
+            }
+            try { fs.unlinkSync(outputPath); } catch(e) {}
+            resolve({ success: true, base64: buffer.toString('base64'), format: outputFormat });
+          }
+        } else {
+          // If NCNN fails, try falling back to the Sharp upscaler as a last resort!
+          fileLog(`[upscale-local-ncnn] Local NCNN upscaling failed (exit code ${code}). Attempting emergency Sharp fallback...`);
+          try {
+            await upscaleLocalHighFidelitySharp(inputPath, outputPath, scale, outputFormat);
+            if (saveDir) {
+              resolve({ success: true, path: outputPath, format: outputFormat, engine: 'localSharpFallback' });
+            } else {
               const buffer = fs.readFileSync(outputPath);
               fs.unlinkSync(outputPath);
               resolve({ success: true, base64: buffer.toString('base64'), format: outputFormat });
-            } catch (e) {
-              reject(new Error(`Failed to read upscaled file: ${e.message}`));
             }
+          } catch (sharpErr) {
+            reject(new Error(`Upscaler failed (exit code ${code}) and Sharp fallback failed: ${sharpErr.message}. Details: ${errOutput.trim()}`));
           }
-        } else {
-          reject(new Error(`Upscaler failed (exit code ${code}). Details: ${errOutput.trim()}`));
         }
       });
       
-      proc.on('error', (err) => {
-        reject(new Error(`Execution error: ${err.message}`));
+      proc.on('error', async (err) => {
+        // Clean up temp resized file
+        if (tempResizedPath && fs.existsSync(tempResizedPath)) {
+          try {
+            fs.unlinkSync(tempResizedPath);
+          } catch (e) {}
+        }
+        
+        // If execution errors out (e.g. executable not runnable), try Sharp fallback!
+        fileLog(`[upscale-local-ncnn] Execution error: ${err.message}. Attempting emergency Sharp fallback...`);
+        try {
+          await upscaleLocalHighFidelitySharp(inputPath, outputPath, scale, outputFormat);
+          if (saveDir) {
+            resolve({ success: true, path: outputPath, format: outputFormat, engine: 'localSharpFallback' });
+          } else {
+            const buffer = fs.readFileSync(outputPath);
+            fs.unlinkSync(outputPath);
+            resolve({ success: true, base64: buffer.toString('base64'), format: outputFormat });
+          }
+        } catch (sharpErr) {
+          reject(new Error(`Execution error: ${err.message} and Sharp fallback failed: ${sharpErr.message}`));
+        }
       });
     });
   } catch (error) {

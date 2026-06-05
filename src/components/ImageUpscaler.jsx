@@ -18,7 +18,7 @@ export function ImageUpscaler() {
   const [showManualInput, setShowManualInput] = useState(false);
   const [upscaleMethod, setUpscaleMethod] = useState("localNcnn"); // 'localNcnn' or 'comfy'
 
-  const [localModel, setLocalModel] = useState("realesrgan-x4plus");
+  const [localModel, setLocalModel] = useState("mata_ai");
   const [outputFormat, setOutputFormat] = useState("jpg");
   const [currentFileProgress, setCurrentFileProgress] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
@@ -81,7 +81,7 @@ export function ImageUpscaler() {
       const cleanup = window.electronAPI.onUpscaleProgress((data) => {
         setCurrentFileProgress(data.progress);
         if (selectedFiles.length > 0) {
-          setProgress(prev => {
+          setProgress(() => {
             const currentOverall = Math.round((completedCount / selectedFiles.length) * 100 + (data.progress / selectedFiles.length));
             return Math.min(99, currentOverall);
           });
@@ -304,7 +304,6 @@ export function ImageUpscaler() {
       }
     }
 
-    const blob = await getFileBlob();
     // Fallback: if Electron is available, we should not reach here without a proper method
     throw new Error("No upscaler method available. Please use Local GPU mode.");
   };
@@ -655,6 +654,7 @@ export function ImageUpscaler() {
                       outline: 'none'
                     }}
                   >
+                    <option value="mata_ai">✨ Mata AI (Smart Hybrid Cloud/Local)</option>
                     <option value="realesrgan-x4plus">📸 General Photo (realesrgan-x4plus - Upscayl Default)</option>
                     <option value="remacri">📸 General Photo Alternative (Remacri)</option>
                     <option value="ultrasharp">✨ Ultrasharp (Aggressive enhancement)</option>

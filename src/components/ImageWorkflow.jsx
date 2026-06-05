@@ -83,6 +83,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const isEmbedding = embeddingCount > 0;
   const [autoUpscale, setAutoUpscale] = useState(() => localStorage.getItem("autoUpscale") === "true");
   const [upscaleScale, setUpscaleScale] = useState(() => parseInt(localStorage.getItem("upscaleScale")) || 2);
+  const [upscaleEngine, setUpscaleEngine] = useState(() => localStorage.getItem("upscaleEngine") || "mata_ai");
   const [uploadBatchIds, setUploadBatchIds] = useState([]);
   const [activeJobId, setActiveJobId] = useState(null);
   const [activeCell, setActiveCell] = useState(null); // { id: '...', field: '...' }
@@ -129,8 +130,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       window.electronAPI.setUploadConcurrency(savedConcurrency).catch(e => console.error(e));
     }
 
+    let unsubFtp = null;
+    let unsubUpscale = null;
+
     if (window.electronAPI?.onFtpProgress) {
-      const unsubscribe = window.electronAPI.onFtpProgress(({ filePath, progress, host }) => {
+      unsubFtp = window.electronAPI.onFtpProgress(({ filePath, progress, host }) => {
         setImages(prev => prev.map(img => {
           const p1 = (img.renamedPath || (img.file && img.file.path) || '').replace(/\\/g, '/').toLowerCase();
           const p2 = (img.renamedVisualPath || (img.visualFile && img.visualFile.path) || '').replace(/\\/g, '/').toLowerCase();
@@ -145,8 +149,26 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           return img;
         }));
       });
-      return unsubscribe;
     }
+
+    if (window.electronAPI?.onUpscaleProgress) {
+      unsubUpscale = window.electronAPI.onUpscaleProgress(({ filePath, progress }) => {
+        setImages(prev => prev.map(img => {
+          const p1 = (img.visualFile && img.visualFile.path || '').replace(/\\/g, '/').toLowerCase();
+          const p2 = (img.file && img.file.path || '').replace(/\\/g, '/').toLowerCase();
+          const fPath = filePath.replace(/\\/g, '/').toLowerCase();
+          if (p1 === fPath || p2 === fPath) {
+            return { ...img, upscaleProgress: progress };
+          }
+          return img;
+        }));
+      });
+    }
+
+    return () => {
+      if (unsubFtp) unsubFtp();
+      if (unsubUpscale) unsubUpscale();
+    };
   }, []);
 
   // Sync concurrentLimit with App's promptSettings state
@@ -175,6 +197,40 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   useEffect(() => {
     localStorage.setItem("upscaleScale", upscaleScale.toString());
   }, [upscaleScale]);
+
+  useEffect(() => {
+    localStorage.setItem("upscaleEngine", upscaleEngine);
+  }, [upscaleEngine]);
+
+  // ── Mata AI: Smart model picker ─────────────────────────────────────────────
+  // Picks the best Real-ESRGAN model based on image type and selected engine.
+  // Logic:
+  //   mata_ai    → auto selects ultrasharp for photos, anime model for vectors/cartoons
+  //   auto_detect→ same as mata_ai (intelligent selection)
+  //   fast       → animevideov3 (fastest, works well on Intel/low-end GPU)
+  //   standard   → realesrgan-x4plus (reliable general-purpose fallback)
+  const pickMataAIModel = (filePath, engine) => {
+    const name = (filePath || '').toLowerCase();
+    const isAnimeOrVector =
+      name.includes('anime') ||
+      name.includes('vector') ||
+      name.includes('cartoon') ||
+      name.includes('illustration') ||
+      name.includes('illust') ||
+      name.includes('drawing') ||
+      name.includes('art') ||
+      name.includes('clip') ||
+      name.includes('graphic') ||
+      name.endsWith('.svg') ||
+      name.endsWith('.ai') ||
+      name.endsWith('.eps');
+
+    if (engine === 'fast') return 'realesr-animevideov3';
+    if (engine === 'standard') return 'realesrgan-x4plus';
+    // mata_ai and auto_detect: intelligent pick
+    if (isAnimeOrVector) return 'realesrgan-x4plus-anime';
+    return 'ultrasharp'; // best quality for real photos
+  };
 
   // ---------- Keyboard Shortcuts ----------
   useEffect(() => {
@@ -646,45 +702,80 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 setImages((prev) =>
                   prev.map((item) =>
                     item.id === img.id
-                      ? { ...item, status: "upscaling" }
+                      ? { ...item, status: "upscaling", upscaleProgress: 0 }
                       : item
                   )
                 );
 
-                const formData = new FormData();
-                formData.append('scale', upscaleScale);
-                formData.append('filePath', targetPath);
-
-                const upscaleRes = await fetch('http://127.0.0.1:3002/api/upscale', {
-                  method: 'POST',
-                  body: formData
-                });
-
-                if (!upscaleRes.ok) {
-                  const errData = await upscaleRes.json().catch(() => ({}));
-                  throw new Error(errData.error || upscaleRes.statusText);
-                }
-
-                const arrayBuffer = await upscaleRes.arrayBuffer();
-
-                const lastSeparator = targetPath.lastIndexOf('\\') !== -1 ? targetPath.lastIndexOf('\\') : targetPath.lastIndexOf('/');
-                const folderPath = targetPath.substring(0, lastSeparator);
-                const originalFileName = targetPath.substring(lastSeparator + 1);
+                const normalizedPath = targetPath.replace(/\\/g, '/');
+                const lastSeparator = normalizedPath.lastIndexOf('/');
+                const folderPath = lastSeparator > -1 ? targetPath.substring(0, lastSeparator) : '.';
+                const originalFileName = lastSeparator > -1 ? targetPath.substring(lastSeparator + 1) : targetPath;
                 const lastDot = originalFileName.lastIndexOf('.');
                 const baseName = lastDot > -1 ? originalFileName.substring(0, lastDot) : originalFileName;
                 const ext = lastDot > -1 ? originalFileName.substring(lastDot) : '.jpg';
                 const pathSeparator = targetPath.includes('\\') ? '\\' : '/';
-                
-                // Save inside a subfolder named 'Upscaled'
                 const upscaleFolder = `${folderPath}${pathSeparator}Upscaled`;
-                const savePath = `${upscaleFolder}${pathSeparator}${baseName}_${upscaleScale}x${ext}`;
+                const outputFormat = ext.toLowerCase() === '.png' ? 'png' : 'jpg';
+                const upscaledMimeType = outputFormat === 'png' ? 'image/png' : 'image/jpeg';
 
-                const saveRes = await window.electronAPI.saveFile(savePath, new Uint8Array(arrayBuffer));
-                if (!saveRes.success) throw new Error(saveRes.error);
+                // ── Mata AI: pick smart model ────────────────────────────────
+                const smartNameForModel = img.file?.name || originalFileName;
+                const modelName = (upscaleEngine === 'mata_ai' || upscaleEngine === 'auto_detect')
+                  ? 'mata_ai'
+                  : pickMataAIModel(smartNameForModel, upscaleEngine);
+                console.log(`[Mata AI] Engine: ${upscaleEngine} | Model: ${modelName} | File: ${smartNameForModel}`);
 
-                upscaledPath = savePath;
-                upscaledName = `${baseName}_${upscaleScale}x${ext}`;
-                const upscaledMimeType = ext.toLowerCase().endsWith('png') ? 'image/png' : 'image/jpeg';
+                let arrayBuffer;
+
+                // Primary: Local GPU — get base64 back, then save manually
+                try {
+                  // Pass saveDir=null so backend returns base64 (avoids separate readFile)
+                  const localRes = await window.electronAPI.upscaleLocalNcnn(
+                    targetPath,
+                    upscaleScale,
+                    modelName,
+                    outputFormat,
+                    null  // null = return base64, don't save directly
+                  );
+                  if (!localRes || !localRes.success) {
+                    throw new Error(localRes?.error || 'Local GPU upscaler returned failure');
+                  }
+                  // Decode base64 → ArrayBuffer
+                  const binaryStr = atob(localRes.base64);
+                  const bytes = new Uint8Array(binaryStr.length);
+                  for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+                  arrayBuffer = bytes.buffer;
+
+                  // Ensure Upscaled folder exists, then save (saveFile handler auto-creates dirs)
+                  const savePath = `${upscaleFolder}${pathSeparator}${baseName}_${upscaleScale}x_MataAI.${outputFormat}`;
+                  const saveRes = await window.electronAPI.saveFile(savePath, bytes);
+                  if (!saveRes.success) throw new Error(saveRes.error || 'Save failed');
+                  upscaledPath = savePath;
+                  upscaledName = `${baseName}_${upscaleScale}x_MataAI.${outputFormat}`;
+                  console.log(`[Mata AI] ✅ Local GPU success → ${upscaledName}`);
+                } catch (localErr) {
+                  // Fallback: server-based upscale API
+                  console.warn('[Mata AI] Local GPU failed, falling back to server API...', localErr.message);
+                  const formData = new FormData();
+                  formData.append('scale', upscaleScale);
+                  formData.append('filePath', targetPath);
+                  const upscaleRes = await fetch('http://127.0.0.1:3002/api/upscale', {
+                    method: 'POST',
+                    body: formData
+                  });
+                  if (!upscaleRes.ok) {
+                    const errData = await upscaleRes.json().catch(() => ({}));
+                    throw new Error(errData.error || upscaleRes.statusText);
+                  }
+                  arrayBuffer = await upscaleRes.arrayBuffer();
+                  const savePath = `${upscaleFolder}${pathSeparator}${baseName}_${upscaleScale}x${ext}`;
+                  const saveRes = await window.electronAPI.saveFile(savePath, new Uint8Array(arrayBuffer));
+                  if (!saveRes.success) throw new Error(saveRes.error);
+                  upscaledPath = savePath;
+                  upscaledName = `${baseName}_${upscaleScale}x${ext}`;
+                  console.log(`[Mata AI] ✅ Server API fallback success: ${upscaledName}`);
+                }
 
                 setImages((prev) =>
                   prev.map((item) => {
@@ -712,7 +803,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   })
                 );
               } catch (upscaleErr) {
-                console.error("Upscale error:", upscaleErr);
+                console.error('[Mata AI] Upscale error:', upscaleErr);
                 throw new Error(`Auto-Upscale failed: ${upscaleErr.message}`);
               }
             }
@@ -753,7 +844,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   };
                 }
               }
-              const p = embedMetadataToFiles([doneImg], false, false, true); // skipOpenPortal = true
+              const p = embedMetadataToFiles([doneImg], false, false);
               embedPromises.push(p);
             }
           } catch (err) {
@@ -804,7 +895,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   
   // ---------- Embedding Metadata ----------
   
-  const embedMetadataToFiles = async (imagesToProcess, forceUpload = false, skipAdobeUpload = false, skipOpenPortal = false) => {
+  const embedMetadataToFiles = async (imagesToProcess, forceUpload = false, skipAdobeUpload = false) => {
     setShowPermissionModal(false);
     if (!window.electronAPI) return;
     
@@ -1702,29 +1793,56 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 </label>
                 
                 {autoUpscale && (
-                  <select
-                    value={upscaleScale}
-                    onChange={(e) => setUpscaleScale(parseInt(e.target.value) || 2)}
-                    style={{
-                      padding: '0.2rem 0.5rem',
-                      borderRadius: '0.4rem',
-                      background: 'var(--surface-2)',
-                      color: 'var(--text-1)',
-                      border: '1px solid var(--glass-border)',
-                      fontSize: '0.8rem',
-                      cursor: 'pointer',
-                      marginRight: '0.75rem',
-                      outline: 'none'
-                    }}
-                  >
-                    <option value="2">2x</option>
-                    <option value="3">3x</option>
-                    <option value="4">4x</option>
-                    <option value="5">5x</option>
-                    <option value="6">6x</option>
-                    <option value="8">8x</option>
-                    <option value="10">10x</option>
-                  </select>
+                  <>
+                    {/* Scale selector */}
+                    <select
+                      value={upscaleScale}
+                      onChange={(e) => setUpscaleScale(parseInt(e.target.value) || 2)}
+                      style={{
+                        padding: '0.2rem 0.5rem',
+                        borderRadius: '0.4rem',
+                        background: 'var(--surface-2)',
+                        color: 'var(--text-1)',
+                        border: '1px solid var(--glass-border)',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                        marginRight: '0.35rem',
+                        outline: 'none'
+                      }}
+                    >
+                      <option value="2">2x</option>
+                      <option value="3">3x</option>
+                      <option value="4">4x</option>
+                      <option value="5">5x</option>
+                      <option value="6">6x</option>
+                      <option value="8">8x</option>
+                      <option value="10">10x</option>
+                    </select>
+
+                    {/* Mata AI Engine selector */}
+                    <select
+                      value={upscaleEngine}
+                      onChange={(e) => setUpscaleEngine(e.target.value)}
+                      title="Mata AI: Smart model auto-selection for best quality"
+                      style={{
+                        padding: '0.2rem 0.5rem',
+                        borderRadius: '0.4rem',
+                        background: upscaleEngine === 'mata_ai' ? 'linear-gradient(135deg, #7c3aed22, #2563eb22)' : 'var(--surface-2)',
+                        color: 'var(--text-1)',
+                        border: upscaleEngine === 'mata_ai' ? '1px solid #7c3aed88' : '1px solid var(--glass-border)',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                        marginRight: '0.75rem',
+                        outline: 'none',
+                        fontWeight: upscaleEngine === 'mata_ai' ? 600 : 400
+                      }}
+                    >
+                      <option value="mata_ai">✨ Mata AI</option>
+                      <option value="auto_detect">🔍 Auto Detect</option>
+                      <option value="fast">⚡ Fast</option>
+                      <option value="standard">📸 Standard</option>
+                    </select>
+                  </>
                 )}
               </>
             )}
@@ -2081,7 +2199,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                       {/* Status & Row Action */}
                       <td className="grid-td-status">
                         <div className="grid-status-stack">
-                          <StatusBadge status={img.status} />
+                          <StatusBadge status={img.status} progress={img.upscaleProgress} />
 
                           {/* Selling Score */}
                           {img.result?.sellingScore !== undefined && img.result?.sellingScore !== null && (() => {
@@ -2237,7 +2355,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 <h3 className="font-mono text-sm text-muted truncate">
                   {img.file.name}
                 </h3>
-                <StatusBadge status={img.status} />
+                <StatusBadge status={img.status} progress={img.upscaleProgress} />
               </div>
 
               {img.status === "done" && img.result && (
@@ -2341,7 +2459,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
               {img.status === "upscaling" && (
                 <p className="text-xs text-indigo-400 animate-pulse mt-2">
-                  ✨ Auto-Upscaling image to {upscaleScale}x...
+                  ✨ Auto-Upscaling image to {upscaleScale}x...{img.upscaleProgress !== undefined && img.upscaleProgress > 0 ? ` ${Math.round(img.upscaleProgress)}%` : ''}
                 </p>
               )}
 
@@ -2627,7 +2745,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
 // --- Sub-components ---
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, progress }) {
   const map = {
     done: "bg-green-500/20 text-green-400",
     processing: "bg-primary/20 text-primary animate-pulse",
@@ -2641,7 +2759,9 @@ function StatusBadge({ status }) {
         map[status] || map.pending
       }`}
     >
-      {status}
+      {status === "upscaling" && progress !== undefined && progress > 0
+        ? `upscaling (${Math.round(progress)}%)`
+        : status}
     </span>
   );
 }

@@ -164,28 +164,28 @@ You MUST generate EXACTLY ${s.keywordCount} keywords using this precise 6-tier f
   TIER 1 — PRIMARY SUBJECTS (6-10 keywords): The literal nouns visible in the image. Most important tier — buyers search these first.
     Examples: "laptop", "coffee", "woman", "mountain", "heart icon", "stethoscope"
 
-  TIER 2 — DESCRIPTIVE ATTRIBUTES (5-8 keywords): Colors, materials, quantities, styles, conditions.
-    Examples: "red", "wooden", "three", "hand-drawn", "transparent background", "overhead view"
+  TIER 2 — DESCRIPTIVE ATTRIBUTES (8-12 keywords): Specific colors, materials, quantities, styles, lighting, and conditions.
+    Examples: "red", "wooden", "three", "hand-drawn", "transparent background", "overhead view", "studio light"
 
-  TIER 3 — ACTIONS & STATES (4-6 keywords): What is happening, movement, poses, interactions.
-    Examples: "working", "smiling", "flying", "isolated", "growing", "connected"
+  TIER 3 — ACTIONS & STATES (6-10 keywords): What is happening, movement, poses, interactions.
+    Examples: "working", "smiling", "flying", "isolated", "growing", "connected", "holding"
 
-  TIER 4 — MOODS & CONCEPTS (5-8 keywords): Abstract ideas, emotions, and concepts the image conveys.
-    Examples: "success", "freedom", "teamwork", "healthcare", "innovation", "sustainability"
+  TIER 4 — MOODS & CONCEPTS (8-12 keywords): High-value abstract ideas, emotions, and themes the image conveys.
+    Examples: "success", "freedom", "teamwork", "healthcare", "innovation", "sustainability", "leadership"
 
-  TIER 5 — COMMERCIAL USE-CASES (5-8 keywords): Where buyers will use this image.
+  TIER 5 — COMMERCIAL USE-CASES (5-10 keywords): Specific industries or ways buyers will use this image.
     Examples: "website banner", "social media", "presentation", "infographic", "logo", "packaging"
 
-  TIER 6 — INDUSTRY & NICHE TERMS (fill remaining to reach EXACTLY ${s.keywordCount}): Sector-specific vocabulary, synonyms, related concepts, alternative search terms.
-    Examples: "fintech", "wellness", "e-commerce", "Gen Z", "startup", "remote work"
+  TIER 6 — HIGH-VALUE SYNONYMS & RELATED CONCEPTS (Fill exactly to reach ${s.keywordCount}): Do NOT use generic filler. Use highly specific, related commercial terms, regional variants, and niche industry vocabulary.
+    Examples: "fintech", "wellness", "e-commerce", "startup", "remote work", "cybersecurity"
 
 COUNT ENFORCEMENT PROTOCOL:
-  Step 1: Generate all keywords across all 6 tiers.
-  Step 2: Count your total. If below ${s.keywordCount}, expand Tier 6 with more synonyms, related industry terms, or regional variants.
-  Step 3: If above ${s.keywordCount}, remove the weakest/most generic keywords from Tier 6 first.
+  Step 1: Generate all keywords across all 6 tiers using ONLY highly descriptive, valuable terms.
+  Step 2: Count your total. If below ${s.keywordCount}, expand Tier 6 with more high-value synonyms or related industry terms. Do NOT use generic words like "nice", "picture", "background".
+  Step 3: If above ${s.keywordCount}, remove the weakest keywords.
   Step 4: Final count MUST be EXACTLY ${s.keywordCount}. Not one more, not one less.
 
-ABSOLUTE MINIMUM STANDARD: Every single keyword must be something a real buyer would type in a stock site search bar.`;
+ABSOLUTE MINIMUM STANDARD: Every single keyword must be a highly relevant, commercial search term a real buyer would type. No generic filler!`;
   }
 
   // ── Master prompt assembly (token-efficient) ──────────────────────────────
@@ -207,31 +207,35 @@ LANGUAGE: All input may be in any language. ALL output MUST be in English only.
 
 ${platformContext}${mediaHintStr}${customInstStr}
 
-== TITLE ==
-Formula: [Primary buyer search noun] + [specific attribute: color/action/style/count] + [context/setting]
+== TITLE (SEO Optimized Headline) ==
+Formula: [Primary Subject] + [Specific Action/Attribute] + [Setting/Context]
 Rules:
-- Start with the #1 noun buyers search. Never start with A/An/The or adjectives.
-- For vectors/illustrations: include "flat vector" / "3D render" / "outline icon" / "watercolor" / "cartoon".
-- Specific beats vague: "black coffee in white ceramic mug" not "coffee".
-- Forbidden words: stunning vibrant captivating breathtaking mesmerizing showcasing featuring beautifully crafted premium perfect amazing incredible.
-${s.smartMode ? `- Concise and keyword-dense.` : `- Length: ${s.titleMinChars || 70}–${s.titleMaxChars} chars. Use all available space.`}${s.negTitleEnabled && s.negTitleWords ? `\n- Forbidden in title: ${s.negTitleWords}.` : ""}
+- Write a highly descriptive, factual sentence. Answer: Who, What, Where, and Why.
+- NEVER start with articles (A/An/The) or adjectives. Start with the most searched noun.
+- Be highly specific: "Businesswoman typing on silver laptop in modern glass office" NOT "Woman working on laptop".
+- For vectors/illustrations: explicitly state the style ("flat vector illustration", "3D render", "seamless pattern").
+- Forbidden words: stunning, vibrant, captivating, breathtaking, mesmerizing, showcasing, beautifully, perfect, amazing.
+${s.smartMode ? `- Concise and heavily keyword-dense.` : `- Target Length: 55–70 characters. This is the SEO sweet spot.`}${s.negTitleEnabled && s.negTitleWords ? `\n- Forbidden in title: ${s.negTitleWords}.` : ""}
 
-== DESCRIPTION ==
-Formula: [Factual visual description with style+colors+elements] + [2-3 specific buyer use-cases]
+== DESCRIPTION (SEO Optimized Detail) ==
+Formula: [Factual visual description + Style/Lighting] + [2-3 specific commercial use-cases]
 Rules:
-- Sentence 1: style (flat/3D/realistic/watercolor), colors, what is depicted, composition.
-- Sentence 2: concrete use-cases — "email header", "pitch deck", "product packaging", NOT "any project".
-- Pack with searchable keywords naturally. Active voice only.
-- Forbidden: stunning breathtaking beautifully crafted meticulously showcasing "This image shows".
-${s.smartMode ? `- Concise and natural.` : `- Length: ${s.descMinChars || 110}–${s.descMaxChars} chars.`}
+- Expand on the title with factual details. Do not just list keywords.
+- Sentence 1: Detail the style, colors, composition, and specific subjects.
+- Sentence 2: Name concrete commercial applications (e.g., "Ideal for corporate presentations, marketing materials, and web banners").
+- Keep it professional, objective, and active voice.
+- Forbidden words: stunning, breathtaking, meticulously, "This image shows", "Here we can see".
+${s.smartMode ? `- Concise, natural, and keyword-rich.` : `- Target Length: 80–150 characters.`}
 
 == ${kwMode} ==
 
 Keyword rules (apply to all modes):
-- Order: specific literals first → style/color/mood → use-cases last.
-- No generic filler: "thing" "item" "nice" "great" "image" "photo" "picture".
-- No root duplicates: not both "color" + "colorful". Use most-searched form.
-- No brand/trademark names. No banned: "free" "download" "copyright" "watermark" "shutterstock".
+- Order of Importance: Place the absolute most relevant 10 keywords FIRST. Include all Title words in the first 10 keywords.
+- NO generic filler: "thing", "item", "nice", "great", "image", "photo", "picture", "background", "graphic".
+- Rule for Abstract Concepts: DO NOT use abstract concepts (e.g., "fun", "reality", "enjoyment", "virtual") UNLESS they are the absolute primary commercial theme of the specific image. Stick strictly to concrete, visible nouns and highly relevant industry terms.
+- NO root duplicates: do not use both "car" and "cars", or "color" and "colorful". Use the single most commercial form.
+- Be hyper-specific: use "beagle puppy" instead of just "dog".
+- No brand/trademark names. No banned words: "free", "download", "copyright", "watermark".
 - No hashtags. ${singleWordRule}${negInstructions}
 
 == CATEGORY ==
@@ -276,8 +280,14 @@ SCORING RULES (CRITICAL — follow precisely):
 - Output sellingScore as a single integer (the sum of all 4 dimensions).
 - In "scoreReason": write exactly 1 sentence (max 15 words) naming the PRIMARY factor — the single biggest strength or weakness.
 
+== KEYWORD SCORES ==
+For every single keyword generated, you must assign a "Commercial Relevance Score" from 1 to 100 representing how accurately it matches the visual content of the image and its search value for buyers.
+- 80-100 (High): Primary subjects, essential descriptive attributes (like prominent colors, styles, materials, or actions visible in the image), and high-intent commercial search terms that are directly relevant to the image. (Most of your keywords should be scored in this range if they are highly relevant and accurate!).
+- 40-79 (Medium): Broad context, general category terms, or secondary thematic concepts.
+- 1-39 (Low): Very generic words, weak synonyms, or peripheral details.
+
 Output ONLY valid JSON, no markdown:
-{"title":"...","description":"...","keywords":"kw1, kw2, kw3${s.smartMode ? '' : `, ... (${s.keywordCount} total)`}","categories":["Cat1"],"sellingScore":62,"scoreReason":"Clear evergreen business concept but technical quality is limited by flat lighting."}`;
+{"title":"...","description":"...","keywords":"kw1, kw2, kw3${s.smartMode ? '' : `, ... (${s.keywordCount} total)`}","keywordScores":{"kw1":95,"kw2":80,"kw3":45},"categories":["Cat1"],"sellingScore":62,"scoreReason":"Clear evergreen business concept but technical quality is limited by flat lighting."}`;
 }
 
 
@@ -431,6 +441,20 @@ function postProcessMetadata(metadata, promptSettings) {
     // 4. Quality scoring — prefer specific multi-word phrases and concrete nouns over generic single words
     const getKeywordScore = (keyword) => {
       const kl = keyword.toLowerCase().trim();
+      
+      // If AI provided a score, use it for accurate sorting!
+      if (result.keywordScores) {
+        const scoreKey = Object.keys(result.keywordScores).find(
+          k => k.toLowerCase().trim() === kl
+        );
+        if (scoreKey !== undefined) {
+          const exactScore = result.keywordScores[scoreKey];
+          if (exactScore !== undefined && typeof exactScore === 'number') {
+            return exactScore;
+          }
+        }
+      }
+
       // Extremely generic single words that add no value
       const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual",
         "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]);

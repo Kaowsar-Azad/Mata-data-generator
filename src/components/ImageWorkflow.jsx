@@ -17,13 +17,16 @@ import {
 } from "lucide-react";
 
 // ─── Perceptual Hash Utility ───────────────────────────────────────────────
-// Resizes image/dataURL to an 8×8 grayscale grid and returns a 64-bit binary
-// string. Two hashes with Hamming distance ≤ 10 are considered near-duplicates.
+// Resizes image/dataURL to an 8x8 grayscale grid and returns a 64-bit binary
+// string. Two hashes with Hamming distance <= 10 are considered near-duplicates.
 const computePHash = (src) =>
   new Promise((resolve) => {
     const SIZE = 8;
     const img = new Image();
     img.onload = () => {
+      if (src && src.startsWith('blob:')) {
+        URL.revokeObjectURL(src);
+      }
       try {
         const canvas = document.createElement("canvas");
         canvas.width = SIZE;
@@ -42,7 +45,12 @@ const computePHash = (src) =>
         resolve(null);
       }
     };
-    img.onerror = () => resolve(null);
+    img.onerror = () => {
+      if (src && src.startsWith('blob:')) {
+        URL.revokeObjectURL(src);
+      }
+      resolve(null);
+    };
     img.src = src;
   });
 
@@ -263,24 +271,17 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const computeHashForEntry = async (entry) => {
     try {
       let src = null;
-      if (entry.preview) {
+      if (entry.preview && !entry.preview.includes('placeholder')) {
+        // Only use existing preview if it's not a generic placeholder
         src = entry.preview;
       } else if (entry.visualFile) {
-        src = await new Promise((res, rej) => {
-          const reader = new FileReader();
-          reader.onload = (e) => res(e.target.result);
-          reader.onerror = rej;
-          reader.readAsDataURL(entry.visualFile);
-        });
+        src = URL.createObjectURL(entry.visualFile);
       } else if (entry.file && !entry.isEps && !entry.isVideo) {
-        src = await new Promise((res, rej) => {
-          const reader = new FileReader();
-          reader.onload = (e) => res(e.target.result);
-          reader.onerror = rej;
-          reader.readAsDataURL(entry.file);
-        });
+        src = URL.createObjectURL(entry.file);
       }
+      
       if (!src) return null;
+      // `computePHash` handles `URL.revokeObjectURL` automatically now
       return await computePHash(src);
     } catch {
       return null;
@@ -494,7 +495,13 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   };
 
   const removeImage = (id) => {
-    setImages((prev) => prev.filter((img) => img.id !== id));
+    setImages((prev) => {
+      const img = prev.find(i => i.id === id);
+      if (img && img.preview && img.preview.startsWith('blob:')) {
+        URL.revokeObjectURL(img.preview);
+      }
+      return prev.filter((i) => i.id !== id);
+    });
     // Clean up hash entry and remove any duplicate pairs referencing this id
     delete hashMapRef.current[id];
     
@@ -509,6 +516,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   };
 
   const clearAll = () => {
+    images.forEach(img => {
+      if (img.preview && img.preview.startsWith('blob:')) {
+        URL.revokeObjectURL(img.preview);
+      }
+    });
     setImages([]);
     setUploadBatchIds([]);
     setActiveJobId(null);
@@ -522,38 +534,41 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
   const resizeImageToBase64 = (file, maxSize = 800) =>
     new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          let width = img.width;
-          let height = img.height;
-          
-          if (width > height) {
-            if (width > maxSize) {
-              height = Math.round((height * maxSize) / width);
-              width = maxSize;
-            }
-          } else {
-            if (height > maxSize) {
-              width = Math.round((width * maxSize) / height);
-              height = maxSize;
-            }
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl); // Clean up memory immediately
+        let width = img.width;
+        let height = img.height;
+        
+        if (width > height) {
+          if (width > maxSize) {
+            height = Math.round((height * maxSize) / width);
+            width = maxSize;
           }
-          
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0, width, height);
-          
-          resolve(canvas.toDataURL("image/jpeg", 0.7));
-        };
-        img.onerror = reject;
-        img.src = e.target.result;
+        } else {
+          if (height > maxSize) {
+            width = Math.round((width * maxSize) / height);
+            height = maxSize;
+          }
+        }
+        
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
       };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
+      
+      img.onerror = (err) => {
+        URL.revokeObjectURL(objectUrl);
+        reject(err);
+      };
+      
+      img.src = objectUrl;
     });
 
   const [progress, setProgress] = useState(0);
@@ -578,22 +593,18 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     const embedPromises = [];
 
     let processed = 0;
-    for (let c = 0; c < toProcess.length; c += limit) {
-      const chunk = toProcess.slice(c, c + limit);
+    const activePromises = new Set();
 
-      // First set status to processing for all in this chunk
+    for (const img of toProcess) {
+      // First set status to processing for this image
       setImages((prev) =>
         prev.map((item) =>
-          chunk.some((ci) => ci.id === item.id)
-            ? { ...item, status: "processing" }
-            : item
+          item.id === img.id ? { ...item, status: "processing" } : item
         )
       );
 
-      // Process them concurrently using Promise.all
-      await Promise.all(
-        chunk.map(async (img) => {
-          try {
+      const p = (async () => {
+        try {
             let base64, mimeType;
             let isPlaceholder = false;
             let upscaledPath = null;
@@ -612,7 +623,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               if (!window.electronAPI?.extractVideoFrame) {
                 throw new Error('Video frame extraction is only available in the desktop app.');
               }
-              const frameResult = await window.electronAPI.extractVideoFrame(img.file.path);
+              const extractPromise = window.electronAPI.extractVideoFrame(img.file.path);
+              const timeoutPromise = new Promise((_, rej) => setTimeout(() => rej(new Error('Video frame extraction timed out (60s)')), 60000));
+              const frameResult = await Promise.race([extractPromise, timeoutPromise]);
               if (!frameResult.success) {
                 throw new Error(`Failed to extract video frame: ${frameResult.error}`);
               }
@@ -731,13 +744,16 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 // Primary: Local GPU — get base64 back, then save manually
                 try {
                   // Pass saveDir=null so backend returns base64 (avoids separate readFile)
-                  const localRes = await window.electronAPI.upscaleLocalNcnn(
+                  const upscalePromise = window.electronAPI.upscaleLocalNcnn(
                     targetPath,
                     upscaleScale,
                     modelName,
                     outputFormat,
                     null  // null = return base64, don't save directly
                   );
+                  const upscaleTimeout = new Promise((_, rej) => setTimeout(() => rej(new Error('Local GPU upscaler timed out (15m limit)')), 900000)); // 15 mins max
+                  
+                  const localRes = await Promise.race([upscalePromise, upscaleTimeout]);
                   if (!localRes || !localRes.success) {
                     throw new Error(localRes?.error || 'Local GPU upscaler returned failure');
                   }
@@ -858,14 +874,21 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           }
           processed++;
           setProgress(Math.round((processed / toProcess.length) * 100));
-        })
-      );
+      })();
 
-      // Add a small delay between concurrent chunks to respect rate limits gracefully
-      if (c + limit < toProcess.length) {
-        await new Promise((resolve) => setTimeout(resolve, 200));
+      activePromises.add(p);
+      p.finally(() => activePromises.delete(p));
+
+      if (activePromises.size >= limit) {
+        await Promise.race(activePromises);
       }
+      
+      // Add a small delay between starting requests to respect rate limits
+      await new Promise((resolve) => setTimeout(resolve, 150));
     }
+
+    // Wait for the remaining active promises to finish
+    await Promise.all(activePromises);
 
     setIsProcessing(false);
     setTimeout(() => setProgress(0), 1000);
@@ -1951,21 +1974,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 <CheckCircle2 className="w-4 h-4" /> Embed to Files
               </button>
             )}
-            <button
-              className="btn-outline"
-              style={{ color: 'var(--primary)', borderColor: 'rgba(37,99,235,0.25)' }}
-              onClick={() => csvInputRef.current?.click()}
-              title="Import titles and keywords from a CSV file"
-            >
-              <Upload className="w-4 h-4" /> Import CSV
-            </button>
-            <input
-              type="file"
-              ref={csvInputRef}
-              className="hidden"
-              accept=".csv"
-              onChange={handleCSVImport}
-            />
+
 
             <button
               className="btn-outline"
@@ -2377,6 +2386,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                     onChange={(val) => handleMetaChange(img.id, "keywords", val)}
                     isTextArea
                     isKeywords
+                    img={img}
                   />
                   {img.result.categories && img.result.categories.length > 0 && (
                     <div className="flex gap-2 items-center mt-2">
@@ -2766,7 +2776,7 @@ function StatusBadge({ status, progress }) {
   );
 }
 
-function MetaField({ label, value, onChange, isTextArea, isKeywords }) {
+function MetaField({ label, value, onChange, isTextArea, isKeywords, img }) {
   const [copied, setCopied] = useState(false);
   const [isTextMode, setIsTextMode] = useState(false);
 
@@ -2776,16 +2786,30 @@ function MetaField({ label, value, onChange, isTextArea, isKeywords }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const getKeywordScore = (keyword) => {
+  const getKeywordScore = (keyword, img) => {
     const kl = keyword.toLowerCase().trim();
-    const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]);
-    if (junk.has(kl)) return 10; 
+    
+    // Check if AI provided a real SEO score
+    if (img && img.result && img.result.keywordScores) {
+        const exactScore = img.result.keywordScores[kl] || img.result.keywordScores[keyword.trim()];
+        if (exactScore !== undefined && typeof exactScore === 'number') {
+           return Math.min(100, Math.max(1, exactScore));
+        }
+    }
+
+    // Fallback pseudo-random heuristic if AI score is missing
+    const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]);
+    if (junk.has(kl) || kl.length < 3) return 10; 
+    
+    let score = 75; // Increased base score so single words can easily hit green
     const wordCount = kl.split(' ').length;
-    let score = 60 + (wordCount > 1 ? 15 : 0);
-    if (kl.length >= 4 && kl.length <= 15) score += 10;
+    if (wordCount > 1) score += 10; // Slight boost for phrases
+    if (kl.length >= 4 && kl.length <= 25) score += 10; // Boost for good length
+    
     let hash = 0;
     for (let i = 0; i < kl.length; i++) hash = kl.charCodeAt(i) + ((hash << 5) - hash);
-    score += (Math.abs(hash) % 15);
+    score += (Math.abs(hash) % 10);
+    
     return Math.min(99, score);
   };
 
@@ -2844,8 +2868,8 @@ function MetaField({ label, value, onChange, isTextArea, isKeywords }) {
         >
           {(value || '').split(',').map(k => k.trim()).filter(Boolean).map((kw, idx) => {
             const cleanedKw = kw.replace(/\s+\d+$/, '');
-            const score = getKeywordScore(cleanedKw);
-            let colorStr = score >= 80 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
+            const score = getKeywordScore(cleanedKw, img);
+            let colorStr = score >= 75 ? '#10b981' : score >= 40 ? '#f59e0b' : '#ef4444';
             
             return (
               <div 
@@ -2864,7 +2888,7 @@ function MetaField({ label, value, onChange, isTextArea, isKeywords }) {
                   height: '24px',
                   boxSizing: 'border-box'
                 }}
-                title={`Popularity: ${score >= 80 ? 'High' : score >= 50 ? 'Medium' : 'Low'}`}
+                title={`Relevance: ${score >= 75 ? 'High' : score >= 40 ? 'Medium' : 'Low'} (${score}/100)`}
               >
                 <span 
                   style={{ 

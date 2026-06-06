@@ -419,16 +419,16 @@ async function upscaleCloudHF(inputPath, scale, outputPath) {
   fileLog(`[upscale-cloud-hf] Sending process request (scale: ${scale})...`);
   const result = await client.predict("/process", [
     handle_file(inputPath), // input_image
-    "highly detailed, sharp focus, clean, 4k", // prompt
-    "blurry, low quality, noise, grain, text", // negative_prompt
-    42, // seed
+    "highly detailed, sharp focus, 4k, photorealistic, natural texture, realistic pores, fine hairs", // prompt
+    "blurry, low quality, noise, grain, text, plastic, artificial, smooth, painting, cartoon, 3d render", // negative_prompt
+    Math.floor(Math.random() * 1000000), // random seed for natural variance
     parseFloat(scale), // upscale_factor
     0.6, // controlnet_scale
     1.0, // controlnet_decay
     6.0, // condition_scale
     112, // tile_width
     144, // tile_height
-    0.35, // denoise_strength
+    0.20, // denoise_strength (reduced from 0.35 to prevent removing fine hairs/pores and plastic look)
     18, // num_inference_steps
     "DDIM" // solver
   ]);
@@ -489,14 +489,37 @@ ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName =
         // Photo: Phase 1 - Try Cloud AI (Hugging Face) for Best Quality + Speed
         try {
           fileLog(`[Mata AI] Running Cloud AI (Hugging Face Space) for photo...`);
+          
+          // Start simulated progress ticks to update the UI progress bar smoothly
+          let currentProgress = 5;
+          const progressInterval = setInterval(() => {
+            if (currentProgress < 90) {
+              const increment = Math.max(1, Math.round((90 - currentProgress) / 8));
+              currentProgress += increment;
+              if (event && !event.sender.isDestroyed()) {
+                event.sender.send('upscale-progress', { filePath: inputPath, progress: currentProgress });
+              }
+            }
+          }, 1500);
+
           const cloudPromise = upscaleCloudHF(inputPath, scale, outputPath);
           // Increased timeout to 60s since logs show HuggingFace takes ~30s
           const timeoutPromise = new Promise((_, reject) => 
             setTimeout(() => reject(new Error('Cloud upscaling timed out (60s limit reached)')), 60000)
           );
           
-          await Promise.race([cloudPromise, timeoutPromise]);
+          try {
+            await Promise.race([cloudPromise, timeoutPromise]);
+          } finally {
+            clearInterval(progressInterval);
+          }
+          
           fileLog(`[Mata AI] ✅ Cloud upscaling success!`);
+          
+          // Send 100% complete progress to UI
+          if (event && !event.sender.isDestroyed()) {
+            event.sender.send('upscale-progress', { filePath: inputPath, progress: 100 });
+          }
           
           if (saveDir) {
             return { success: true, path: outputPath, format: outputFormat, engine: 'cloudHF' };
@@ -1829,35 +1852,8 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
 
   await Promise.all(workers);
 
-  // Generate CSV for Adobe Stock
+  // Automatic CSV generation removed as requested
   let generatedCsvPath = null;
-  if (successfulAdobeUploads.length > 0 && validPaths.length > 0) {
-    try {
-      const folderPath = path.dirname(validPaths[0]);
-      const csvName = `AdobeStock_Metadata_${Date.now()}.csv`;
-      const csvPath = path.join(folderPath, csvName);
-      
-      const headers = ['Filename', 'Title', 'Keywords', 'Category', 'Releases'];
-      const rows = [headers.join(',')];
-      
-      for (const item of successfulAdobeUploads) {
-         const esc = (str) => `"${(str || '').replace(/"/g, '""')}"`;
-         rows.push([
-            item.filename,
-            esc(item.title),
-            esc(item.keywords),
-            item.category || '',
-            '' // Releases
-         ].join(','));
-      }
-      
-      fs.writeFileSync(csvPath, rows.join('\n'), 'utf8');
-      generatedCsvPath = csvPath;
-      fileLog(`[upload-${type}] Generated Adobe Stock CSV at: ${csvPath}`);
-    } catch(err) {
-      fileLog(`[upload-${type}] Failed to generate CSV: ${err.message}`);
-    }
-  }
 
   resetIdleTimer(entry, key);
   return { fileErrors, renamedFiles, csvPath: generatedCsvPath };

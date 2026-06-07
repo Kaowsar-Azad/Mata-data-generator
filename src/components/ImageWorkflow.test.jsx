@@ -17,7 +17,7 @@ if (typeof localStorage === 'undefined' || !localStorage.clear) {
     window.localStorage = mockLocalStorage;
   }
 }
-import { ImageWorkflow } from './ImageWorkflow';
+import { ImageWorkflow } from './MetadataGenerator';
 
 describe('ImageWorkflow Component', () => {
   const mockApiKeys = ['test-key-123'];

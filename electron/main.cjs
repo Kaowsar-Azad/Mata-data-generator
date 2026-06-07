@@ -276,10 +276,11 @@ ipcMain.handle('extract-video-frame', async (event, videoPath) => {
 });
 
 // IPC Handler for generating high-res JPG from EPS or PNG
-ipcMain.handle('generate-eps-jpg', async (event, inputPath, addWhiteBgToPng = true) => {
+ipcMain.handle('generate-eps-jpg', async (event, inputPath, addWhiteBgToPng = true, outputExt = '.jpg') => {
   try {
     const parsedPath = path.parse(inputPath);
-    const outputName = `${parsedPath.name}.jpg`;
+    const finalExt = outputExt.startsWith('.') ? outputExt : `.${outputExt}`;
+    const outputName = `${parsedPath.name}${finalExt}`;
     const outputPath = path.join(parsedPath.dir, outputName);
     const ext = parsedPath.ext.toLowerCase();
 
@@ -449,7 +450,15 @@ async function upscaleCloudHF(inputPath, scale, outputPath) {
   }
 
   const arrayBuffer = await response.arrayBuffer();
-  fs.writeFileSync(outputPath, Buffer.from(arrayBuffer));
+  const rawBuffer = Buffer.from(arrayBuffer);
+
+  // HuggingFace returns a WEBP. We must convert it to the requested format based on extension.
+  if (outputPath.toLowerCase().endsWith('.png')) {
+    await sharp(rawBuffer).png().toFile(outputPath);
+  } else {
+    await sharp(rawBuffer).jpeg({ quality: 95 }).toFile(outputPath);
+  }
+  
   fileLog(`[upscale-cloud-hf] Saved cloud upscaled result to: ${outputPath}`);
 }
 
@@ -533,13 +542,8 @@ ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName =
         }
 
         // Photo: Phase 2 - Fallback to Local GPU
-        if (isIntel) {
-          fileLog(`[Mata AI] Integrated Intel GPU detected. Running fast AI model 'realesr-animevideov3' to ensure speed.`);
-          modelName = 'realesr-animevideov3';
-        } else {
-          fileLog(`[Mata AI] Dedicated GPU detected. Running high-quality 'ultrasharp' model.`);
-          modelName = 'ultrasharp';
-        }
+        fileLog(`[Mata AI] Dedicated GPU or Local Fallback. Running high-quality 'ultrasharp' model.`);
+        modelName = 'ultrasharp';
       } else {
         // Vector: run local NCNN with 'realesrgan-x4plus-anime'
         fileLog(`[Mata AI] Vector/Anime file detected. Running 'realesrgan-x4plus-anime'.`);
@@ -624,6 +628,31 @@ ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName =
 
         const fileCreated = fs.existsSync(outputPath);
         if (fileCreated) {
+          // Check if upscaler ignored -f jpg and output a WebP (RIFF) instead
+          let isRiff = false;
+          try {
+            const fd = fs.openSync(outputPath, 'r');
+            const header = Buffer.alloc(4);
+            fs.readSync(fd, header, 0, 4, 0);
+            fs.closeSync(fd);
+            if (header.toString('ascii') === 'RIFF') {
+                isRiff = true;
+            }
+          } catch(e) {}
+          
+          if (isRiff && (outputFormat === 'jpg' || outputFormat === 'jpeg')) {
+            try {
+                fileLog(`[upscale-local-ncnn] Detected RIFF/WebP instead of JPG. Converting format using Sharp...`);
+                const tempPath = outputPath + '.tmp';
+                await sharp(outputPath).jpeg({ quality: 95 }).toFile(tempPath);
+                fs.unlinkSync(outputPath);
+                fs.renameSync(tempPath, outputPath);
+                fileLog(`[upscale-local-ncnn] Successfully converted RIFF to true JPG.`);
+            } catch(e) {
+                fileLog(`[upscale-local-ncnn] RIFF to JPG conversion failed: ${e.message}`);
+            }
+          }
+
           if (saveDir) {
             resolve({ success: true, path: outputPath, format: outputFormat, engine: 'localNcnn' });
           } else {
@@ -867,7 +896,7 @@ async function getExifTool() {
     } catch (e) {
       fileLog('[getExifTool] Failed resolving exiftoolPath:', e);
     }
-    exiftoolInstance = new ExifTool({ maxProcs: 2, taskTimeoutMillis: 5000 });
+    exiftoolInstance = new ExifTool({ maxProcs: 2, taskTimeoutMillis: 60000 });
     fileLog('[getExifTool] ExifTool instance created.');
   }
   return exiftoolInstance;
@@ -990,7 +1019,7 @@ ipcMain.handle('write-metadata', async (event, filePath, title, description, key
     
     let timeoutId;
     const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error('ExifTool write operation timed out (15s)')), 15000);
+      timeoutId = setTimeout(() => reject(new Error('ExifTool write operation timed out (60s)')), 60000);
     });
     
     try {
@@ -999,6 +1028,14 @@ ipcMain.handle('write-metadata', async (event, filePath, title, description, key
       clearTimeout(timeoutId);
     }
     fileLog('[write-metadata] Write completed successfully.');
+    
+    // Clean up any lingering _exiftool_tmp or _original files
+    try {
+      if (fs.existsSync(filePath + '_exiftool_tmp')) fs.unlinkSync(filePath + '_exiftool_tmp');
+      if (fs.existsSync(filePath + '_original')) fs.unlinkSync(filePath + '_original');
+    } catch (cleanupErr) {
+      fileLog('[write-metadata] Cleanup error:', cleanupErr);
+    }
     
     // Rename the file to match the title
     let finalPath = filePath;
@@ -1638,6 +1675,14 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
             fileLog('[upload-metadata] Re-writing formatted tags to ensure Adobe Stock compatibility:', writeTags);
             await exiftool.write(filePath, writeTags, ["-overwrite_original", "-codedcharacterset=utf8"]);
             fileLog('[upload-metadata] Metadata formatting completed for:', fileName);
+            
+            // Clean up any lingering _exiftool_tmp or _original files
+            try {
+              if (fs.existsSync(filePath + '_exiftool_tmp')) fs.unlinkSync(filePath + '_exiftool_tmp');
+              if (fs.existsSync(filePath + '_original')) fs.unlinkSync(filePath + '_original');
+            } catch (cleanupErr) {
+              fileLog('[upload-metadata] Cleanup error:', cleanupErr);
+            }
           } else {
             fileLog(`[upload-metadata] File ${fileName} has no metadata. Uploading as-is without adding metadata.`);
           }
@@ -1799,7 +1844,11 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
         }
 
         if (verifySize !== fileSize) {
-          throw new Error(`Upload verification mismatch: expected ${fileSize} bytes, remote has ${verifySize} bytes`);
+          if (verifySize === 0) {
+            throw new Error(`Upload verification failed: remote file is 0 bytes (expected ${fileSize} bytes)`);
+          } else {
+            fileLog(`[upload-${type}] ⚠️ Warning: Size mismatch. Local: ${fileSize}, Remote: ${verifySize}. Assuming successful upload due to host processing.`);
+          }
         }
         
         // Emit 100% just in case

@@ -463,7 +463,7 @@ ipcMain.handle('write-metadata', async (event, filePath, title, description, key
     
     let timeoutId;
     const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error('ExifTool write operation timed out (15s)')), 15000);
+      timeoutId = setTimeout(() => reject(new Error('ExifTool write operation timed out (60s)')), 60000);
     });
     
     try {
@@ -472,6 +472,14 @@ ipcMain.handle('write-metadata', async (event, filePath, title, description, key
       clearTimeout(timeoutId);
     }
     fileLog('[write-metadata] Write completed successfully.');
+    
+    // Clean up any lingering _exiftool_tmp or _original files
+    try {
+      if (fs.existsSync(filePath + '_exiftool_tmp')) fs.unlinkSync(filePath + '_exiftool_tmp');
+      if (fs.existsSync(filePath + '_original')) fs.unlinkSync(filePath + '_original');
+    } catch (cleanupErr) {
+      fileLog('[write-metadata] Cleanup error:', cleanupErr);
+    }
     
     // Rename the file to match the title
     let finalPath = filePath;

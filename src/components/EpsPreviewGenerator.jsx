@@ -5,6 +5,7 @@ export function EpsPreviewGenerator() {
   const [files, setFiles] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [addWhiteBg, setAddWhiteBg] = useState(true);
+  const [outputExt, setOutputExt] = useState('.jpg');
   const fileInputRef = useRef(null);
 
   const handleDrop = (e) => {
@@ -63,7 +64,7 @@ export function EpsPreviewGenerator() {
           throw new Error('Electron API not found. Are you running in the desktop app?');
         }
 
-        const result = await window.electronAPI.generateEpsJpg(file.path, addWhiteBg);
+        const result = await window.electronAPI.generateEpsJpg(file.path, addWhiteBg, outputExt);
         
         if (result.success) {
           setFiles(prev => prev.map(f => f.path === file.path ? { ...f, status: 'success' } : f));
@@ -127,7 +128,28 @@ export function EpsPreviewGenerator() {
                 </label>
               )}
             </div>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.8rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <span style={{ fontSize: "0.8rem", color: "var(--text-2)", fontWeight: 600 }}>Format:</span>
+                <select 
+                  value={outputExt}
+                  onChange={(e) => setOutputExt(e.target.value)}
+                  disabled={isProcessing}
+                  style={{
+                    padding: "0.3rem 0.5rem",
+                    borderRadius: "0.4rem",
+                    border: "1px solid var(--glass-border)",
+                    background: "var(--surface-1)",
+                    color: "var(--text-1)",
+                    fontSize: "0.8rem",
+                    outline: "none",
+                    cursor: isProcessing ? "not-allowed" : "pointer"
+                  }}
+                >
+                  <option value=".jpg">.jpg</option>
+                  <option value=".jpeg">.jpeg</option>
+                </select>
+              </div>
               <button 
                 onClick={clearAll} 
                 disabled={isProcessing}

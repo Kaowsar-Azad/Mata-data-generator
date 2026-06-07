@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ApiKeyManager } from './components/ApiKeyManager'
-import { ImageWorkflow } from './components/ImageWorkflow'
+import { ImageWorkflow } from './components/MetadataGenerator'
 import { PromptSettings } from './components/PromptSettings'
 import { ImageToPrompt } from './components/ImageToPrompt'
 import { BackgroundRemover } from './components/BackgroundRemover'

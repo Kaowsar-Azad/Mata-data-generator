@@ -241,44 +241,14 @@ Keyword rules (apply to all modes):
 == CATEGORY ==
 Choose 1-2 best-fit from: ${categoryList}
 
-== SELLING SCORE ==
-Evaluate this image's COMMERCIAL POTENTIAL for stock photo marketplaces (Adobe Stock, Shutterstock, Getty).
-Score each dimension using the anchored scale below, then sum for a final sellingScore.
+== COMMERCIAL EVALUATION ==
+Evaluate this image's COMMERCIAL POTENTIAL for stock photo marketplaces (Adobe Stock, Shutterstock, Getty) across 4 dimensions:
+1. commercialConcept: Choose exactly one value: "evergreen" (universal evergreen appeal, teamwork, sunset, family), "popular" (highly searched but competitive, food, travel, tech), "niche" (limited audience, personal/artistic), or "none" (obscure, no clear commercial use).
+2. subjectClarity: Choose exactly one value: "perfect" (isolated, single clear subject, perfect composition), "clear" (clear subject, minor distractions), "cluttered" (visible but cluttered/busy/poor framing), or "confusing" (ambiguous/confusing content).
+3. technicalQuality: Choose exactly one value: "professional" (sharp, excellent lighting, clean finish), "good" (minor lighting/sharpness issues, usable), "acceptable" (noticeable noise, flat lighting), or "poor" (blurry, out of focus, heavily noisy).
+4. marketDemand: Choose exactly one value: "high" (currently trending high-demand, AI, tech, sustainability, wellness), "evergreen" (consistently popular evergreen topic), "low" (declining/oversaturated trend), or "none" (no identifiable demand).
 
-DIMENSION 1 — COMMERCIAL CONCEPT APPEAL (0-35 pts)
-  Scoring anchors (be strict — most images score 15-25):
-  30-35: Timeless evergreen concept (business teamwork, happy family, nature sunset) with universal appeal
-  20-29: Popular but somewhat competitive concept (food, travel, technology, healthcare)
-  10-19: Niche or limited-appeal concept (very local, highly specific, personal/artistic)
-  0-9:   Obscure, abstract with no clear commercial use case
-
-DIMENSION 2 — SUBJECT CLARITY (0-25 pts)
-  Scoring anchors (most images score 12-20):
-  22-25: Single clear subject, perfectly isolated or composed, instantly obvious purpose
-  15-21: Clear main subject, minor distractions or slight composition issues
-  7-14:  Subject is identifiable but cluttered, busy, or ambiguous framing
-  0-6:   Confusing, unclear, or hard to identify what the image is about
-
-DIMENSION 3 — TECHNICAL VISUAL QUALITY (0-25 pts)
-  Scoring anchors (most images score 12-20):
-  22-25: Professional quality — sharp, excellent lighting, accurate colors, clean finish
-  15-21: Good quality — minor sharpness/lighting issues but clearly usable
-  7-14:  Acceptable — noticeable noise, flat lighting, or color issues
-  0-6:   Poor quality — blurry, heavily noised, or technically inadequate for stock
-
-DIMENSION 4 — MARKET DEMAND & TREND (0-15 pts)
-  Scoring anchors:
-  12-15: Currently high-demand topic (AI/tech, sustainability, remote work, diversity, wellness)
-  7-11:  Consistently popular evergreen topic
-  3-6:   Declining, oversaturated, or niche trend
-  0-2:   No identifiable demand trend
-
-SCORING RULES (CRITICAL — follow precisely):
-- Compute each dimension score separately, then ADD them for the final total.
-- Be realistic: average stock-worthy image scores 45-65. Only truly exceptional images exceed 80.
-- DO NOT round all images to similar scores. Differentiate clearly between poor (30-44), average (45-64), good (65-79), and exceptional (80+) images.
-- Output sellingScore as a single integer (the sum of all 4 dimensions).
-- In "scoreReason": write exactly 1 sentence (max 15 words) naming the PRIMARY factor — the single biggest strength or weakness.
+In "scoreReason": write exactly 1 sentence (max 15 words) naming the PRIMARY factor.
 
 == KEYWORD SCORES ==
 For every single keyword generated, you must assign a "Commercial Relevance Score" from 1 to 100 representing how accurately it matches the visual content of the image and its search value for buyers.
@@ -287,7 +257,7 @@ For every single keyword generated, you must assign a "Commercial Relevance Scor
 - 1-39 (Low): Very generic words, weak synonyms, or peripheral details.
 
 Output ONLY valid JSON, no markdown:
-{"title":"...","description":"...","keywords":"kw1, kw2, kw3${s.smartMode ? '' : `, ... (${s.keywordCount} total)`}","keywordScores":{"kw1":95,"kw2":80,"kw3":45},"categories":["Cat1"],"sellingScore":62,"scoreReason":"Clear evergreen business concept but technical quality is limited by flat lighting."}`;
+{"title":"...","description":"...","keywords":"kw1, kw2, kw3${s.smartMode ? '' : `, ... (${s.keywordCount} total)`}","keywordScores":{"kw1":95,"kw2":80,"kw3":45},"categories":["Cat1"],"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"..."}`;
 }
 
 
@@ -367,6 +337,31 @@ function postProcessMetadata(metadata, promptSettings) {
   const s = promptSettings || {};
   let result = { ...metadata };
 
+  // --- Deterministic Selling Score Calculation ---
+  let sellingScore = 0;
+  if (result.commercialConcept || result.subjectClarity || result.technicalQuality || result.marketDemand) {
+    const conceptMap = { evergreen: 32, popular: 25, niche: 15, none: 5 };
+    const clarityMap = { perfect: 23, clear: 18, cluttered: 10, confusing: 3 };
+    const qualityMap = { professional: 23, good: 18, acceptable: 10, poor: 3 };
+    const demandMap = { high: 14, evergreen: 9, low: 4, none: 1 };
+
+    const conceptVal = String(result.commercialConcept || '').toLowerCase().trim();
+    const clarityVal = String(result.subjectClarity || '').toLowerCase().trim();
+    const qualityVal = String(result.technicalQuality || '').toLowerCase().trim();
+    const demandVal = String(result.marketDemand || '').toLowerCase().trim();
+
+    sellingScore += conceptMap[conceptVal] || conceptMap.popular;
+    sellingScore += clarityMap[clarityVal] || clarityMap.clear;
+    sellingScore += qualityMap[qualityVal] || qualityMap.good;
+    sellingScore += demandMap[demandVal] || demandMap.evergreen;
+
+    result.sellingScore = sellingScore;
+  } else if (result.sellingScore !== undefined) {
+    result.sellingScore = Number(result.sellingScore) || 60;
+  } else {
+    result.sellingScore = 60;
+  }
+
   // --- BRAND & TRADEMARK SAFETY SCANNER ---
   if (result.title) result.title = sanitizeText(result.title);
   if (result.description) result.description = sanitizeText(result.description);
@@ -409,7 +404,7 @@ function postProcessMetadata(metadata, promptSettings) {
 
   // Enforce description max chars
   if (!s.smartMode && s.descMaxChars && result.description && result.description.length > s.descMaxChars) {
-    result.description = result.description.substring(0, s.descMaxChars).replace(/\s+\S*$/, "") + ".";
+    result.description = result.description.substring(0, s.descMaxChars).replace(/[\s.,;:!]+$/, "") + ".";
   }
   // Enforce minimum description length
   if (!s.smartMode && s.descMinChars && result.description && result.description.length < s.descMinChars) {

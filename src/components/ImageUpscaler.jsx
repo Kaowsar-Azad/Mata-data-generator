@@ -283,7 +283,13 @@ export function ImageUpscaler() {
         throw new Error("Local GPU upscaling only supports local files. Please select a file from your computer.");
       }
       
-      const resData = await window.electronAPI.upscaleLocalNcnn(fileObj.path, currentScale, localModel, outputFormat, outputFolder);
+      let modelToUse = localModel;
+      if (localModel === 'mata_ai') {
+        const hasFace = /person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie/i.test(fileObj.name || '');
+        if (hasFace) modelToUse = 'mata_ai_face';
+      }
+      
+      const resData = await window.electronAPI.upscaleLocalNcnn(fileObj.path, currentScale, modelToUse, outputFormat, outputFolder);
       if (!resData.success) {
         throw new Error(resData.error || "Local GPU upscaling failed");
       }

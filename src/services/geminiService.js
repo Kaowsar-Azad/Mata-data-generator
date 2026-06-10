@@ -56,6 +56,7 @@ function buildPrompt({ isEps, isPlaceholder, isVideo, fileName, extractedTextCon
     descMaxChars: 150,
     keywordCount: 48
   };
+  const promptKeywordsCount = Math.max(s.keywordCount + 20, 65);
 
   // ── File-type context ──────────────────────────────────────────────────────
   let fileContext = "";
@@ -157,47 +158,47 @@ Do NOT pad the list. Every keyword must pass this test: "Would a buyer searching
   } else {
     keywordEmphasis = `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-KEYWORD STRATEGY — MAXIMUM COVERAGE MODE (EXACTLY ${s.keywordCount} keywords required)
+KEYWORD STRATEGY — MAXIMUM COVERAGE MODE (EXACTLY ${promptKeywordsCount} keywords required)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-You MUST generate EXACTLY ${s.keywordCount} keywords using this precise 6-tier framework:
+You MUST generate EXACTLY ${promptKeywordsCount} keywords using this precise 6-tier framework:
 
-  TIER 1 — PRIMARY SUBJECTS (6-10 keywords): The literal nouns visible in the image. Most important tier — buyers search these first.
+  TIER 1 — PRIMARY SUBJECTS (15-20 keywords): The literal nouns visible in the image. Most important tier — buyers search these first.
     Examples: "laptop", "coffee", "woman", "mountain", "heart icon", "stethoscope"
 
-  TIER 2 — DESCRIPTIVE ATTRIBUTES (8-12 keywords): Specific colors, materials, quantities, styles, lighting, and conditions.
+  TIER 2 — DESCRIPTIVE ATTRIBUTES (12-18 keywords): Specific colors, materials, quantities, styles, lighting, and conditions.
     Examples: "red", "wooden", "three", "hand-drawn", "transparent background", "overhead view", "studio light"
 
-  TIER 3 — ACTIONS & STATES (6-10 keywords): What is happening, movement, poses, interactions.
+  TIER 3 — ACTIONS & STATES (8-12 keywords): What is happening, movement, poses, interactions.
     Examples: "working", "smiling", "flying", "isolated", "growing", "connected", "holding"
 
-  TIER 4 — MOODS & CONCEPTS (8-12 keywords): High-value abstract ideas, emotions, and themes the image conveys.
+  TIER 4 — MOODS & CONCEPTS (12-18 keywords): High-value abstract ideas, emotions, and themes the image conveys.
     Examples: "success", "freedom", "teamwork", "healthcare", "innovation", "sustainability", "leadership"
 
-  TIER 5 — COMMERCIAL USE-CASES (5-10 keywords): Specific industries or ways buyers will use this image.
+  TIER 5 — COMMERCIAL USE-CASES (8-12 keywords): Specific industries or ways buyers will use this image.
     Examples: "website banner", "social media", "presentation", "infographic", "logo", "packaging"
 
-  TIER 6 — HIGH-VALUE SYNONYMS & RELATED CONCEPTS (Fill exactly to reach ${s.keywordCount}): Do NOT use generic filler. Use highly specific, related commercial terms, regional variants, and niche industry vocabulary.
+  TIER 6 — HIGH-VALUE SYNONYMS & RELATED CONCEPTS (Fill exactly to reach ${promptKeywordsCount}): Do NOT use generic filler. Use highly specific, related commercial terms, regional variants, and niche industry vocabulary.
     Examples: "fintech", "wellness", "e-commerce", "startup", "remote work", "cybersecurity"
 
 COUNT ENFORCEMENT PROTOCOL:
   Step 1: Generate all keywords across all 6 tiers using ONLY highly descriptive, valuable terms.
-  Step 2: Count your total. If below ${s.keywordCount}, expand Tier 6 with more high-value synonyms or related industry terms. Do NOT use generic words like "nice", "picture", "background".
-  Step 3: If above ${s.keywordCount}, remove the weakest keywords.
-  Step 4: Final count MUST be EXACTLY ${s.keywordCount}. Not one more, not one less.
+  Step 2: Count your total. If below ${promptKeywordsCount}, expand Tier 6 with more high-value synonyms or related industry terms. Do NOT use generic words like "nice", "picture", "background".
+  Step 3: If above ${promptKeywordsCount}, remove the weakest keywords.
+  Step 4: Final count MUST be EXACTLY ${promptKeywordsCount}. Not one more, not one less.
 
 ABSOLUTE MINIMUM STANDARD: Every single keyword must be a highly relevant, commercial search term a real buyer would type. No generic filler!`;
   }
 
   // ── Master prompt assembly (token-efficient) ──────────────────────────────
   const kwMode = s.smartMode
-    ? `KEYWORDS — QUALITY MODE: Generate only high buyer-intent keywords. Use 4 tiers:
-  T1 Exact-match literals (3-8), T2 2-word buyer phrases (5-10), T3 Semantic/concepts (5-10), T4 Commercial use-cases (3-7).
-  Test: "Would a buyer searching ONLY this word want THIS image?" Remove anything that fails.`
-    : `KEYWORDS — COUNT MODE: Generate EXACTLY ${s.keywordCount} keywords using 6 tiers:
-  T1 Primary nouns/subjects (6-10), T2 Colors/materials/style attributes (5-8),
-  T3 Actions/states/composition (4-6), T4 Moods/concepts/emotions (5-8),
-  T5 Commercial use-cases (5-8), T6 Industry/niche/synonym terms (fill to hit ${s.keywordCount} exactly).
-  Count before output. Adjust T6 up/down to hit exactly ${s.keywordCount}. Never submit fewer.`;
+    ? `KEYWORDS — QUALITY MODE: Generate EXACTLY ${promptKeywordsCount} high buyer-intent keywords.
+  T1 Exact-match literals (15-20), T2 2-word buyer phrases (10-15), T3 Semantic/concepts (15+), T4 Commercial use-cases (fill to ${promptKeywordsCount}).
+  Test: "Would a buyer searching ONLY this word want THIS image?" Adjust to hit exactly ${promptKeywordsCount}.`
+    : `KEYWORDS — COUNT MODE: Generate EXACTLY ${promptKeywordsCount} keywords using 6 tiers:
+  T1 Primary nouns/subjects (15-20), T2 Colors/materials/style attributes (10-15),
+  T3 Actions/states/composition (8-12), T4 Moods/concepts/emotions (10-15),
+  T5 Commercial use-cases (8-12), T6 Industry/niche/synonym terms (fill to hit ${promptKeywordsCount} exactly).
+  Count before output. Adjust T6 up/down to hit exactly ${promptKeywordsCount}. Never submit fewer.`;
 
   return `${fileContext}
 
@@ -215,7 +216,7 @@ Rules:
 - Be highly specific: "Businesswoman typing on silver laptop in modern glass office" NOT "Woman working on laptop".
 - For vectors/illustrations: explicitly state the style ("flat vector illustration", "3D render", "seamless pattern").
 - Forbidden words: stunning, vibrant, captivating, breathtaking, mesmerizing, showcasing, beautifully, perfect, amazing.
-${s.smartMode ? `- Concise and heavily keyword-dense.` : `- Target Length: 55–70 characters. This is the SEO sweet spot.`}${s.negTitleEnabled && s.negTitleWords ? `\n- Forbidden in title: ${s.negTitleWords}.` : ""}
+- Target Length: STRICTLY between ${s.titleMinChars || 10} and ${s.titleMaxChars || 80} characters. The title MUST be a complete, finished, grammatically correct sentence that fits entirely within this limit. Do NOT exceed this length.${s.negTitleEnabled && s.negTitleWords ? `\n- Forbidden in title: ${s.negTitleWords}.` : ""}
 
 == DESCRIPTION (SEO Optimized Detail) ==
 Formula: [Factual visual description + Style/Lighting] + [2-3 specific commercial use-cases]
@@ -225,7 +226,7 @@ Rules:
 - Sentence 2: Name concrete commercial applications (e.g., "Ideal for corporate presentations, marketing materials, and web banners").
 - Keep it professional, objective, and active voice.
 - Forbidden words: stunning, breathtaking, meticulously, "This image shows", "Here we can see".
-${s.smartMode ? `- Concise, natural, and keyword-rich.` : `- Target Length: 80–150 characters.`}
+- Target Length: STRICTLY between ${s.descMinChars || 50} and ${s.descMaxChars || 120} characters. The description MUST be a complete, finished, grammatically correct sentence that fits entirely within this limit. Do NOT exceed this length.
 
 == ${kwMode} ==
 
@@ -257,7 +258,7 @@ For every single keyword generated, you must assign a "Commercial Relevance Scor
 - 1-39 (Low): Very generic words, weak synonyms, or peripheral details.
 
 Output ONLY valid JSON, no markdown:
-{"title":"...","description":"...","keywords":"kw1, kw2, kw3${s.smartMode ? '' : `, ... (${s.keywordCount} total)`}","keywordScores":{"kw1":95,"kw2":80,"kw3":45},"categories":["Cat1"],"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"..."}`;
+{"title":"...","description":"...","keywords":"kw1, kw2, kw3, ... (${promptKeywordsCount} total)","keywordScores":{"kw1":95,"kw2":80,"kw3":45},"categories":["Cat1"],"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"..."}`;
 }
 
 
@@ -366,7 +367,15 @@ function postProcessMetadata(metadata, promptSettings) {
   if (result.title) result.title = sanitizeText(result.title);
   if (result.description) result.description = sanitizeText(result.description);
   if (result.keywords) {
-    result.keywords = result.keywords.split(',')
+    let rawKws = "";
+    if (Array.isArray(result.keywords)) {
+      rawKws = result.keywords.join(', ');
+    } else if (typeof result.keywords === 'string') {
+      rawKws = result.keywords;
+    } else {
+      rawKws = String(result.keywords);
+    }
+    result.keywords = rawKws.split(',')
       .map(k => sanitizeText(k.trim()))
       .filter(k => k.length > 0)
       .join(', ');
@@ -413,31 +422,80 @@ function postProcessMetadata(metadata, promptSettings) {
 
   // Remove negative keywords and STRICTLY enforce count
   if (result.keywords) {
-    let kws = result.keywords.split(",").map(k => k.trim()).filter(Boolean);
+    const rawKws = result.keywords.split(",").map(k => k.trim()).filter(Boolean);
+    const banned = s.negKeywordsEnabled && s.negKeywords && s.negKeywords.trim()
+      ? s.negKeywords.split(",").map(w => w.trim().toLowerCase()).filter(Boolean)
+      : [];
 
-    // 1. Remove banned words
-    if (s.negKeywordsEnabled && s.negKeywords && s.negKeywords.trim()) {
-      const banned = s.negKeywords.split(",").map(w => w.trim().toLowerCase()).filter(Boolean);
-      kws = kws.filter(k => !banned.includes(k.toLowerCase()));
+    const hasHumanSubject = /\b(person|people|man|woman|child|kid|boy|girl|group|family|couple|model|friend|friends|worker|businessman|businesswoman|photographer|artist|teacher|student|doctor|nurse|player|gamer)\b/i.test((result.title || "") + " " + (result.description || ""));
+    const abstractJunk = new Set(["fun", "leisure", "recreation", "hobby", "relaxation", "enjoyment", "lifestyle", "play", "interests", "pastime", "pleasure", "activity", "activities"]);
+
+    const seenRoots = new Set();
+    const rootCounts = {};
+    
+    let kws = [];
+    let safeFallbackKws = [];
+
+    for (const kw of rawKws) {
+      const kl = kw.toLowerCase().trim();
+
+      // 1. Hard rejection: empty, length < 2, or banned
+      if (kl.length < 2 || banned.includes(kl) || /^(a|an|the|and|or|of|in|on|at|to|for|with|by)$/i.test(kl)) {
+        continue;
+      }
+
+      // 2. Camera specs / technical spam: hard rejection
+      if (/\b(dslr|4k|8k|camera|megapixels|mp|resolution|fps|lens|shutter|iso|aperture|slr|sensor|photography|photo|photographs|photographed|shoot|shooting|frame)\b/i.test(kl)) {
+        continue;
+      }
+
+      // 3. Word count filtering: check if user requested single-word keywords only
+      const wordCount = kl.split(/\s+/).length;
+      if (s.singleWordKeywords && wordCount > 1) {
+        continue; // STRICT: Single-word only, reject phrases
+      }
+      if (wordCount >= 3) {
+        continue; // Max 2 words (no spammy long phrases)
+      }
+
+      // Check abstract junk filter
+      const isAbstractJunk = !hasHumanSubject && abstractJunk.has(kl);
+      
+      // Check root duplicate filter
+      const root = kl.replace(/s$/, '').replace(/ing$/, '').replace(/ed$/, '');
+      const isRootDuplicate = seenRoots.has(root);
+      
+      // Check anti-stuffing filter
+      let isStuffed = false;
+      const wordsInKw = kl.split(/\s+/);
+      for (const w of wordsInKw) {
+        if (w.length < 3) continue;
+        const r = w.replace(/s$/, '').replace(/ing$/, '').replace(/ed$/, '');
+        if ((rootCounts[r] || 0) >= 3) {
+          isStuffed = true;
+          break;
+        }
+      }
+
+      if (isAbstractJunk || isRootDuplicate || isStuffed) {
+        // Safe fallback keyword
+        safeFallbackKws.push(kw);
+      } else {
+        // Accepted keyword
+        kws.push(kw);
+        seenRoots.add(root);
+        for (const w of wordsInKw) {
+          if (w.length < 3) continue;
+          const r = w.replace(/s$/, '').replace(/ing$/, '').replace(/ed$/, '');
+          rootCounts[r] = (rootCounts[r] || 0) + 1;
+        }
+      }
     }
 
-    // 2. Remove keywords shorter than 2 chars or obvious junk
-    kws = kws.filter(k => k.length >= 2 && !/^(a|an|the|and|or|of|in|on|at|to|for|with|by)$/i.test(k));
-
-    // 3. Deduplicate root forms (e.g. remove "colors" if "color" present)
-    const seen = new Set();
-    kws = kws.filter(k => {
-      const root = k.toLowerCase().replace(/s$/, '').replace(/ing$/, '').replace(/ed$/, '');
-      if (seen.has(root)) return false;
-      seen.add(root);
-      return true;
-    });
-
-    // 4. Quality scoring — prefer specific multi-word phrases and concrete nouns over generic single words
+    // Quality scoring
     const getKeywordScore = (keyword) => {
       const kl = keyword.toLowerCase().trim();
       
-      // If AI provided a score, use it for accurate sorting!
       if (result.keywordScores) {
         const scoreKey = Object.keys(result.keywordScores).find(
           k => k.toLowerCase().trim() === kl
@@ -450,34 +508,38 @@ function postProcessMetadata(metadata, promptSettings) {
         }
       }
 
-      // Extremely generic single words that add no value
       const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual",
         "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]);
-      if (junk.has(kl)) return 10; // Very low score
-      // Boost multi-word phrases (more specific = more valuable for SEO)
+      if (junk.has(kl)) return 10;
+      
       const wordCount = kl.split(' ').length;
       let score = 60 + (wordCount > 1 ? 15 : 0);
-      // Boost keywords that are 4-15 chars (specific enough)
       if (kl.length >= 4 && kl.length <= 15) score += 10;
-      // Small hash-based variance for stable ordering
+      
       let hash = 0;
       for (let i = 0; i < kl.length; i++) hash = kl.charCodeAt(i) + ((hash << 5) - hash);
       score += (Math.abs(hash) % 15);
       return Math.min(99, score);
     };
 
-    // 5. Filter out zero-value keywords
-    kws = kws.filter(k => getKeywordScore(k) >= 20);
-    // Sort: highest SEO value first
+    // Sort both arrays by score (descending)
     kws.sort((a, b) => getKeywordScore(b) - getKeywordScore(a));
+    safeFallbackKws.sort((a, b) => getKeywordScore(b) - getKeywordScore(a));
 
-    // 6. Enforce count — trim only, never pad with generic fallbacks (quality is paramount)
-    if (!s.smartMode && s.keywordCount) {
+    // Pad if short
+    if (s.keywordCount && kws.length < s.keywordCount) {
+      const needed = s.keywordCount - kws.length;
+      const toAdd = safeFallbackKws.slice(0, needed);
+      kws = [...kws, ...toAdd];
+    }
+
+    // Final slice or fallback filtering
+    if (s.keywordCount) {
       if (kws.length > s.keywordCount) {
         kws = kws.slice(0, s.keywordCount);
       }
-      // If under count, accept what the AI gave (it may have given quality-filtered fewer keywords)
-      // Do NOT pad with generic words — that would hurt SEO ranking
+    } else {
+      kws = kws.filter(k => getKeywordScore(k) >= 40);
     }
 
     result.keywords = kws.join(", ");
@@ -510,8 +572,8 @@ async function fetchOpenAICompatible(provider, apiKey, prompt, base64Data, mimeT
     models = [
       "meta-llama/llama-4-scout-17b-16e-instruct",
       "llama-4-scout-17b-16e-instruct",
-      "llama-3.2-90b-vision-preview",
-      "llama-3.2-11b-vision-preview"
+      "llama-3.2-90b-vision-instruct",
+      "llama-3.2-11b-vision-instruct"
     ];
   } else if (provider === "openrouter") {
     endpoint = "https://openrouter.ai/api/v1/chat/completions";

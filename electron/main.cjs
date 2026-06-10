@@ -412,25 +412,28 @@ async function upscaleLocalHighFidelitySharp(inputPath, outputPath, scale, outpu
   fileLog(`[upscale-local-high-fidelity-sharp] High-fidelity sharp upscale complete: ${outputPath}`);
 }
 
-async function upscaleCloudHF(inputPath, scale, outputPath) {
-  fileLog(`[upscale-cloud-hf] Connecting to finegrain/finegrain-image-enhancer Space...`);
+async function upscaleCloudHF(inputPath, scale, outputPath, hasFace = false) {
+  fileLog(`[upscale-cloud-hf] Connecting to finegrain/finegrain-image-enhancer Space (hasFace: ${hasFace})...`);
   const { Client, handle_file } = await import('@gradio/client');
   const client = await Client.connect("finegrain/finegrain-image-enhancer");
   
-  fileLog(`[upscale-cloud-hf] Sending process request (scale: ${scale})...`);
+  const controlnetScale = hasFace ? 0.95 : 0.65;
+  const denoiseStrength = hasFace ? 0.10 : 0.25;
+
+  fileLog(`[upscale-cloud-hf] Sending process request (scale: ${scale}, controlnet: ${controlnetScale}, denoise: ${denoiseStrength})...`);
   const result = await client.predict("/process", [
     handle_file(inputPath), // input_image
-    "highly detailed, sharp focus, 4k, photorealistic, natural texture, realistic pores, fine hairs", // prompt
-    "blurry, low quality, noise, grain, text, plastic, artificial, smooth, painting, cartoon, 3d render", // negative_prompt
+    "highly detailed, sharp focus, 8k, photorealistic, extremely natural texture, original features, high fidelity details, realistic pores, fine hairs", // prompt
+    "blurry, low quality, noise, grain, text, plastic, artificial, smooth, painting, cartoon, 3d render, distorted faces, altered features, hallucinated details", // negative_prompt
     Math.floor(Math.random() * 1000000), // random seed for natural variance
     parseFloat(scale), // upscale_factor
-    0.6, // controlnet_scale
+    controlnetScale, // controlnet_scale
     1.0, // controlnet_decay
     6.0, // condition_scale
     112, // tile_width
     144, // tile_height
-    0.20, // denoise_strength (reduced from 0.35 to prevent removing fine hairs/pores and plastic look)
-    18, // num_inference_steps
+    denoiseStrength, // denoise_strength
+    18, // num_inference_steps (changed to 18 as requested by user, optimal quality between 15-20)
     "DDIM" // solver
   ]);
   
@@ -477,7 +480,7 @@ ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName =
 
     const parsedPath = path.parse(inputPath);
     const outputFormat = (format && format.toLowerCase() === 'png') ? 'png' : 'jpg';
-    const filenameSuffix = modelName === 'mata_ai' ? 'MataAI' : 'LocalGPU';
+    const filenameSuffix = (modelName === 'mata_ai' || modelName === 'mata_ai_face') ? 'MataAI' : 'LocalGPU';
     let outputPath = saveDir
       ? path.join(saveDir, `${parsedPath.name}_${scale}x_${filenameSuffix}.${outputFormat}`)
       : path.join(os.tmpdir(), `${parsedPath.name}_upscaled_${scale}x.${outputFormat}`);
@@ -489,15 +492,17 @@ ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName =
     }
 
     let isMataAi = false;
-    if (modelName === 'mata_ai') {
+    let hasFace = false;
+    if (modelName === 'mata_ai' || modelName === 'mata_ai_face') {
       isMataAi = true;
+      hasFace = modelName === 'mata_ai_face';
       const isVector = isVectorOrAnimeFile(inputPath);
       const isIntel = detectIntelGPU();
       
       if (!isVector) {
         // Photo: Phase 1 - Try Cloud AI (Hugging Face) for Best Quality + Speed
         try {
-          fileLog(`[Mata AI] Running Cloud AI (Hugging Face Space) for photo...`);
+          fileLog(`[Mata AI] Running Cloud AI (Hugging Face Space) for photo (hasFace: ${hasFace})...`);
           
           // Start simulated progress ticks to update the UI progress bar smoothly
           let currentProgress = 5;
@@ -511,7 +516,7 @@ ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName =
             }
           }, 1500);
 
-          const cloudPromise = upscaleCloudHF(inputPath, scale, outputPath);
+          const cloudPromise = upscaleCloudHF(inputPath, scale, outputPath, hasFace);
           // Increased timeout to 60s since logs show HuggingFace takes ~30s
           const timeoutPromise = new Promise((_, reject) => 
             setTimeout(() => reject(new Error('Cloud upscaling timed out (60s limit reached)')), 60000)
@@ -604,11 +609,15 @@ ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName =
       const handleData = (data) => {
         const str = data.toString();
         errOutput += str;
-        const match = str.match(/(\d+(?:\.\d+)?)\s*%/);
-        if (match) {
-          const progressVal = parseFloat(match[1]);
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('upscale-progress', { filePath: inputPath, progress: progressVal });
+        
+        const lines = str.split(/[\r\n]+/);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (/^\d+(?:\.\d+)?%$/.test(trimmed)) {
+            const progressVal = parseFloat(trimmed);
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('upscale-progress', { filePath: inputPath, progress: progressVal });
+            }
           }
         }
       };

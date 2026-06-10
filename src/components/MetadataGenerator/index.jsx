@@ -188,6 +188,25 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     return 'ultrasharp';
   };
 
+  const hasFaceOrPerson = (metadata) => {
+    if (!metadata) return false;
+    const keywords = Array.isArray(metadata.keywords) 
+      ? metadata.keywords.map(k => k.toLowerCase()) 
+      : (typeof metadata.keywords === 'string' ? metadata.keywords.split(',').map(k => k.trim().toLowerCase()) : []);
+    
+    const faceKeywords = [
+      'face', 'human', 'person', 'people', 'man', 'woman', 'girl', 'boy', 'portrait', 
+      'model', 'eye', 'eyes', 'hair', 'lips', 'mouth', 'nose', 'portraiture', 'headshot',
+      'selfie', 'smile', 'facial', 'couple', 'family', 'photographer', 'worker'
+    ];
+    
+    const hasKeyword = keywords.some(kw => faceKeywords.some(fkw => kw.includes(fkw)));
+    const textContext = `${metadata.title || ''} ${metadata.description || ''}`.toLowerCase();
+    const hasText = faceKeywords.some(fkw => textContext.includes(fkw));
+    
+    return hasKeyword || hasText;
+  };
+
   const detectModelFromMetadata = (metadata, filePath) => {
     const text = (`${filePath || ''} ${metadata?.title || ''} ${metadata?.keywords || ''} ${metadata?.description || ''}`).toLowerCase();
     
@@ -664,7 +683,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 if (upscaleEngine === 'auto_detect') {
                   modelName = detectModelFromMetadata(metadata, smartNameForModel);
                 } else if (upscaleEngine === 'mata_ai') {
-                  modelName = 'mata_ai';
+                  modelName = hasFaceOrPerson(metadata) ? 'mata_ai_face' : 'mata_ai';
                 } else {
                   modelName = pickMataAIModel(smartNameForModel, upscaleEngine);
                 }
@@ -1554,7 +1573,6 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                       <option value="mata_ai">✨ Mata AI</option>
                       <option value="auto_detect">🔍 Auto Detect</option>
                       <option value="fast">⚡ Fast</option>
-                      <option value="standard">📸 Standard</option>
                     </select>
                   </>
                 )}

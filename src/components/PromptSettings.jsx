@@ -440,6 +440,12 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
               <div className="ps-section-label" style={{ marginTop: '0.75rem' }}>OPTIONS</div>
               <div className="ps-toggles">
                 <ToggleSwitch
+                  label="Smart Quality Mode (SEO Intent)"
+                  checked={settings.smartMode ?? false}
+                  onChange={(v) => update("smartMode", v)}
+                />
+
+                <ToggleSwitch
                   label="Single-word keywords"
                   checked={settings.singleWordKeywords ?? true}
                   onChange={(v) => update("singleWordKeywords", v)}

@@ -127,9 +127,9 @@ export function MetadataCardList({
                 {img.result.categories && img.result.categories.length > 0 && (
                   <div className="flex gap-2 items-center mt-2">
                     <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Categories:</span>
-                    <div className="flex gap-1.5 flex-wrap">
+                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
                       {img.result.categories.map((cat, idx) => (
-                        <span key={idx} className="bg-primary/10 text-primary px-2.5 py-0.5 rounded-full text-[10px] font-semibold border border-primary/20">
+                        <span key={idx} className="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-semibold border border-primary/20">
                           {cat}
                         </span>
                       ))}

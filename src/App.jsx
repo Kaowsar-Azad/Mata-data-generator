@@ -47,7 +47,7 @@ function App() {
   });
   const [ftpConfigs, setFtpConfigs] = useState([])
   const [promptSettings, setPromptSettings] = useState({
-    smartMode: false,
+    smartMode: true,
     exportPlatform: 'General',
     titleMaxChars: 80,
     descMaxChars: 120,

@@ -981,12 +981,43 @@ async function getMetadataFromCache(fileName) {
   }
 }
 
+// ── File existence checker (exposed to renderer) ─────────────────────────────
+ipcMain.handle('check-file-exists', (event, filePath) => {
+  try {
+    if (fs.existsSync(filePath)) return { exists: true, resolvedPath: filePath };
+    // Also try swapping .jpeg <-> .jpg extension in case the file was renamed
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.jpg' || ext === '.jpeg') {
+      const altExt = ext === '.jpg' ? '.jpeg' : '.jpg';
+      const altPath = path.join(path.dirname(filePath), path.basename(filePath, ext) + altExt);
+      if (fs.existsSync(altPath)) return { exists: true, resolvedPath: altPath };
+    }
+    return { exists: false, resolvedPath: filePath };
+  } catch (e) {
+    return { exists: false, resolvedPath: filePath };
+  }
+});
+
 ipcMain.handle('write-metadata', async (event, filePath, title, description, keywords, categories) => {
   fileLog('[write-metadata] Called with:', { filePath, title, description, keywords, categories });
   try {
+    // Resolve actual file path — try alternate .jpeg <-> .jpg extension if primary not found
     if (!fs.existsSync(filePath)) {
-      fileLog('[write-metadata] File does not exist:', filePath);
-      throw new Error(`File not found: ${filePath}`);
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext === '.jpg' || ext === '.jpeg') {
+        const altExt = ext === '.jpg' ? '.jpeg' : '.jpg';
+        const altPath = path.join(path.dirname(filePath), path.basename(filePath, ext) + altExt);
+        if (fs.existsSync(altPath)) {
+          fileLog('[write-metadata] Primary not found, using alternate extension:', altPath);
+          filePath = altPath;
+        } else {
+          fileLog('[write-metadata] File does not exist:', filePath);
+          throw new Error(`File not found: ${filePath}`);
+        }
+      } else {
+        fileLog('[write-metadata] File does not exist:', filePath);
+        throw new Error(`File not found: ${filePath}`);
+      }
     }
     fileLog('[write-metadata] File exists, resolving exiftool...');
     

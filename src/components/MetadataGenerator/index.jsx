@@ -918,12 +918,28 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         try {
           if (cancelRef.current) return;
           const pathsToEmbed = [];
-          const targetPrimary = img.renamedPath || img.file?.path;
-          if (targetPrimary) pathsToEmbed.push({ type: 'primary', path: targetPrimary });
-          
-          const targetVisual = img.renamedVisualPath || img.visualFile?.path;
-          if (img.isEps && targetVisual && targetVisual !== targetPrimary) {
-            pathsToEmbed.push({ type: 'visual', path: targetVisual });
+
+          // Resolve primary path — verify it exists on disk, fallback to original if renamed path is gone
+          let resolvedPrimaryPath = img.renamedPath || img.file?.path;
+          if (resolvedPrimaryPath && window.electronAPI?.checkFileExists) {
+            const check = await window.electronAPI.checkFileExists(resolvedPrimaryPath);
+            resolvedPrimaryPath = check.resolvedPath; // may swap .jpeg <-> .jpg or stay same
+            if (!check.exists && img.file?.path && img.file.path !== resolvedPrimaryPath) {
+              // Fallback to original file path if renamed path is completely missing
+              const origCheck = await window.electronAPI.checkFileExists(img.file.path);
+              if (origCheck.exists) resolvedPrimaryPath = origCheck.resolvedPath;
+            }
+          }
+          if (resolvedPrimaryPath) pathsToEmbed.push({ type: 'primary', path: resolvedPrimaryPath });
+
+          // Resolve visual path for EPS files
+          let resolvedVisualPath = img.renamedVisualPath || img.visualFile?.path;
+          if (resolvedVisualPath && window.electronAPI?.checkFileExists) {
+            const check = await window.electronAPI.checkFileExists(resolvedVisualPath);
+            resolvedVisualPath = check.resolvedPath;
+          }
+          if (img.isEps && resolvedVisualPath && resolvedVisualPath !== resolvedPrimaryPath) {
+            pathsToEmbed.push({ type: 'visual', path: resolvedVisualPath });
           }
           
           let success = true;

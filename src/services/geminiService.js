@@ -444,6 +444,11 @@ function postProcessMetadata(metadata, promptSettings) {
         continue;
       }
 
+      // 1b. Hard rejection: pure numbers, timestamps, or hash-like strings (e.g. 202606082234, c35f75d7)
+      if (/^\d+$/.test(kl)) continue;                        // purely numeric (timestamps, IDs)
+      if (/^[a-f0-9]{8,}$/i.test(kl)) continue;              // hex hash strings
+      if (/^\d{4,}\w*$/.test(kl) && kl.length >= 8) continue;// date-prefixed strings like 20260608abcd
+
       // 2. Camera specs / technical spam: hard rejection
       if (/\b(dslr|4k|8k|camera|megapixels|mp|resolution|fps|lens|shutter|iso|aperture|slr|sensor|photography|photo|photographs|photographed|shoot|shooting|frame)\b/i.test(kl)) {
         continue;
@@ -526,12 +531,43 @@ function postProcessMetadata(metadata, promptSettings) {
     kws.sort((a, b) => getKeywordScore(b) - getKeywordScore(a));
     safeFallbackKws.sort((a, b) => getKeywordScore(b) - getKeywordScore(a));
 
-    // Pad if short
+    // Pad with safeFallbackKws first
     if (s.keywordCount && kws.length < s.keywordCount) {
       const needed = s.keywordCount - kws.length;
       const toAdd = safeFallbackKws.slice(0, needed);
       kws = [...kws, ...toAdd];
     }
+
+    // ── Smart padding fallback (Groq/low-output model fix) ────────────────────
+    // If still below target count, extract real words from title + description + categories
+    if (s.keywordCount && kws.length < s.keywordCount) {
+      const existingSet = new Set(kws.map(k => k.toLowerCase().trim()));
+      const junkWords = new Set([
+        'a', 'an', 'the', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by',
+        'is', 'are', 'was', 'be', 'this', 'that', 'it', 'its', 'as', 'from', 'not', 'also',
+        'image', 'photo', 'picture', 'file', 'graphic', 'visual', 'design', 'element',
+        'object', 'thing', 'item', 'nice', 'great', 'good', 'look', 'use'
+      ]);
+
+      // Collect candidate words from title and description
+      const sourceText = [result.title || '', result.description || ''].join(' ');
+      const candidateWords = sourceText
+        .replace(/[^a-zA-Z\s-]/g, ' ')
+        .toLowerCase()
+        .split(/\s+/)
+        .map(w => w.trim().replace(/^-+|-+$/g, ''))
+        .filter(w => w.length >= 3 && !junkWords.has(w) && !existingSet.has(w) && !/^\d+$/.test(w));
+
+      // Also add single-word values from categories array
+      const catWords = (Array.isArray(result.categories) ? result.categories : [])
+        .flatMap(c => c.split(/[\s&\/,]+/).map(w => w.trim().toLowerCase()))
+        .filter(w => w.length >= 3 && !junkWords.has(w) && !existingSet.has(w));
+
+      const paddingPool = [...new Set([...candidateWords, ...catWords])];
+      const needed = s.keywordCount - kws.length;
+      kws = [...kws, ...paddingPool.slice(0, needed)];
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Final slice or fallback filtering
     if (s.keywordCount) {
@@ -600,14 +636,23 @@ async function fetchOpenAICompatible(provider, apiKey, prompt, base64Data, mimeT
       messageContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } });
     }
 
+    // System prompt for OpenAI-compatible providers: instructs the model to generate full keyword count
+    const systemInstruction = `You are a professional stock media metadata expert. Your job is to generate accurate, complete, and SEO-optimized metadata in valid JSON format. CRITICAL: You MUST generate the exact number of keywords requested in the prompt. Never output fewer keywords than requested. Never truncate your output. Always produce complete, valid JSON.`;
+
     const payload = {
       model: currentModel,
       messages: [
         {
+          role: "system",
+          content: systemInstruction
+        },
+        {
           role: "user",
           content: messageContent
         }
-      ]
+      ],
+      max_tokens: 4096,
+      temperature: 0.4
     };
 
     if (forceJson) {

@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveAllKeys: (allKeys) => ipcRenderer.invoke('save-all-keys', allKeys),
   loadAllKeys: () => ipcRenderer.invoke('load-all-keys'),
   writeMetadata: (filePath, title, description, keywords, categories) => ipcRenderer.invoke('write-metadata', filePath, title, description, keywords, categories),
+  checkFileExists: (filePath) => ipcRenderer.invoke('check-file-exists', filePath),
   saveFtpConfig: (config) => ipcRenderer.invoke('save-ftp-config', config),
   getFtpConfig: () => ipcRenderer.invoke('get-ftp-config'),
   testFtp: (config) => ipcRenderer.invoke('test-ftp', config),

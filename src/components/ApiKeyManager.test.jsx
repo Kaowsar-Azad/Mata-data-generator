@@ -22,92 +22,66 @@ if (typeof localStorage === 'undefined' || !localStorage.clear) {
 describe('ApiKeyManager Component', () => {
   const mockOnKeysChange = vi.fn();
   const mockOnProviderChange = vi.fn();
+  const mockOnClose = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
   });
 
-  const ensureExpanded = () => {
-    if (!screen.queryByPlaceholderText(/Gemini API key/i)) {
-      const header = screen.getByRole('button', { name: /API Keys/i });
-      fireEvent.click(header);
-    }
-  };
-
-  it('renders API key manager with header', () => {
+  it('does not render when isOpen is false', () => {
     render(
       <ApiKeyManager
+        isOpen={false}
+        onClose={mockOnClose}
         onKeysChange={mockOnKeysChange}
         provider="gemini"
         onProviderChange={mockOnProviderChange}
       />
     );
-    expect(screen.getByText(/API Keys/i)).toBeInTheDocument();
+    expect(screen.queryByText(/API Settings/i)).not.toBeInTheDocument();
   });
 
-  it('shows current provider badge', () => {
+  it('renders API key manager with header when isOpen is true', () => {
     render(
       <ApiKeyManager
+        isOpen={true}
+        onClose={mockOnClose}
         onKeysChange={mockOnKeysChange}
         provider="gemini"
         onProviderChange={mockOnProviderChange}
       />
     );
-    // Current provider is shown in the badge or list
-    expect(screen.getAllByText(/Gemini/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/API Settings/i)).toBeInTheDocument();
   });
 
-  it('expands/collapses when header is clicked', () => {
+  it('shows current provider badge/header', () => {
     render(
       <ApiKeyManager
+        isOpen={true}
+        onClose={mockOnClose}
         onKeysChange={mockOnKeysChange}
         provider="gemini"
         onProviderChange={mockOnProviderChange}
       />
     );
-    
-    // By default, it starts expanded because local storage is empty
-    expect(screen.getByPlaceholderText(/Gemini API key/i)).toBeInTheDocument();
-    
-    const header = screen.getByRole('button', { name: /API Keys/i });
-    fireEvent.click(header); // Collapse
-    expect(screen.queryByPlaceholderText(/Gemini API key/i)).not.toBeInTheDocument();
-    
-    fireEvent.click(header); // Expand again
-    expect(screen.getByPlaceholderText(/Gemini API key/i)).toBeInTheDocument();
-  });
-
-  it('shows all provider options', () => {
-    render(
-      <ApiKeyManager
-        onKeysChange={mockOnKeysChange}
-        provider="gemini"
-        onProviderChange={mockOnProviderChange}
-      />
-    );
-    
-    ensureExpanded();
-    
-    // All providers should be visible
-    expect(screen.getByRole('button', { name: /Gemini/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /OpenAI/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Mistral/i })).toBeInTheDocument();
+    // Google Gemini is shown in the sidebar and content area
+    expect(screen.getAllByText(/Google Gemini/i).length).toBeGreaterThan(0);
   });
 
   it('allows adding a new API key', async () => {
     render(
       <ApiKeyManager
+        isOpen={true}
+        onClose={mockOnClose}
         onKeysChange={mockOnKeysChange}
         provider="gemini"
         onProviderChange={mockOnProviderChange}
       />
     );
     
-    ensureExpanded();
-    
-    const input = screen.getByPlaceholderText(/Gemini API key/i);
-    const addButton = screen.getAllByRole('button', { name: /Add/i })[0];
+    const input = screen.getByPlaceholderText(/Enter Google Gemini API key/i);
+    const addButton = screen.getByRole('button', { name: /Add Key/i });
     
     fireEvent.change(input, { target: { value: 'test-key-123' } });
     fireEvent.click(addButton);
@@ -117,106 +91,95 @@ describe('ApiKeyManager Component', () => {
     });
   });
 
-  it('prevents duplicate keys', () => {
+  it('allows switching viewed provider in sidebar', () => {
     render(
       <ApiKeyManager
+        isOpen={true}
+        onClose={mockOnClose}
         onKeysChange={mockOnKeysChange}
         provider="gemini"
         onProviderChange={mockOnProviderChange}
       />
     );
     
-    ensureExpanded();
+    // Switch to OpenAI
+    const openaiButton = screen.getByText('OpenAI');
+    fireEvent.click(openaiButton);
     
-    const input = screen.getByPlaceholderText(/Gemini API key/i);
-    const addButton = screen.getAllByRole('button', { name: /Add/i })[0];
-    
-    // Add first key
-    fireEvent.change(input, { target: { value: 'duplicate-key' } });
-    fireEvent.click(addButton);
-    
-    // Try to add the same key again
-    fireEvent.change(input, { target: { value: 'duplicate-key' } });
-    fireEvent.click(addButton);
-    
-    // onKeysChange should only be called twice (initial + one add)
-    // not more
+    // Header should update to OpenAI
+    expect(screen.getAllByText(/OpenAI/i).length).toBeGreaterThan(0);
   });
 
-  it('allows switching between providers', async () => {
+  it('allows enabling/disabling providers using checkboxes', async () => {
     render(
       <ApiKeyManager
+        isOpen={true}
+        onClose={mockOnClose}
         onKeysChange={mockOnKeysChange}
-        provider={['gemini']}
+        provider="gemini"
         onProviderChange={mockOnProviderChange}
       />
     );
     
-    ensureExpanded();
-    
-    const openaiButton = screen.getByRole('button', { name: /OpenAI/i });
-    fireEvent.click(openaiButton);
-    
-    const activateButton = screen.getByRole('button', { name: /Set as Active/i });
-    fireEvent.click(activateButton);
+    const checkboxes = screen.getAllByRole('checkbox');
+    // The second checkbox is Groq (index 1)
+    fireEvent.click(checkboxes[1]);
     
     await waitFor(() => {
-      expect(mockOnProviderChange).toHaveBeenCalledWith(['gemini', 'openai']);
+      expect(mockOnProviderChange).toHaveBeenCalledWith(['gemini', 'groq']);
     });
   });
 
   it('shows no keys message when empty', () => {
     render(
       <ApiKeyManager
+        isOpen={true}
+        onClose={mockOnClose}
         onKeysChange={mockOnKeysChange}
         provider="gemini"
         onProviderChange={mockOnProviderChange}
       />
     );
     
-    ensureExpanded();
-    
-    expect(screen.getByText(/No API keys saved for Gemini/i)).toBeInTheDocument();
+    expect(screen.getByText(/No keys stored yet/i)).toBeInTheDocument();
   });
 
   it('allows adding key with Enter key', () => {
     render(
       <ApiKeyManager
+        isOpen={true}
+        onClose={mockOnClose}
         onKeysChange={mockOnKeysChange}
         provider="gemini"
         onProviderChange={mockOnProviderChange}
       />
     );
     
-    ensureExpanded();
-    
-    const input = screen.getByPlaceholderText(/Gemini API key/i);
+    const input = screen.getByPlaceholderText(/Enter Google Gemini API key/i);
     
     fireEvent.change(input, { target: { value: 'enter-key-test' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     
-    // Key should be added
     expect(mockOnKeysChange).toHaveBeenCalled();
   });
 
   it('persists keys to localStorage', () => {
     render(
       <ApiKeyManager
+        isOpen={true}
+        onClose={mockOnClose}
         onKeysChange={mockOnKeysChange}
         provider="gemini"
         onProviderChange={mockOnProviderChange}
       />
     );
     
-    ensureExpanded();
-    
-    const input = screen.getByPlaceholderText(/Gemini API key/i);
-    const addButton = screen.getAllByRole('button', { name: /Add/i })[0];
+    const input = screen.getByPlaceholderText(/Enter Google Gemini API key/i);
+    const addButton = screen.getByRole('button', { name: /Add Key/i });
     
     fireEvent.change(input, { target: { value: 'persist-test-key' } });
     fireEvent.click(addButton);
     
-    // Check if localStorage has the key
     const stored = localStorage.getItem('all_api_keys');
     expect(stored).toBeTruthy();
   });

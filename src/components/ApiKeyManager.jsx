@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Plus, Trash2, Key, CheckCircle, X, Shield, ExternalLink } from "lucide-react";
 
 const PROVIDERS = [

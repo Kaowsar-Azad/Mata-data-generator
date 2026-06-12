@@ -1631,32 +1631,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               </div>
             )}
 
-            <div 
-              className="flex items-center gap-1.5 text-sm select-none mr-2"
-              title="Limit the number of images generated in parallel (1-4)"
-              style={{ color: 'var(--text-2)' }}
-            >
-              <span style={{ fontWeight: 500 }}>Parallel:</span>
-              <select
-                value={concurrentLimit}
-                onChange={(e) => setConcurrentLimit(parseInt(e.target.value) || 2)}
-                style={{
-                  padding: '0.2rem 0.5rem',
-                  borderRadius: '0.4rem',
-                  background: 'var(--surface-2)',
-                  color: 'var(--text-1)',
-                  border: '1px solid var(--glass-border)',
-                  fontSize: '0.8rem',
-                  cursor: 'pointer',
-                  outline: 'none'
-                }}
-              >
-                <option value="1">1 File</option>
-                <option value="2">2 Files</option>
-                <option value="3">3 Files</option>
-                <option value="4">4 Files</option>
-              </select>
-            </div>
+
 
             <button
               className="btn-primary"

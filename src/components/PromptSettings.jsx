@@ -277,6 +277,73 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
       {/* Body */}
       {isOpen && (
         <div className="ps-body">
+          {/* ── Keyword Mode ── */}
+          {activeTab !== 'prompt' && (
+            <div style={{ marginBottom: '1rem' }}>
+              <div className="ps-section-label" style={{ marginBottom: '0.4rem' }}>KEYWORD MODE</div>
+              <div style={{
+                display: 'flex',
+                background: 'var(--surface-2)',
+                border: '1px solid var(--glass-border)',
+                borderRadius: '0.5rem',
+                padding: '2px',
+                gap: '2px',
+                marginBottom: '0.75rem'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => update('smartMode', false)}
+                  style={{
+                    flex: 1,
+                    background: !settings.smartMode ? 'var(--primary)' : 'transparent',
+                    color: !settings.smartMode ? '#fff' : 'var(--text-2)',
+                    border: 'none',
+                    padding: '0.4rem 0.5rem',
+                    borderRadius: '0.4rem',
+                    cursor: 'pointer',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s',
+                    boxShadow: !settings.smartMode ? '0 1px 3px rgba(37,99,235,0.2)' : 'none'
+                  }}
+                >
+                  <Hash style={{ width: '0.85rem', height: '0.85rem' }} />
+                  Set Exact Count
+                </button>
+                <button
+                  type="button"
+                  onClick={() => update('smartMode', true)}
+                  style={{
+                    flex: 1,
+                    background: settings.smartMode ? 'var(--primary)' : 'transparent',
+                    color: settings.smartMode ? '#fff' : 'var(--text-2)',
+                    border: 'none',
+                    padding: '0.4rem 0.5rem',
+                    borderRadius: '0.4rem',
+                    cursor: 'pointer',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s',
+                    boxShadow: settings.smartMode ? '0 1px 3px rgba(37,99,235,0.2)' : 'none'
+                  }}
+                >
+                  <Sparkles style={{ width: '0.85rem', height: '0.85rem' }} />
+                  AI Auto Decide
+                </button>
+              </div>
+
+
+            </div>
+          )}
+
           {/* ── Prompt Similarity Mode ── */}
           {activeTab === 'prompt' && (
             <div style={{ marginBottom: '1rem' }}>
@@ -393,7 +460,7 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
               onChange={(v) => update("concurrentLimit", v)}
             />
 
-            {activeTab !== 'prompt' && (
+            {activeTab !== 'prompt' && !settings.smartMode && (
               <>
                 <RangeSlider
                   label="TITLE LENGTH"
@@ -419,32 +486,28 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
                   onChange={(v) => update("descMaxChars", v)}
                 />
 
-                <RangeSlider
-                  label="KEYWORDS COUNT"
-                  icon={Hash}
-                  value={settings.keywordCount}
-                  min={5}
-                  max={50}
-                  step={1}
-                  unit="keywords"
-                  color="var(--text-1)"
-                  onChange={(v) => update("keywordCount", v)}
-                />
+                {!settings.smartMode && (
+                  <RangeSlider
+                    label="KEYWORDS COUNT"
+                    icon={Hash}
+                    value={settings.keywordCount}
+                    min={5}
+                    max={50}
+                    step={1}
+                    unit="keywords"
+                    color="var(--text-1)"
+                    onChange={(v) => update("keywordCount", v)}
+                  />
+                )}
               </>
             )}
           </div>
 
-          {activeTab !== 'prompt' && (
+          {activeTab !== 'prompt' && !settings.smartMode && (
             <>
               {/* ── Toggles ── */}
               <div className="ps-section-label" style={{ marginTop: '0.75rem' }}>OPTIONS</div>
               <div className="ps-toggles">
-                <ToggleSwitch
-                  label="Smart Quality Mode (SEO Intent)"
-                  checked={settings.smartMode ?? false}
-                  onChange={(v) => update("smartMode", v)}
-                />
-
                 <ToggleSwitch
                   label="Single-word keywords"
                   checked={settings.singleWordKeywords ?? true}
@@ -517,7 +580,11 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
                   />
                 )}
               </div>
+            </>
+          )}
 
+          {activeTab !== 'prompt' && (
+            <>
               {/* ── Media Type Hint ── */}
               <div className="ps-section-label" style={{ marginTop: '0.75rem' }}>MEDIA TYPE</div>
               <select
@@ -531,6 +598,11 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
                 <option value="Illustration">Illustration / Vector Graphic</option>
                 <option value="3D Render">3D Render / CGI</option>
               </select>
+            </>
+          )}
+
+          {activeTab !== 'prompt' && !settings.smartMode && (
+            <>
 
               {/* ── Custom Instruction ── */}
               <div className="ps-section-label" style={{ marginTop: '0.75rem' }}>CUSTOM INSTRUCTION</div>

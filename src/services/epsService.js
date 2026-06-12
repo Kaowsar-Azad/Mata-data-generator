@@ -237,6 +237,16 @@ export async function processEpsFile(file) {
       const filePath = file.path; 
       if (!filePath) throw new Error("File path is missing. Drag and drop the file directly.");
 
+      // CRITICAL: Even if we use Ghostscript for the visual preview, we MUST extract 
+      // the hidden text context (layers, swatches) to help Gemini generate 48+ keywords!
+      let textContext = null;
+      try {
+        const text = await readAsText(file);
+        textContext = extractEpsTextContext(text);
+      } catch (err) {
+        console.warn('[EPS] Non-fatal: Could not extract deep text context.', err);
+      }
+
       const result = await window.electronAPI.processEps(filePath);
       
       if (result.success) {
@@ -245,7 +255,7 @@ export async function processEpsFile(file) {
           mimeType: result.mimeType,
           dataUrl: `data:${result.mimeType};base64,${result.base64}`,
           isPlaceholder: false,
-          extractedTextContext: null
+          extractedTextContext: textContext || "No readable context found inside this EPS."
         };
       } else {
         throw new Error(result.error || 'Electron processing failed');

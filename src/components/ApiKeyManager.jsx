@@ -3,10 +3,10 @@ import { Plus, Trash2, Key, CheckCircle, X, Shield, ExternalLink } from "lucide-
 
 const PROVIDERS = [
   { id: "gemini",     label: "Google Gemini", icon: "✦", desc: "Google's most capable multimodal AI models", url: "https://aistudio.google.com/app/apikey" },
+  { id: "mistral",    label: "Mistral AI",    icon: "🌪", desc: "High performance open models", url: "https://console.mistral.ai/api-keys/" },
   { id: "groq",       label: "Groq",          icon: "⚡", desc: "Fast LLM inference with OpenAI-compatible API", url: "https://console.groq.com/keys" },
   { id: "openai",     label: "OpenAI",        icon: "🧠", desc: "Powerful language models and vision capabilities", url: "https://platform.openai.com/api-keys" },
   { id: "openrouter", label: "OpenRouter",    icon: "🌐", desc: "Unified API to access multiple LLMs", url: "https://openrouter.ai/keys" },
-  { id: "mistral",    label: "Mistral AI",    icon: "🌪", desc: "High performance open models", url: "https://console.mistral.ai/api-keys/" },
 ];
 
 export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProviderChange }) {

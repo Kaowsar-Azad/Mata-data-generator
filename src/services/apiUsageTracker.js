@@ -41,21 +41,52 @@ export function fingerprintApiKey(apiKey) {
   return `fp_${(h >>> 0).toString(16)}`;
 }
 
+let inMemoryStorage = {};
+
+function safeGetItem(key) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem(key);
+    }
+  } catch (e) {}
+  return inMemoryStorage[key] || null;
+}
+
+function safeSetItem(key, value) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, value);
+      return;
+    }
+  } catch (e) {}
+  inMemoryStorage[key] = String(value);
+}
+
+function safeRemoveItem(key) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(key);
+      return;
+    }
+  } catch (e) {}
+  delete inMemoryStorage[key];
+}
+
 function loadRawUsage() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_USAGE) || '{}');
+    return JSON.parse(safeGetItem(STORAGE_USAGE) || '{}');
   } catch {
     return {};
   }
 }
 
 function saveRawUsage(data) {
-  localStorage.setItem(STORAGE_USAGE, JSON.stringify(data));
+  safeSetItem(STORAGE_USAGE, JSON.stringify(data));
 }
 
 function loadBudgets() {
   try {
-    return { ...DEFAULT_DAILY_BUDGETS, ...JSON.parse(localStorage.getItem(STORAGE_BUDGETS) || '{}') };
+    return { ...DEFAULT_DAILY_BUDGETS, ...JSON.parse(safeGetItem(STORAGE_BUDGETS) || '{}') };
   } catch {
     return { ...DEFAULT_DAILY_BUDGETS };
   }
@@ -72,7 +103,7 @@ export function setDailyBudget(provider, value) {
   const budgets = loadBudgets();
   const n = Math.max(1, Math.floor(Number(value) || 0));
   budgets[provider] = n;
-  localStorage.setItem(STORAGE_BUDGETS, JSON.stringify(budgets));
+  safeSetItem(STORAGE_BUDGETS, JSON.stringify(budgets));
   emitUsageUpdated();
 }
 
@@ -120,6 +151,6 @@ export function getRemainingRequestsEstimate(provider, apiKey) {
 
 /** Dev / support: clear all stored usage (not budgets). */
 export function clearAllUsageStats() {
-  localStorage.removeItem(STORAGE_USAGE);
+  safeRemoveItem(STORAGE_USAGE);
   emitUsageUpdated();
 }

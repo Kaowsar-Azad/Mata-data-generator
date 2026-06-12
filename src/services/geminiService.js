@@ -1,5 +1,9 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { recordApiUsage } from "./apiUsageTracker.js";
+import { fetchGroq } from "./apis/groq.js";
+import { fetchOpenAI } from "./apis/openai.js";
+import { fetchOpenRouter } from "./apis/openrouter.js";
+import { fetchMistral } from "./apis/mistral.js";
 
 /**
  * Super Robust Gemini Service with Multi-Version and Multi-Model fallbacks
@@ -56,7 +60,7 @@ function buildPrompt({ isEps, isPlaceholder, isVideo, fileName, extractedTextCon
     descMaxChars: 150,
     keywordCount: 48
   };
-  const promptKeywordsCount = Math.max(s.keywordCount + 20, 65);
+  const promptKeywordsCount = s.smartMode ? 49 : Math.min(100, s.keywordCount + 25);
 
   // ── File-type context ──────────────────────────────────────────────────────
   let fileContext = "";
@@ -135,7 +139,7 @@ Generate metadata as if you are looking at a vector illustration about "${cleanN
   }
 
   const singleWordRule = s.singleWordKeywords 
-    ? "- STRICT: Every keyword must be a single word. No phrases."
+    ? "- STRICT: Every keyword must be a valid, standalone dictionary word. Do NOT combine or squish multiple words together (e.g. do NOT write 'highcontrast' or 'userinterface'). No phrases."
     : "- Single words preferred. Short 2-word phrases that buyers actually search (e.g., \"coffee cup\", \"social media\") are allowed. NEVER write 3+ word phrases as a keyword.";
 
   // ── Keyword generation strategy ────────────────────────────────────────────
@@ -191,9 +195,7 @@ ABSOLUTE MINIMUM STANDARD: Every single keyword must be a highly relevant, comme
 
   // ── Master prompt assembly (token-efficient) ──────────────────────────────
   const kwMode = s.smartMode
-    ? `KEYWORDS — QUALITY MODE: Generate EXACTLY ${promptKeywordsCount} high buyer-intent keywords.
-  T1 Exact-match literals (15-20), T2 2-word buyer phrases (10-15), T3 Semantic/concepts (15+), T4 Commercial use-cases (fill to ${promptKeywordsCount}).
-  Test: "Would a buyer searching ONLY this word want THIS image?" Adjust to hit exactly ${promptKeywordsCount}.`
+    ? `KEYWORDS — QUALITY MODE: Generate only the most relevant, high buyer-intent keywords suitable for the image (typically 20 to 45 keywords). Do not feel forced to reach any specific count, and do not pad with generic or irrelevant words. Output only keywords that are directly relevant to this specific asset.`
     : `KEYWORDS — COUNT MODE: Generate EXACTLY ${promptKeywordsCount} keywords using 6 tiers:
   T1 Primary nouns/subjects (15-20), T2 Colors/materials/style attributes (10-15),
   T3 Actions/states/composition (8-12), T4 Moods/concepts/emotions (10-15),
@@ -252,14 +254,15 @@ Evaluate this image's COMMERCIAL POTENTIAL for stock photo marketplaces (Adobe S
 In "scoreReason": write exactly 1 sentence (max 15 words) naming the PRIMARY factor.
 
 == KEYWORD SCORES (CRITICAL) ==
-You MUST evaluate EVERY SINGLE keyword you generate and assign it a "Commercial Relevance Score" from 1 to 100 based on how important it is for THIS SPECIFIC image.
-We use this score to color-code keywords (Green/Yellow/Red).
-- 80-100 (Green): Highly relevant to this specific image (Primary subjects, main actions, exact visual descriptions).
-- 40-79 (Yellow): Moderately relevant (Background details, broader thematic concepts).
-- 1-39 (Red): Low relevance (Generic words, not directly applicable). Avoid generating these, but score them accurately if you do.
+You MUST evaluate EVERY SINGLE keyword you generate and assign it a "Commercial Relevance Score" from 1 to 100 based strictly on how accurately and importantly it describes THIS SPECIFIC image.
+We use this score to color-code keywords (Green/Yellow/Red):
+- 80-100 (Green): Highly relevant. The keyword perfectly describes the primary subjects, main actions, or core themes visible in this specific image.
+- 40-79 (Yellow): Moderately relevant. The keyword describes background details, secondary elements, or broader related concepts.
+- 1-39 (Red): Low relevance. Generic words or weakly applicable terms. (Avoid generating these, but score accurately if you do).
+Evaluate each keyword honestly based on the image content. Do not artificially inflate scores.
 
 Output ONLY valid JSON, no markdown:
-{"title":"...","description":"...","keywords":"kw1, kw2, kw3, ... (${promptKeywordsCount} total)","keywordScores":{"kw1":95,"kw2":80,"kw3":45},"categories":["Cat1"],"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"..."}`;
+{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":45},"categories":["Cat1"],"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"..."}`;
 }
 
 
@@ -335,7 +338,7 @@ function sanitizeText(text) {
 /**
  * Post-process metadata result by applying user settings (prefix, suffix, negative words).
  */
-function postProcessMetadata(metadata, promptSettings) {
+function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
   const s = promptSettings || {};
   let result = { ...metadata };
 
@@ -436,6 +439,7 @@ function postProcessMetadata(metadata, promptSettings) {
     
     let kws = [];
     let safeFallbackKws = [];
+    let multiWordKwsToSplit = [];
 
     for (const kw of rawKws) {
       const kl = kw.toLowerCase().trim();
@@ -458,6 +462,7 @@ function postProcessMetadata(metadata, promptSettings) {
       // 3. Word count filtering: check if user requested single-word keywords only
       const wordCount = kl.split(/\s+/).length;
       if (s.singleWordKeywords && wordCount > 1) {
+        multiWordKwsToSplit.push(kw);
         continue; // STRICT: Single-word only, reject phrases
       }
       if (wordCount >= 3) {
@@ -530,53 +535,141 @@ function postProcessMetadata(metadata, promptSettings) {
     kws.sort((a, b) => getKeywordScore(b) - getKeywordScore(a));
     safeFallbackKws.sort((a, b) => getKeywordScore(b) - getKeywordScore(a));
 
-    // Pad with safeFallbackKws first
-    if (s.keywordCount && kws.length < s.keywordCount) {
-      const needed = s.keywordCount - kws.length;
-      const toAdd = safeFallbackKws.slice(0, needed);
-      kws = [...kws, ...toAdd];
-    }
+    if (s.smartMode) {
+      // AI Auto Decide - strict quality filter and cap at 49
+      let highQualityKws = kws.filter(k => getKeywordScore(k) >= 40);
+      
+      // Ensure at least 20 keywords
+      const minSmartCount = 20;
+      if (highQualityKws.length < minSmartCount) {
+        let remainingNeeds = minSmartCount - highQualityKws.length;
+        if (remainingNeeds > 0) {
+          const hqSafeFallback = safeFallbackKws.filter(w => getKeywordScore(w) >= 40 && !highQualityKws.includes(w));
+          highQualityKws.push(...hqSafeFallback.slice(0, remainingNeeds));
+        }
+        
+        remainingNeeds = minSmartCount - highQualityKws.length;
+        if (remainingNeeds > 0) {
+          const titleDescWords = ((result.title || "") + " " + (result.description || ""))
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .split(/\s+/)
+            .filter(w => w.length >= 4 && !/^(the|and|for|with|this|that|from|have|has|are|was|were|you|your)$/.test(w));
+          
+          const uniqueExtra = [...new Set(titleDescWords)]
+            .filter(w => !highQualityKws.includes(w) && getKeywordScore(w) >= 40);
+          highQualityKws.push(...uniqueExtra.slice(0, remainingNeeds));
+        }
+        
+        remainingNeeds = minSmartCount - highQualityKws.length;
+        if (remainingNeeds > 0) {
+          const premiumStock = [
+             "creative", "modern", "concept", "style", "art", "background", "digital",
+             "template", "abstract", "business", "technology", "texture", "pattern", "shape",
+             "color", "layout", "decoration", "presentation", "banner", "sign", "symbol", "icon",
+             "isolated", "white", "blank", "empty", "space", "commercial", "industry", "minimal",
+             "elegant", "luxury", "premium", "quality", "professional", "corporate", "success",
+             "growth", "innovation", "future", "network", "global"
+          ];
+          const premiumExtra = premiumStock.filter(w => !highQualityKws.includes(w) && getKeywordScore(w) >= 40);
+          highQualityKws.push(...premiumExtra.slice(0, remainingNeeds));
+        }
+      }
+      
+      kws = highQualityKws;
+      if (kws.length > 49) {
+        kws = kws.slice(0, 49);
+      }
+    } else {
+      // Force Exact Count
+      let finalKws = kws.filter(k => getKeywordScore(k) >= 40);
+      
+      if (s.keywordCount) {
+        // Fallback 0: Use valid kws that have lower relevance score (< 40)
+        let remainingNeeds = s.keywordCount - finalKws.length;
+        if (remainingNeeds > 0) {
+          const lowerQualityKws = kws.filter(k => getKeywordScore(k) < 40 && !finalKws.includes(k));
+          finalKws.push(...lowerQualityKws.slice(0, remainingNeeds));
+        }
 
-    // ── Smart padding fallback (Groq/low-output model fix) ────────────────────
-    // If still below target count, extract real words from title + description + categories
-    if (s.keywordCount && kws.length < s.keywordCount) {
-      const existingSet = new Set(kws.map(k => k.toLowerCase().trim()));
-      const junkWords = new Set([
-        'a', 'an', 'the', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by',
-        'is', 'are', 'was', 'be', 'this', 'that', 'it', 'its', 'as', 'from', 'not', 'also',
-        'image', 'photo', 'picture', 'file', 'graphic', 'visual', 'design', 'element',
-        'object', 'thing', 'item', 'nice', 'great', 'good', 'look', 'use'
-      ]);
+        // Fallback 1: If singleWordKeywords is active, split multi-word keywords into individual words
+        remainingNeeds = s.keywordCount - finalKws.length;
+        if (remainingNeeds > 0 && s.singleWordKeywords && multiWordKwsToSplit.length > 0) {
+          let splitWords = [];
+          for (const phrase of multiWordKwsToSplit) {
+            const words = phrase.split(/\s+/);
+            for (const w of words) {
+              const wl = w.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+              if (wl.length >= 2 && !banned.includes(wl) && !/^(the|and|for|with|this|that|from|have|has|are|was|were|you|your)$/.test(wl)) {
+                splitWords.push(w);
+              }
+            }
+          }
+          const uniqueSplitWords = [...new Set(splitWords)].filter(w => !finalKws.includes(w));
+          uniqueSplitWords.sort((a, b) => getKeywordScore(b) - getKeywordScore(a));
+          finalKws.push(...uniqueSplitWords.slice(0, remainingNeeds));
+        }
 
-      // Collect candidate words from title and description
-      const sourceText = [result.title || '', result.description || ''].join(' ');
-      const candidateWords = sourceText
-        .replace(/[^a-zA-Z\s-]/g, ' ')
-        .toLowerCase()
-        .split(/\s+/)
-        .map(w => w.trim().replace(/^-+|-+$/g, ''))
-        .filter(w => w.length >= 3 && !junkWords.has(w) && !existingSet.has(w) && !/^\d+$/.test(w));
+        // Fallback 2: Use safeFallbackKws with high score (>= 40)
+        remainingNeeds = s.keywordCount - finalKws.length;
+        if (remainingNeeds > 0) {
+          const hqSafeFallback = safeFallbackKws.filter(w => getKeywordScore(w) >= 40 && !finalKws.includes(w));
+          finalKws.push(...hqSafeFallback.slice(0, remainingNeeds));
+        }
 
-      // Also add single-word values from categories array
-      const catWords = (Array.isArray(result.categories) ? result.categories : [])
-        .flatMap(c => c.split(/[\s&\/,]+/).map(w => w.trim().toLowerCase()))
-        .filter(w => w.length >= 3 && !junkWords.has(w) && !existingSet.has(w));
+        // Fallback 3: Extract words from title and description that score highly (>= 40)
+        remainingNeeds = s.keywordCount - finalKws.length;
+        if (remainingNeeds > 0) {
+          const titleDescWords = ((result.title || "") + " " + (result.description || ""))
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .split(/\s+/)
+            .filter(w => w.length >= 4 && !/^(the|and|for|with|this|that|from|have|has|are|was|were|you|your)$/.test(w));
+          
+          const uniqueExtra = [...new Set(titleDescWords)]
+            .filter(w => !finalKws.includes(w) && getKeywordScore(w) >= 40);
+          finalKws.push(...uniqueExtra.slice(0, remainingNeeds));
+        }
 
-      const paddingPool = [...new Set([...candidateWords, ...catWords])];
-      const needed = s.keywordCount - kws.length;
-      kws = [...kws, ...paddingPool.slice(0, needed)];
-    }
-    // ─────────────────────────────────────────────────────────────────────────
+        // Fallback 4: Use safeFallbackKws with lower score (< 40)
+        remainingNeeds = s.keywordCount - finalKws.length;
+        if (remainingNeeds > 0) {
+          const lqSafeFallback = safeFallbackKws.filter(w => getKeywordScore(w) < 40 && !finalKws.includes(w));
+          finalKws.push(...lqSafeFallback.slice(0, remainingNeeds));
+        }
 
-    // Final slice and unconditional fallback filtering (No red keywords)
-    kws = kws.filter(k => getKeywordScore(k) >= 40);
+        // Fallback 5: Extract remaining words from title and description (< 40)
+        remainingNeeds = s.keywordCount - finalKws.length;
+        if (remainingNeeds > 0) {
+          const titleDescWords = ((result.title || "") + " " + (result.description || ""))
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .split(/\s+/)
+            .filter(w => w.length >= 3 && !/^(the|and|for|with|this|that|from|have|has|are|was|were|you|your)$/.test(w));
+          
+          const uniqueExtra = [...new Set(titleDescWords)]
+            .filter(w => !finalKws.includes(w));
+          finalKws.push(...uniqueExtra.slice(0, remainingNeeds));
+        }
 
-    if (s.keywordCount) {
-      if (kws.length > s.keywordCount) {
-        kws = kws.slice(0, s.keywordCount);
+        // Fallback 6: Extract words from cleanName/fileName
+        remainingNeeds = s.keywordCount - finalKws.length;
+        const fn = fileInfo.fileName || "";
+        if (remainingNeeds > 0 && fn) {
+          let cleanName = fn.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+          const nameWords = cleanName.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !/^(the|and|for|with|this|that|from|have|has|are|was|were|you|your|eps|vector|illustration|file|placeholder)$/.test(w));
+          const uniqueNameWords = [...new Set(nameWords)].filter(w => !finalKws.includes(w));
+          finalKws.push(...uniqueNameWords.slice(0, remainingNeeds));
+        }
+
+        kws = finalKws.slice(0, s.keywordCount);
+      } else {
+        kws = finalKws;
       }
     }
 
+    // Final strict sort by score (descending) to ensure Green >= 80 comes before Yellow >= 40
+    kws.sort((a, b) => getKeywordScore(b) - getKeywordScore(a));
     result.keywords = kws.join(", ");
   }
 
@@ -595,128 +688,6 @@ let globalKeyIndex = 0;
  * @param {boolean} [fileInfo.isEps]         - Source was EPS
  * @param {boolean} [fileInfo.isPlaceholder] - Preview is a generated placeholder
  * @param {string}  [fileInfo.fileName]      - Original file name
- */
-async function fetchOpenAICompatible(provider, apiKey, prompt, base64Data, mimeType, forceJson = true) {
-  let endpoint = "";
-  let models = [];
-
-  if (provider === "groq") {
-    endpoint = "https://api.groq.com/openai/v1/chat/completions";
-    // Primary: Llama 4 Scout (current production vision model on Groq)
-    // Fallback: Legacy model strings in case Groq changes naming
-    models = [
-      "meta-llama/llama-4-scout-17b-16e-instruct",
-      "llama-4-scout-17b-16e-instruct",
-      "llama-3.2-90b-vision-instruct",
-      "llama-3.2-11b-vision-instruct"
-    ];
-  } else if (provider === "openrouter") {
-    endpoint = "https://openrouter.ai/api/v1/chat/completions";
-    models = ["google/gemini-2.5-flash"];
-  } else if (provider === "openai") {
-    endpoint = "https://api.openai.com/v1/chat/completions";
-    models = ["gpt-4o-mini"];
-  } else if (provider === "mistral") {
-    endpoint = "https://api.mistral.ai/v1/chat/completions";
-    models = ["pixtral-12b-2409"];
-  }
-
-  let lastResponseText = null;
-  let lastError = null;
-
-  for (let i = 0; i < models.length; i++) {
-    const currentModel = models[i];
-    const messageContent = [{ type: "text", text: prompt }];
-    if (Array.isArray(base64Data)) {
-      base64Data.forEach(buf => {
-        messageContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${buf}` } });
-      });
-    } else {
-      messageContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } });
-    }
-
-    // System prompt for OpenAI-compatible providers: instructs the model to generate full keyword count
-    const systemInstruction = `You are a professional stock media metadata expert. Your job is to generate accurate, complete, and SEO-optimized metadata in valid JSON format. CRITICAL: You MUST generate the exact number of keywords requested in the prompt. Never output fewer keywords than requested. Never truncate your output. Always produce complete, valid JSON.`;
-
-    const payload = {
-      model: currentModel,
-      messages: [
-        {
-          role: "system",
-          content: systemInstruction
-        },
-        {
-          role: "user",
-          content: messageContent
-        }
-      ],
-      max_tokens: 4096,
-      temperature: 0.4
-    };
-
-    if (forceJson) {
-      payload.response_format = { type: "json_object" };
-    }
-
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          ...(provider === "openrouter" ? { "HTTP-Referer": "http://localhost:5173", "X-Title": "Metadata Pro" } : {})
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errMsg = errorData.error?.message || response.statusText;
-        throw new Error(`${provider.toUpperCase()} API Error: ${response.status} ${errMsg}`);
-      }
-
-      const data = await response.json();
-      lastResponseText = data.choices[0].message.content;
-      const tok = data.usage?.total_tokens;
-      recordApiUsage(provider, apiKey, {
-        totalTokens: typeof tok === "number" ? tok : 0,
-        requests: 1,
-      });
-      console.log(`[Success] Successfully generated using model string: ${currentModel}`);
-      break; // Successfully got response!
-    } catch (err) {
-      lastError = err;
-      // If model is decommissioned, deprecated, or not found (usually 400 or 404), try next model candidate smoothly!
-      if (err.message.includes("400") || err.message.includes("decommissioned") || err.message.includes("not found") || err.message.includes("404")) {
-        console.warn(`[Fallback] Model ${currentModel} failed on ${provider}: ${err.message}. Trying next candidate...`);
-        continue;
-      }
-      // Otherwise break/rethrow immediately (e.g. 401 Unauthorized, 429 Rate Limit)
-      throw err;
-    }
-  }
-
-  if (lastResponseText === null) {
-    throw lastError || new Error(`${provider.toUpperCase()} API Error: All model candidates failed.`);
-  }
-
-  const text = lastResponseText;
-
-  if (!forceJson) {
-    return text.trim();
-  }
-
-  const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-  let parsed;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch (e) {
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) parsed = JSON.parse(match[0]);
-    else throw new Error("JSON parse error");
-  }
-  return parsed;
-}
 
 /**
  * Main function to orchestrate Gemini or OpenAI-compatible generation.
@@ -754,9 +725,15 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
     if (currentProvider !== "gemini") {
       try {
         console.log(`[Attempt] Provider: ${currentProvider} using key index ${currentKeyIndex}`);
-        const parsed = await fetchOpenAICompatible(currentProvider, apiKey, prompt, imageBuffer, mimeType);
+        let parsed;
+        if (currentProvider === "groq") parsed = await fetchGroq(apiKey, prompt, imageBuffer, mimeType);
+        else if (currentProvider === "openai") parsed = await fetchOpenAI(apiKey, prompt, imageBuffer, mimeType);
+        else if (currentProvider === "openrouter") parsed = await fetchOpenRouter(apiKey, prompt, imageBuffer, mimeType);
+        else if (currentProvider === "mistral") parsed = await fetchMistral(apiKey, prompt, imageBuffer, mimeType);
+        else throw new Error("Unknown provider: " + currentProvider);
+        
         console.log(`[Success] Metadata generated using ${currentProvider}!`);
-        return postProcessMetadata(parsed, promptSettings);
+        return postProcessMetadata(parsed, promptSettings, fileInfo);
       } catch (error) {
         console.warn(`[Fail] ${currentProvider} (key ${currentKeyIndex}): ${error.message}`);
         lastError = error;
@@ -827,7 +804,7 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
           else throw new Error("JSON parse error");
         }
 
-        return postProcessMetadata(parsed, promptSettings);
+        return postProcessMetadata(parsed, promptSettings, fileInfo);
 
       } catch (error) {
         console.warn(`[Fail] ${modelName} on key ${currentKeyIndex}: ${error.message}`);

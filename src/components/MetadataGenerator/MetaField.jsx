@@ -22,18 +22,21 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img 
         }
     }
 
-    // Fallback pseudo-random heuristic if AI score is missing
+    // Fallback heuristic based on specific image content relevance
     const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]);
     if (junk.has(kl) || kl.length < 3) return 10; 
     
-    let score = 75; // Increased base score so single words can easily hit green
-    const wordCount = kl.split(' ').length;
-    if (wordCount > 1) score += 10; // Slight boost for phrases
-    if (kl.length >= 4 && kl.length <= 25) score += 10; // Boost for good length
+    let score = 50; // default medium score
+    const title = (img?.result?.title || '').toLowerCase();
+    const desc = (img?.result?.description || '').toLowerCase();
     
-    let hash = 0;
-    for (let i = 0; i < kl.length; i++) hash = kl.charCodeAt(i) + ((hash << 5) - hash);
-    score += (Math.abs(hash) % 10);
+    // High relevance if present in title, good relevance if in description
+    if (title.includes(kl)) score += 30;
+    else if (desc.includes(kl)) score += 15;
+    
+    const wordCount = kl.split(' ').length;
+    if (wordCount > 1) score += 10; 
+    if (kl.length >= 4 && kl.length <= 25) score += 5; 
     
     return Math.min(99, score);
   };

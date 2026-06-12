@@ -251,11 +251,12 @@ Evaluate this image's COMMERCIAL POTENTIAL for stock photo marketplaces (Adobe S
 
 In "scoreReason": write exactly 1 sentence (max 15 words) naming the PRIMARY factor.
 
-== KEYWORD SCORES ==
-For every single keyword generated, you must assign a "Commercial Relevance Score" from 1 to 100 representing how accurately it matches the visual content of the image and its search value for buyers.
-- 80-100 (High): Primary subjects, essential descriptive attributes (like prominent colors, styles, materials, or actions visible in the image), and high-intent commercial search terms that are directly relevant to the image. (Most of your keywords should be scored in this range if they are highly relevant and accurate!).
-- 40-79 (Medium): Broad context, general category terms, or secondary thematic concepts.
-- 1-39 (Low): Very generic words, weak synonyms, or peripheral details.
+== KEYWORD SCORES (CRITICAL) ==
+You MUST evaluate EVERY SINGLE keyword you generate and assign it a "Commercial Relevance Score" from 1 to 100 based on how important it is for THIS SPECIFIC image.
+We use this score to color-code keywords (Green/Yellow/Red).
+- 80-100 (Green): Highly relevant to this specific image (Primary subjects, main actions, exact visual descriptions).
+- 40-79 (Yellow): Moderately relevant (Background details, broader thematic concepts).
+- 1-39 (Red): Low relevance (Generic words, not directly applicable). Avoid generating these, but score them accurately if you do.
 
 Output ONLY valid JSON, no markdown:
 {"title":"...","description":"...","keywords":"kw1, kw2, kw3, ... (${promptKeywordsCount} total)","keywordScores":{"kw1":95,"kw2":80,"kw3":45},"categories":["Cat1"],"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"..."}`;
@@ -513,17 +514,15 @@ function postProcessMetadata(metadata, promptSettings) {
         }
       }
 
+      // Fallback if AI didn't score it (e.g., padded keywords from title/desc)
       const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual",
         "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]);
-      if (junk.has(kl)) return 10;
+      if (junk.has(kl) || kl.length < 3) return 10;
       
+      let score = 70; // Default to Yellow/Medium
       const wordCount = kl.split(' ').length;
-      let score = 60 + (wordCount > 1 ? 15 : 0);
-      if (kl.length >= 4 && kl.length <= 15) score += 10;
+      if (wordCount > 1) score += 5;
       
-      let hash = 0;
-      for (let i = 0; i < kl.length; i++) hash = kl.charCodeAt(i) + ((hash << 5) - hash);
-      score += (Math.abs(hash) % 15);
       return Math.min(99, score);
     };
 
@@ -569,13 +568,13 @@ function postProcessMetadata(metadata, promptSettings) {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    // Final slice or fallback filtering
+    // Final slice and unconditional fallback filtering (No red keywords)
+    kws = kws.filter(k => getKeywordScore(k) >= 40);
+
     if (s.keywordCount) {
       if (kws.length > s.keywordCount) {
         kws = kws.slice(0, s.keywordCount);
       }
-    } else {
-      kws = kws.filter(k => getKeywordScore(k) >= 40);
     }
 
     result.keywords = kws.join(", ");

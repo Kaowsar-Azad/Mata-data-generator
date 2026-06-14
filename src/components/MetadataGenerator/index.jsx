@@ -1797,55 +1797,67 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           top: '1.5rem',
           right: '1.5rem',
           zIndex: 9999,
-          width: '340px',
+          width: '360px',
           background: 'var(--surface-1)',
-          borderRadius: '1rem',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.12), 0 0 0 1px var(--glass-border)',
+          borderRadius: '1.25rem',
+          boxShadow: '0 24px 50px rgba(0,0,0,0.4), 0 0 0 1px var(--glass-border) inset',
           border: '1px solid var(--glass-border)',
           overflow: 'hidden',
-          animation: 'fade-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
+          animation: 'fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+          backdropFilter: 'blur(24px) saturate(150%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(150%)',
         }}>
+          {/* Glowing Top Border */}
           <div style={{
-            height: '3px',
-            background: 'linear-gradient(90deg, var(--accent), var(--secondary))',
-            width: '100%'
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '2px',
+            background: 'linear-gradient(90deg, transparent, var(--accent), var(--secondary), transparent)',
+            opacity: 0.8,
+            boxShadow: '0 0 10px var(--accent)'
           }} />
-          <div style={{ padding: '1.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', gap: '0.75rem' }}>
+          
+          <div style={{ padding: '1.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1rem', gap: '0.75rem' }}>
               <div style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
                 justifyContent: 'center', 
-                width: '32px', 
-                height: '32px', 
-                borderRadius: '0.5rem', 
-                background: 'rgba(6, 182, 212, 0.1)', 
+                width: '38px', 
+                height: '38px', 
+                borderRadius: '0.75rem', 
+                background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.15), rgba(59, 130, 246, 0.15))', 
                 color: 'var(--accent)',
-                flexShrink: 0
+                flexShrink: 0,
+                boxShadow: '0 0 15px rgba(6, 182, 212, 0.1)',
+                border: '1px solid rgba(6, 182, 212, 0.2)'
               }}>
                 <FileCode2 className="w-5 h-5" />
               </div>
-              <h3 style={{ fontWeight: 700, color: 'var(--text-1)', margin: 0, fontSize: '0.9rem', flexGrow: 1 }}>
-                মেটাডেটা এম্বেড করুন
-              </h3>
+              <div style={{ flexGrow: 1, paddingTop: '0.15rem' }}>
+                <h3 style={{ fontWeight: 700, color: 'var(--text-1)', margin: 0, fontSize: '0.95rem', letterSpacing: '0.01em' }}>
+                  মেটাডেটা এম্বেড করুন
+                </h3>
+              </div>
               <button 
                 onClick={() => setShowPermissionModal(false)} 
                 style={{ 
-                  background: 'transparent', 
-                  border: 'none', 
+                  background: 'var(--surface-2)', 
+                  border: '1px solid var(--glass-border)', 
                   cursor: 'pointer', 
                   color: 'var(--text-3)',
-                  padding: '4px',
+                  padding: '6px',
                   borderRadius: '50%',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   transition: 'all 0.2s',
+                  marginTop: '-0.1rem'
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.color = 'var(--text-1)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-3)'; }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-3)'; e.currentTarget.style.color = 'var(--text-1)'; e.currentTarget.style.transform = 'rotate(90deg)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.transform = 'rotate(0deg)'; }}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1853,10 +1865,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             
             <p style={{ 
               color: 'var(--text-2)', 
-              fontSize: '0.78rem', 
-              lineHeight: 1.5, 
-              marginBottom: '1rem',
-              marginTop: '0.25rem'
+              fontSize: '0.82rem', 
+              lineHeight: 1.6, 
+              marginBottom: '1.25rem',
+              marginTop: '0'
             }}>
               সবগুলো ফাইলের এআই মেটাডেটা তৈরি সফল হয়েছে। আপনি কি এই টাইটেল ও কিওয়ার্ড সরাসরি ফাইলগুলোর ভেতর (IPTC/XMP) এম্বেড করতে চান?
             </p>
@@ -1865,17 +1877,18 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               style={{ 
                 display: 'flex', 
                 alignItems: 'flex-start', 
-                gap: '0.65rem', 
-                marginBottom: '1.25rem', 
+                gap: '0.75rem', 
+                marginBottom: '1.5rem', 
                 cursor: 'pointer',
                 background: 'var(--surface-2)',
-                padding: '0.65rem 0.8rem',
-                borderRadius: '0.5rem',
+                padding: '0.85rem',
+                borderRadius: '0.75rem',
                 border: '1px solid var(--glass-border)',
-                transition: 'all 0.2s'
+                transition: 'all 0.2s',
+                boxShadow: 'inset 0 2px 5px rgba(0,0,0,0.05)'
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(6, 182, 212, 0.2)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--glass-border)'; }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(6, 182, 212, 0.4)'; e.currentTarget.style.background = 'rgba(6, 182, 212, 0.05)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--glass-border)'; e.currentTarget.style.background = 'var(--surface-2)'; }}
             >
               <input 
                 type="checkbox" 
@@ -1883,30 +1896,30 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 onChange={handleAutoEmbedChange}
                 style={{ 
                   accentColor: 'var(--accent)', 
-                  width: '15px', 
-                  height: '15px', 
+                  width: '16px', 
+                  height: '16px', 
                   cursor: 'pointer',
                   margin: 0,
                   marginTop: '1.5px',
                   flexShrink: 0
                 }}
               />
-              <span style={{ fontSize: '0.68rem', color: 'var(--text-2)', lineHeight: 1.35, userSelect: 'none' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-2)', lineHeight: 1.4, userSelect: 'none' }}>
                 ভবিষ্যতে মেটাডেটা জেনারেট হওয়ার পর স্বয়ংক্রিয়ভাবে পারমিশন ছাড়াই এম্বেড করুন
               </span>
             </label>
             
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
               <button 
                 style={{ 
                   flex: 1, 
-                  padding: '0.55rem', 
+                  padding: '0.65rem', 
                   background: 'var(--surface-2)', 
                   border: '1px solid var(--glass-border)',
                   color: 'var(--text-2)', 
-                  fontSize: '0.78rem', 
+                  fontSize: '0.8rem', 
                   fontWeight: 600, 
-                  borderRadius: '0.5rem', 
+                  borderRadius: '0.65rem', 
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -1921,25 +1934,27 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               </button>
               <button 
                 style={{ 
-                  flex: 1, 
-                  padding: '0.55rem', 
-                  background: 'linear-gradient(135deg, var(--accent), #0891b2)', 
+                  flex: 1.5, 
+                  padding: '0.65rem', 
+                  background: 'linear-gradient(135deg, var(--accent), #3b82f6)', 
                   border: 'none', 
                   color: 'white', 
-                  fontSize: '0.78rem', 
+                  fontSize: '0.8rem', 
                   fontWeight: 600, 
-                  borderRadius: '0.5rem', 
+                  borderRadius: '0.65rem', 
                   cursor: 'pointer', 
                   display: 'flex', 
                   alignItems: 'center', 
                   justifyContent: 'center', 
-                  gap: '0.35rem',
-                  boxShadow: '0 4px 12px rgba(6, 182, 212, 0.25)',
-                  transition: 'all 0.2s'
+                  gap: '0.4rem',
+                  boxShadow: '0 4px 15px rgba(6, 182, 212, 0.3), inset 0 1px 0 rgba(255,255,255,0.2)',
+                  transition: 'all 0.2s',
+                  position: 'relative',
+                  overflow: 'hidden'
                 }}
                 onClick={() => embedMetadataToFiles()}
-                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.95'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(6, 182, 212, 0.35)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(6, 182, 212, 0.25)'; }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(6, 182, 212, 0.4), inset 0 1px 0 rgba(255,255,255,0.2)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(6, 182, 212, 0.3), inset 0 1px 0 rgba(255,255,255,0.2)'; }}
               >
                 হ্যাঁ, এম্বেড করুন
               </button>

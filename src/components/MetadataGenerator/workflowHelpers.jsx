@@ -1,6 +1,6 @@
 import React from "react";
 
-export function StatusBadge({ status, progress }) {
+export function StatusBadge({ status, progress, upscaleModel }) {
   const map = {
     done: "bg-green-500/20 text-green-400",
     processing: "bg-primary/20 text-primary animate-pulse",
@@ -15,8 +15,8 @@ export function StatusBadge({ status, progress }) {
         map[status] || map.pending
       }`}
     >
-      {status === "upscaling" && progress !== undefined && progress > 0
-        ? `upscaling (${Math.round(progress)}%)`
+      {status === "upscaling"
+        ? `upscaling${upscaleModel ? ` [${upscaleModel}]` : ''}${progress !== undefined && progress > 0 ? ` (${Math.round(progress)}%)` : ''}`
         : status === "upscale_queued" ? "Queued for Upscale" : status}
     </span>
   );

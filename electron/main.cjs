@@ -134,19 +134,40 @@ ipcMain.handle('process-eps', async (event, inputPath) => {
 
     return new Promise((resolve, reject) => {
       const gsProc = spawn(gsCmd, args, { shell: true });
+      
+      // Safety timeout of 30 seconds
+      const timeoutId = setTimeout(() => {
+        try {
+          gsProc.kill();
+        } catch (e) {}
+        reject(new Error('Ghostscript rendering timed out (30 seconds limit reached).'));
+      }, 30000);
+
+      // CRITICAL: Consume stdout and stderr to prevent OS pipe buffers from filling up and hanging the process
+      let errOutput = '';
+      gsProc.stdout.on('data', () => {}); // ignore stdout but consume it
+      gsProc.stderr.on('data', (data) => errOutput += data.toString());
 
       gsProc.on('close', (code) => {
-        if (fs.existsSync(outputPath)) {
+        clearTimeout(timeoutId);
+        if (code === 0 && fs.existsSync(outputPath)) {
+          const imgBuffer = fs.readFileSync(outputPath);
+          const base64 = imgBuffer.toString('base64');
+          try { fs.unlinkSync(outputPath); } catch (e) {} // cleanup
+          resolve({ success: true, base64, mimeType: 'image/png' });
+        } else if (fs.existsSync(outputPath)) {
+          // Sometimes GS exits with non-zero but still produces a valid file
           const imgBuffer = fs.readFileSync(outputPath);
           const base64 = imgBuffer.toString('base64');
           try { fs.unlinkSync(outputPath); } catch (e) {} // cleanup
           resolve({ success: true, base64, mimeType: 'image/png' });
         } else {
-          reject(new Error(`Ghostscript failed with code ${code}`));
+          reject(new Error(`Ghostscript failed with code ${code}. Details: ${errOutput}`));
         }
       });
 
       gsProc.on('error', (err) => {
+        clearTimeout(timeoutId);
         reject(new Error(`Ghostscript execution error: ${err.message}`));
       });
     });
@@ -323,10 +344,22 @@ ipcMain.handle('generate-eps-jpg', async (event, inputPath, addWhiteBgToPng = tr
 
     return new Promise((resolve, reject) => {
       const gsProc = spawn(gsCmd, args, { shell: true });
+      
+      // Safety timeout of 45 seconds
+      const timeoutId = setTimeout(() => {
+        try {
+          gsProc.kill();
+        } catch (e) {}
+        reject(new Error('Ghostscript rendering timed out (45 seconds limit reached).'));
+      }, 45000);
+
+      // CRITICAL: Consume stdout and stderr to prevent OS pipe buffers from filling up and hanging the process
       let errOutput = '';
+      gsProc.stdout.on('data', () => {}); // ignore stdout but consume it
       gsProc.stderr.on('data', (data) => errOutput += data.toString());
 
       gsProc.on('close', async (code) => {
+        clearTimeout(timeoutId);
         if (code === 0 && fs.existsSync(tempPngPath)) {
           try {
             await processWithSharp(tempPngPath, outputPath);
@@ -341,6 +374,7 @@ ipcMain.handle('generate-eps-jpg', async (event, inputPath, addWhiteBgToPng = tr
       });
 
       gsProc.on('error', (err) => {
+        clearTimeout(timeoutId);
         reject(new Error(`Ghostscript execution error: ${err.message}`));
       });
     });

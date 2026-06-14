@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import {
   Upload,
@@ -689,6 +690,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 }
                 
                 console.log(`[Mata AI] Engine: ${upscaleEngine} | Model: ${modelName} | File: ${smartNameForModel}`);
+                setImages(prev => prev.map(i => i.id === img.id ? { ...i, upscaleModel: modelName } : i));
 
                 let arrayBuffer;
 

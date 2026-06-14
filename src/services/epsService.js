@@ -146,44 +146,101 @@ async function blobToPngBase64(blob) {
 function extractEpsTextContext(epsText) {
   let contextParts = [];
 
-  // 1. Extract XMP Metadata Title/Description
-  const titleMatch = epsText.match(/<dc:title>[\s\S]*?<rdf:Alt>[\s\S]*?<rdf:li[^>]*>(.*?)<\/rdf:li>/i);
-  if (titleMatch && titleMatch[1]) contextParts.push(`Embedded Title: ${titleMatch[1]}`);
+  // 1. Extract XMP Metadata Title/Description (using fast, safe index search)
+  const xmpStart = epsText.indexOf('<x:xmpmeta');
+  const xmpEnd = epsText.indexOf('</x:xmpmeta>');
+  if (xmpStart !== -1 && xmpEnd !== -1 && xmpEnd > xmpStart) {
+    const xmpSection = epsText.substring(xmpStart, xmpEnd + 12);
+    
+    const titleBlockMatch = xmpSection.match(/<dc:title>([\s\S]*?)<\/dc:title>/i);
+    if (titleBlockMatch) {
+      const liMatch = titleBlockMatch[1].match(/<rdf:li[^>]*>([\s\S]*?)<\/rdf:li>/i);
+      if (liMatch && liMatch[1]) {
+        contextParts.push(`Embedded Title: ${liMatch[1].trim()}`);
+      }
+    }
 
-  const descMatch = epsText.match(/<dc:description>[\s\S]*?<rdf:Alt>[\s\S]*?<rdf:li[^>]*>(.*?)<\/rdf:li>/i);
-  if (descMatch && descMatch[1]) contextParts.push(`Embedded Description: ${descMatch[1]}`);
-
-  // 2. Extract Illustrator Layer Names (often look like: %AI5_BeginLayer: "Background")
-  const layerMatches = [...epsText.matchAll(/%AI5_BeginLayer[\s\S]*?"(.*?)"/g)];
-  if (layerMatches.length > 0) {
-    const layers = layerMatches.map(m => m[1]).filter(l => l !== "Layer 1");
-    if (layers.length > 0) {
-      contextParts.push(`Illustration Layers: ${layers.join(', ')}`);
+    const descBlockMatch = xmpSection.match(/<dc:description>([\s\S]*?)<\/dc:description>/i);
+    if (descBlockMatch) {
+      const liMatch = descBlockMatch[1].match(/<rdf:li[^>]*>([\s\S]*?)<\/rdf:li>/i);
+      if (liMatch && liMatch[1]) {
+        contextParts.push(`Embedded Description: ${liMatch[1].trim()}`);
+      }
     }
   }
 
-  // 3. Extract Swatch Colors (often look like: %AI5_Begin_NonPrintable: "Red")
-  const swatchMatches = [...epsText.matchAll(/%AI5_Begin_NonPrintable[\s\S]*?"(.*?)"/g)];
-  if (swatchMatches.length > 0) {
-    const swatches = swatchMatches.map(m => m[1]);
-    contextParts.push(`Prominent Colors/Swatches used: ${swatches.join(', ')}`);
+  // 2. Extract layers, swatches, document title, and Tj text line-by-line
+  const lines = epsText.split(/\r?\n/);
+  const layers = [];
+  const swatches = [];
+  const textStrings = [];
+  let docTitle = "";
+
+  for (let line of lines) {
+    line = line.trim();
+    if (!line) continue;
+
+    // %%Title: document title
+    if (line.startsWith('%%Title:')) {
+      docTitle = line.replace('%%Title:', '').trim();
+    }
+
+    // Layer name: e.g. %AI5_BeginLayer: ...
+    if (line.includes('%AI5_BeginLayer')) {
+      const matchQuote = line.match(/"([^"]+)"/);
+      if (matchQuote) {
+        layers.push(matchQuote[1]);
+      } else {
+        const matchParen = line.match(/\(([^)]+)\)/);
+        if (matchParen) {
+          layers.push(matchParen[1]);
+        }
+      }
+    }
+
+    // Swatches: e.g. %AI5_Begin_NonPrintable: ...
+    if (line.includes('%AI5_Begin_NonPrintable')) {
+      const matchQuote = line.match(/"([^"]+)"/);
+      if (matchQuote) {
+        swatches.push(matchQuote[1]);
+      } else {
+        const matchParen = line.match(/\(([^)]+)\)/);
+        if (matchParen) {
+          swatches.push(matchParen[1]);
+        }
+      }
+    }
+
+    // Tj text: e.g. (text) Tj
+    if (textStrings.length < 10) {
+      const tjMatch = line.match(/\(([^)]+)\)\s+Tj/);
+      if (tjMatch) {
+        textStrings.push(tjMatch[1]);
+      }
+    }
   }
 
-  // 4. Extract standard text elements inside the vector
-  const textStrings = [...epsText.matchAll(/\((.*?)\)\s+Tj/g)];
+  const uniqueLayers = [...new Set(layers)].filter(l => l !== "Layer 1");
+  if (uniqueLayers.length > 0) {
+    contextParts.push(`Illustration Layers: ${uniqueLayers.join(', ')}`);
+  }
+
+  const uniqueSwatches = [...new Set(swatches)];
+  if (uniqueSwatches.length > 0) {
+    contextParts.push(`Prominent Colors/Swatches used: ${uniqueSwatches.join(', ')}`);
+  }
+
   if (textStrings.length > 0) {
-    const texts = textStrings.map(m => m[1]).slice(0, 10); // get first 10
-    if (texts.length > 0) {
-      contextParts.push(`Text visible in design: "${texts.join('", "')}"`);
-    }
+    contextParts.push(`Text visible in design: "${textStrings.join('", "')}"`);
   }
 
-  // 5. Check document creator and title
-  const docTitle = epsText.match(/%%Title:\s*(.*?)\n/);
-  if (docTitle && docTitle[1]) contextParts.push(`EPS Document Title: ${docTitle[1]}`);
+  if (docTitle) {
+    contextParts.push(`EPS Document Title: ${docTitle}`);
+  }
 
   return contextParts.join('\n');
 }
+
 
 // --- Placeholder rendering ---
 function renderEpsPlaceholder(fileName) {
@@ -247,18 +304,25 @@ export async function processEpsFile(file) {
         console.warn('[EPS] Non-fatal: Could not extract deep text context.', err);
       }
 
-      const result = await window.electronAPI.processEps(filePath);
-      
-      if (result.success) {
-        return {
-          base64: result.base64,
-          mimeType: result.mimeType,
-          dataUrl: `data:${result.mimeType};base64,${result.base64}`,
-          isPlaceholder: false,
-          extractedTextContext: textContext || "No readable context found inside this EPS."
-        };
-      } else {
-        throw new Error(result.error || 'Electron processing failed');
+      try {
+        const result = await window.electronAPI.processEps(filePath);
+        
+        if (result.success) {
+          return {
+            base64: result.base64,
+            mimeType: result.mimeType,
+            dataUrl: `data:${result.mimeType};base64,${result.base64}`,
+            isPlaceholder: false,
+            extractedTextContext: textContext || "No readable context found inside this EPS."
+          };
+        } else {
+          throw new Error(result.error || 'Electron processing failed');
+        }
+      } catch (procErr) {
+        console.warn('[EPS] Native Ghostscript failed or timed out. Falling back to text-only placeholder.', procErr);
+        const placeholder = renderEpsPlaceholder(file.name);
+        placeholder.extractedTextContext = textContext || "No readable context found inside this EPS.";
+        return placeholder;
       }
     }
 

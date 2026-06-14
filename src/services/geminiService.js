@@ -892,39 +892,137 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
 export async function generatePromptFromImage(imageBuffer, mimeType, apiKeys, apiProvider = "gemini", promptSettings = {}) {
   const mode = promptSettings.promptSimilarityMode || 'Exact Match';
   
-  const modeInstruction = mode === "Unique Variation" 
-    ? `\nUNIQUE VARIATION MODE (CRITICAL): Do not describe the exact image. Instead, invent a visually distinct but thematically related variation. Change the subject's pose, the camera angle, the lighting, or the environment significantly to ensure the resulting image is entirely unique and avoid duplicate stock content.`
-    : `\nEXACT MATCH MODE (CRITICAL): Describe this exact image as meticulously as possible to act as a 1:1 recreation recipe.`;
+  if (mode === "Unique Variation") {
+    // Variation mode: creative narrative paragraph
+    const variationPrompt = `You are a creative AI art prompt engineer specializing in Midjourney v6, Stable Diffusion XL, DALL-E 3, and Flux.
 
-  const prompt = `You are an expert AI image prompt engineer specializing in Midjourney v6 and Stable Diffusion. Your task is to analyze the provided image and reverse-engineer it into a highly detailed, professional text-to-image prompt.
-${modeInstruction}
+UNIQUE VARIATION MODE: Do NOT recreate this image. Instead, analyze its theme, mood, and subject, then invent a visually distinct but thematically related variation. Change the subject's pose, camera angle, lighting, or environment significantly to ensure the result is entirely unique and avoids duplicate stock content.
 
-Construct your prompt using the following structure, blended into a single continuous, highly descriptive paragraph. Do not use bullet points or line breaks in the final output.
+Output ONLY the raw prompt text as ONE single continuous paragraph (80–130 words). No bullets, no line breaks, no intro phrases like "This image shows".
 
-1. Subject & Core Action: Clearly state what the main subject is, their exact physical appearance (age, ethnicity, attire, expression, exact pose), and what they are doing. 
-2. Environment & Background: Describe the setting, foreground, background elements, and atmosphere in detail.
-3. Camera & Composition: Include precise photography terminology (e.g., 35mm lens, f/1.8, cinematic shot, extreme close-up, low angle, macro photography, rule of thirds, depth of field, bokeh, sharp focus).
-4. Lighting & Color Palette: Specify lighting types (e.g., golden hour, neon lighting, volumetric lighting, rim lighting, soft diffused light, studio lighting, dramatic shadows) and the exact color grading or dominant colors.
-5. Artistic Style & Medium: Note the medium (e.g., hyper-realistic photography, 3D render in Unreal Engine 5, flat vector illustration, watercolor, cyberpunk aesthetic, vintage film aesthetic, ultra-detailed 8k resolution).
-6. Human Anatomy (If humans are present): Explicitly describe precise anatomical features to force the AI to render them correctly (e.g., "perfectly formed hands with exactly 5 fingers, symmetrical facial features, highly detailed eyes with distinct pupils and iris reflections, realistic skin texture with pores").
+Use this structure blended into a flowing description:
+[Artistic Medium] + [Subject + appearance + action] + [New environment/setting] + [New lighting & color palette] + [Camera angle & composition]
+
+Be specific, vivid, and commercially viable. Avoid watermarks, brand names, and explicit content.`;
+
+    // Store variation prompt and fall through to the API call logic
+    const promptToUse = variationPrompt;
+    
+    // Prioritize keys that match the selected provider
+    const preferredKeys = [];
+    const otherKeys = [];
+    (apiKeys || []).forEach(keyItem => {
+      let p = typeof keyItem === 'object' ? keyItem.provider : apiProvider;
+      if (Array.isArray(p)) p = p[0] || 'gemini';
+      if (p === apiProvider) preferredKeys.push(keyItem);
+      else otherKeys.push(keyItem);
+    });
+    const orderedKeys = [...preferredKeys, ...otherKeys];
+
+    let lastError = null;
+    const startKeyIndex = globalKeyIndex;
+    if (orderedKeys.length > 0) globalKeyIndex = (globalKeyIndex + 1) % orderedKeys.length;
+
+    for (let k = 0; k < orderedKeys.length; k++) {
+      const currentKeyIndex = (startKeyIndex + k) % orderedKeys.length;
+      const keyItem = orderedKeys[currentKeyIndex];
+      let currentProvider = typeof keyItem === 'object' ? keyItem.provider : apiProvider;
+      if (Array.isArray(currentProvider)) currentProvider = currentProvider[0] || 'gemini';
+      const apiKey = typeof keyItem === 'object' ? keyItem.key : keyItem;
+
+      if (currentProvider !== "gemini") {
+        try {
+          let text;
+          if (currentProvider === "groq") text = await fetchGroq(apiKey, promptToUse, imageBuffer, mimeType, false);
+          else if (currentProvider === "openai") text = await fetchOpenAI(apiKey, promptToUse, imageBuffer, mimeType, false);
+          else if (currentProvider === "openrouter") text = await fetchOpenRouter(apiKey, promptToUse, imageBuffer, mimeType, false);
+          else if (currentProvider === "mistral") text = await fetchMistral(apiKey, promptToUse, imageBuffer, mimeType, false);
+          else throw new Error("Unknown provider: " + currentProvider);
+          const finalPrompt = typeof text === 'string' ? text.trim() : (text?.title || JSON.stringify(text));
+          return { prompt: finalPrompt, provider: currentProvider };
+        } catch (error) {
+          lastError = error;
+          if (error.message.includes("401") || error.message.includes("403") || error.message.includes("429")) continue;
+          throw error;
+        }
+      }
+
+      const genAI = new GoogleGenerativeAI(apiKey);
+      let modelsToAttempt = [...modelsToTry];
+      for (let i = 0; i < modelsToAttempt.length; i++) {
+        const modelName = modelsToAttempt[i];
+        try {
+          const model = genAI.getGenerativeModel({ model: modelName });
+          const result = await model.generateContent([{ inlineData: { data: imageBuffer, mimeType } }, { text: promptToUse }]);
+          const response = await result.response;
+          const out = response.text().trim();
+          let totalTokens = 0;
+          try { const um = response.usageMetadata; if (um && typeof um.totalTokenCount === "number") totalTokens = um.totalTokenCount; } catch { /* ignore */ }
+          recordApiUsage("gemini", apiKey, { totalTokens, requests: 1 });
+          return { prompt: out, provider: "gemini" };
+        } catch (error) {
+          lastError = error;
+          if (error.message.includes("API_KEY_INVALID") || error.message.toLowerCase().includes("key not valid") || error.message.includes("403") || error.message.includes("429") || error.message.toLowerCase().includes("quota")) break;
+          if (error.message.includes("400") || error.message.includes("404")) continue;
+        }
+      }
+    }
+    if (lastError && (lastError.message.includes("429") || lastError.message.includes("quota"))) throw new Error(`API Rate Limit Reached on all ${apiKeys.length} keys.`);
+    throw (lastError || new Error(`Could not connect to any ${apiProvider} model.`));
+  }
+
+  const exactMatchPrompt = `You are a world-class AI image forensic analyst and prompt engineer. Your task is to analyze the provided image with extreme precision and generate a multi-format recreation prompt package.
+
+GOAL: Maximum possible 1:1 recreation accuracy. Capture EVERY visually distinct element.
+
+STEP 1 — DEEP ANALYSIS (internal, not shown in output):
+Before writing, mentally note:
+- Exact subject: age, ethnicity, gender, body type, hair color/length/style, eye color, facial expression, exact body pose, hand position
+- Exact clothing: every garment, color, texture, pattern, fit, accessories, shoes, jewelry
+- Background: location type, specific objects, colors, depth, distance from subject
+- Lighting: direction (left/right/top/back), type (hard/soft/ambient), color temperature (warm/cool), shadows
+- Camera: lens angle (wide/normal/telephoto), focal point, depth of field, portrait/landscape/square orientation
+- Style/Medium: is it a photo, illustration, 3D render, painting, vector?
+
+STEP 2 — OUTPUT exactly these 5 sections with no extra text before or after:
+
+MIDJOURNEY: [Optimized for Midjourney v6. Comma-separated tags of 30-50 ultra-specific tags followed by Midjourney parameters. MUST end with: --ar [ratio] --v 6.1 --style raw]
+
+FLUX: [Optimized for Flux/Stable Diffusion. Comma-separated tags of 30-50 tags. Include quality boosters: masterpiece, best quality, ultra-detailed, 8k uhd, photorealistic]
+
+NEGATIVE: [20-30 comma-separated negative tags. Always include: blurry, low quality, watermark, text, logo, extra fingers, deformed hands, distorted face, bad anatomy, worst quality, jpeg artifacts. Add specific negatives for things NOT in this image.]
+
+ASPECT: [One of: 1:1 / 16:9 / 9:16 / 4:5 / 3:4 / 4:3 / 3:2 — estimate from the image]
+
+TOOL_TIP: [Exactly 2 sentences. Sentence 1: the single most important visual detail that will make or break the recreation. Sentence 2: which tool best recreates this (Midjourney v6 / Flux Dev / DALL-E 3 / Stable Diffusion XL) and exactly why.]
 
 CRITICAL RULES:
-- Output ONLY the raw text of the final prompt. Do not include introductory text, quotes, or markdown formatting.
-- Do NOT use multiple paragraphs, sections, bullet points, or line breaks. It must be ONE single continuous paragraph of text.
-- WATERMARKS: Completely ignore any watermarks, logos, or copyright text. Do not mention them.
-- SAFETY: Keep all language perfectly safe and policy-compliant (no explicit, violent, or risky terms).
-- Use rich, evocative visual adjectives (e.g., "glowing," "textured," "dynamic").
-- Aim for a length of roughly 60 to 120 words for optimal AI generation.`;
+- Tags must be hyper-specific. NOT "woman" but "South Asian woman in her late 20s with wavy shoulder-length dark brown hair". NOT "red dress" but "fitted sleeveless crimson velvet midi dress with ruched bodice".
+- Do NOT write narrative sentences in MIDJOURNEY or FLUX sections. Only comma-separated tags.
+- Do NOT describe or mention watermarks, logos, or copyright text.
+- The MIDJOURNEY section MUST end with --ar [ratio] --v 6.1 --style raw`;
+
+
+  // Prioritize keys that match the selected provider, fallback to others if limit is reached
+  const preferredKeys = [];
+  const otherKeys = [];
+  (apiKeys || []).forEach(keyItem => {
+    let p = typeof keyItem === 'object' ? keyItem.provider : apiProvider;
+    if (Array.isArray(p)) p = p[0] || 'gemini';
+    if (p === apiProvider) preferredKeys.push(keyItem);
+    else otherKeys.push(keyItem);
+  });
+  const orderedKeys = [...preferredKeys, ...otherKeys];
 
   let lastError = null;
   const startKeyIndex = globalKeyIndex;
-  if (apiKeys && apiKeys.length > 0) {
-    globalKeyIndex = (globalKeyIndex + 1) % apiKeys.length;
+  if (orderedKeys.length > 0) {
+    globalKeyIndex = (globalKeyIndex + 1) % orderedKeys.length;
   }
 
-  for (let k = 0; k < apiKeys.length; k++) {
-    const currentKeyIndex = (startKeyIndex + k) % apiKeys.length;
-    const keyItem = apiKeys[currentKeyIndex];
+  for (let k = 0; k < orderedKeys.length; k++) {
+    const currentKeyIndex = (startKeyIndex + k) % orderedKeys.length;
+    const keyItem = orderedKeys[currentKeyIndex];
     
     // Support both new {provider, key} object format and legacy string format
     let currentProvider = typeof keyItem === 'object' ? keyItem.provider : apiProvider;
@@ -936,12 +1034,16 @@ CRITICAL RULES:
       try {
         console.log(`[Attempt] Provider: ${currentProvider} (Image to Prompt) using key index ${currentKeyIndex}`);
         let text;
-        if (currentProvider === "groq") text = await fetchGroq(apiKey, prompt, imageBuffer, mimeType, false);
-        else if (currentProvider === "openai") text = await fetchOpenAI(apiKey, prompt, imageBuffer, mimeType, false);
-        else if (currentProvider === "openrouter") text = await fetchOpenRouter(apiKey, prompt, imageBuffer, mimeType, false);
-        else if (currentProvider === "mistral") text = await fetchMistral(apiKey, prompt, imageBuffer, mimeType, false);
+        if (currentProvider === "groq") text = await fetchGroq(apiKey, exactMatchPrompt, imageBuffer, mimeType, false);
+        else if (currentProvider === "openai") text = await fetchOpenAI(apiKey, exactMatchPrompt, imageBuffer, mimeType, false);
+        else if (currentProvider === "openrouter") text = await fetchOpenRouter(apiKey, exactMatchPrompt, imageBuffer, mimeType, false);
+        else if (currentProvider === "mistral") text = await fetchMistral(apiKey, exactMatchPrompt, imageBuffer, mimeType, false);
         else throw new Error("Unknown provider: " + currentProvider);
-        return typeof text === 'string' ? text.trim() : (text?.title || JSON.stringify(text));
+        const rawText = typeof text === 'string' ? text.trim() : (text?.title || JSON.stringify(text));
+        return {
+          prompt: parseExactMatchOutput(rawText),
+          provider: currentProvider
+        };
       } catch (error) {
         lastError = error;
         if (error.message.includes("401") || error.message.includes("403") || error.message.includes("429")) {
@@ -966,7 +1068,7 @@ CRITICAL RULES:
               mimeType: mimeType,
             },
           },
-          { text: prompt },
+          { text: exactMatchPrompt },
         ]);
 
         const response = await result.response;
@@ -981,7 +1083,10 @@ CRITICAL RULES:
         }
         recordApiUsage("gemini", apiKey, { totalTokens, requests: 1 });
 
-        return out;
+        return {
+          prompt: parseExactMatchOutput(out),
+          provider: "gemini"
+        };
       } catch (error) {
         console.warn(`[Fail] ${modelName} on key ${currentKeyIndex} (ImageToPrompt): ${error.message}`);
         lastError = error;
@@ -1006,13 +1111,60 @@ CRITICAL RULES:
   }
 
   if (lastError && (lastError.message.includes("429") || lastError.message.includes("quota"))) {
-    throw new Error(`API Rate Limit Reached on all ${apiKeys.length} keys. Please wait 30 seconds before generating again.`);
+    throw new Error(`API Rate Limit Reached on all ${apiKeys.length} keys. Google says: "${lastError.message.substring(0, 150)}...". Please check your Google Cloud quota or region.`);
   }
 
   throw (
     lastError ||
     new Error(`Critical: Could not connect to any ${apiProvider} model. Please check your API keys.`)
   );
+}
+
+/**
+ * Parses the structured PROMPT/NEGATIVE/ASPECT output from Exact Match mode.
+ * Returns a formatted string for display in the UI textarea.
+ */
+function parseExactMatchOutput(raw) {
+  try {
+    // Parse all 5 sections from the new format
+    const midjourneyMatch = raw.match(/MIDJOURNEY:\s*([\s\S]*?)(?=\nFLUX:|$)/i);
+    const fluxMatch       = raw.match(/FLUX:\s*([\s\S]*?)(?=\nNEGATIVE:|$)/i);
+    const negativeMatch   = raw.match(/NEGATIVE:\s*([\s\S]*?)(?=\nASPECT:|$)/i);
+    const aspectMatch     = raw.match(/ASPECT:\s*([\s\S]*?)(?=\nTOOL_TIP:|$)/i);
+    const tipMatch        = raw.match(/TOOL_TIP:\s*([\s\S]*?)$/i);
+
+    const clean = (s) => s ? s.replace(/^\[|\]$/g, '').trim() : '';
+
+    const mjText  = clean(midjourneyMatch?.[1]);
+    const fluxText   = clean(fluxMatch?.[1]);
+    const negText    = clean(negativeMatch?.[1]);
+    const aspectText = clean(aspectMatch?.[1]);
+    const tipText    = clean(tipMatch?.[1]);
+
+    // If none of the new sections were found, fall back to old PROMPT: format
+    if (!mjText && !fluxText) {
+      const oldPromptMatch = raw.match(/PROMPT:\s*([\s\S]*?)(?=\nNEGATIVE:|$)/i);
+      const oldNegMatch    = raw.match(/NEGATIVE:\s*([\s\S]*?)(?=\nASPECT:|$)/i);
+      const oldAspectMatch = raw.match(/ASPECT:\s*([\s\S]*?)$/i);
+      const p = clean(oldPromptMatch?.[1]);
+      if (!p) return raw;
+      let out = p;
+      const n = clean(oldNegMatch?.[1]); if (n) out += `\n\n🚫 NEGATIVE PROMPT:\n${n}`;
+      const a = clean(oldAspectMatch?.[1]); if (a) out += `\n\n📐 ASPECT RATIO: ${a}`;
+      return out;
+    }
+
+    // Build clean output for the new 5-section format
+    let output = '';
+    if (mjText)    output += `🎨 MIDJOURNEY v6 PROMPT:\n${mjText}`;
+    if (fluxText)  output += `\n\n⚡ FLUX / SD PROMPT:\n${fluxText}`;
+    if (negText)   output += `\n\n🚫 NEGATIVE PROMPT:\n${negText}`;
+    if (aspectText)output += `\n\n📐 ASPECT RATIO: ${aspectText}`;
+    if (tipText)   output += `\n\n💡 PRO TIP:\n${tipText}`;
+    return output || raw;
+  } catch {
+    return raw; // Safe fallback
+  }
 }
 
 /**

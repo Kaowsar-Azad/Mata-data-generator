@@ -15,12 +15,12 @@ async function testPrompt() {
     const dummyImage = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAwAB/AL+f4R4AAAAASUVORK5CYII=";
     
     console.log("Testing Exact Match Mode...");
-    const promptExact = await generatePromptFromImage(dummyImage, "image/png", keys, "gemini", { promptSimilarityMode: "Exact Match" });
-    console.log("Exact Match Result:\n", promptExact, "\n");
+    const { prompt: promptExact, provider: provExact } = await generatePromptFromImage(dummyImage, "image/png", keys, "gemini", { promptSimilarityMode: "Exact Match" });
+    console.log("Exact Match Result:\n", promptExact, `(via ${provExact})`, "\n");
     
     console.log("Testing Unique Variation Mode...");
-    const promptUnique = await generatePromptFromImage(dummyImage, "image/png", keys, "gemini", { promptSimilarityMode: "Unique Variation" });
-    console.log("Unique Variation Result:\n", promptUnique, "\n");
+    const { prompt: promptUnique, provider: provUnique } = await generatePromptFromImage(dummyImage, "image/png", keys, "gemini", { promptSimilarityMode: "Unique Variation" });
+    console.log("Unique Variation Result:\n", promptUnique, `(via ${provUnique})`, "\n");
 
   } catch (err) {
     console.error("Test failed:", err);

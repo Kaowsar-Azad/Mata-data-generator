@@ -122,11 +122,11 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
             const base64 = dataUrl.split(",")[1];
             const mimeType = "image/jpeg";
 
-            const generatedPrompt = await generatePromptFromImage(base64, mimeType, apiKeys, apiProvider || "gemini", promptSettings);
+            const { prompt: generatedPrompt, provider: usedProvider } = await generatePromptFromImage(base64, mimeType, apiKeys, apiProvider || "gemini", promptSettings);
 
             setImages((prev) =>
               prev.map((item) =>
-                item.id === img.id ? { ...item, status: "done", result: generatedPrompt } : item
+                item.id === img.id ? { ...item, status: "done", result: generatedPrompt, provider: usedProvider } : item
               )
             );
           } catch (err) {
@@ -369,6 +369,7 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
                 <div className="mt-3">
                   <PromptField
                     value={img.result}
+                    provider={img.provider}
                     onChange={(val) => handlePromptChange(img.id, val)}
                   />
                 </div>
@@ -407,7 +408,7 @@ function StatusBadge({ status }) {
   );
 }
 
-function PromptField({ value, onChange }) {
+function PromptField({ value, onChange, provider }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -419,7 +420,14 @@ function PromptField({ value, onChange }) {
   return (
     <div>
       <div className="flex justify-between items-center mb-1">
-        <span className="meta-label text-accent font-semibold">Generated Prompt</span>
+        <span className="meta-label text-accent font-semibold">
+          Generated Prompt
+          {provider && (
+            <span style={{ fontSize: "0.75rem", opacity: 0.8, color: "var(--primary-light)", marginLeft: "0.4rem", textTransform: "uppercase" }}>
+              ({provider})
+            </span>
+          )}
+        </span>
         <button
           onClick={handleCopy}
           title="Copy Prompt"

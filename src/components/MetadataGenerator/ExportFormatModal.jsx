@@ -33,8 +33,8 @@ export function ExportFormatModal({ isOpen, onClose, onSelect, activePlatform })
       left: 0,
       right: 0,
       bottom: 0,
-      background: 'rgba(0,0,0,0.4)',
-      backdropFilter: 'blur(4px)',
+      background: 'rgba(10, 13, 20, 0.45)',
+      backdropFilter: 'blur(8px)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -43,63 +43,128 @@ export function ExportFormatModal({ isOpen, onClose, onSelect, activePlatform })
       <div className="glass card" style={{
         width: '450px',
         maxWidth: '90%',
-        padding: '1.5rem',
+        padding: 0,
         background: 'var(--surface-1)',
         borderRadius: '1rem',
-        boxShadow: '0 20px 50px rgba(0,0,0,0.2), 0 0 0 1px var(--glass-border)',
-        animation: 'scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+        boxShadow: '0 25px 60px rgba(0,0,0,0.25), 0 0 0 1px var(--glass-border)',
+        animation: 'scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+        overflow: 'hidden'
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-1)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Download className="w-5 h-5 text-primary" />
-            Select CSV Export Format
-          </h3>
-          <button 
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '0.2rem' }}
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+        <div style={{
+          height: '4px',
+          background: 'linear-gradient(90deg, var(--primary), var(--accent))',
+          width: '100%'
+        }} />
         
-        <p className="text-muted" style={{ fontSize: '0.85rem', marginBottom: '1.25rem', lineHeight: 1.45 }}>
-          অনুগ্রহ করে যে এজেন্সির জন্য সিএসভি ফাইলটি ডাউনলোড করতে চান তা নির্বাচন করুন। প্রতিটি ফরম্যাট তাদের নিজস্ব গাইডলাইন অনুযায়ী সাজানো হয়েছে।
-        </p>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem', maxHeight: '320px', overflowY: 'auto', paddingRight: '4px' }}>
-          {getAvailableExportFormats().map((fmt) => (
-            <button
-              key={fmt.id}
-              onClick={() => {
-                onSelect(fmt.id);
-                onClose();
-              }}
-              className="export-format-btn"
-              style={{
+        <div style={{ padding: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                width: '36px', 
+                height: '36px', 
+                borderRadius: '0.5rem', 
+                background: 'rgba(37, 99, 235, 0.1)', 
+                color: 'var(--primary)',
+                flexShrink: 0
+              }}>
+                <Download className="w-5 h-5" />
+              </div>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-1)', margin: 0 }}>
+                Select CSV Export Format
+              </h3>
+            </div>
+            <button 
+              onClick={onClose}
+              style={{ 
+                background: 'transparent', 
+                border: 'none', 
+                color: 'var(--text-3)', 
+                cursor: 'pointer', 
+                padding: '6px',
+                borderRadius: '50%',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
-                width: '100%',
-                padding: '0.75rem 1rem',
-                borderRadius: '0.6rem',
-                background: 'var(--surface-2)',
-                border: '1px solid var(--glass-border)',
-                textAlign: 'left',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                boxSizing: 'border-box'
+                justifyContent: 'center',
+                transition: 'all 0.2s'
               }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.color = 'var(--text-1)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-3)'; }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <span style={{ fontSize: '1.2rem', minWidth: '24px', textAlign: 'center', display: 'inline-block' }}>{fmt.icon}</span>
-                <div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-1)' }}>{fmt.label}</div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginTop: '2px' }}>{fmt.desc}</div>
-                </div>
-              </div>
-              <Download className="w-4 h-4 text-primary" style={{ opacity: 0.6 }} />
+              <X className="w-5 h-5" />
             </button>
-          ))}
+          </div>
+          
+          <p className="text-muted" style={{ fontSize: '0.85rem', marginBottom: '1.25rem', lineHeight: 1.45 }}>
+            অনুগ্রহ করে যে এজেন্সির জন্য সিএসভি ফাইলটি ডাউনলোড করতে চান তা নির্বাচন করুন। প্রতিটি ফরম্যাট তাদের নিজস্ব গাইডলাইন অনুযায়ী সাজানো হয়েছে।
+          </p>
+
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '0.55rem', 
+            maxHeight: '320px', 
+            overflowY: 'auto', 
+            paddingRight: '6px' 
+          }}>
+            {getAvailableExportFormats().map((fmt) => (
+              <button
+                key={fmt.id}
+                onClick={() => {
+                  onSelect(fmt.id);
+                  onClose();
+                }}
+                className="export-format-btn"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                  padding: '0.8rem 1rem',
+                  borderRadius: '0.65rem',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--glass-border)',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxSizing: 'border-box'
+                }}
+                onMouseEnter={(e) => { 
+                  e.currentTarget.style.background = 'var(--surface-3)'; 
+                  e.currentTarget.style.borderColor = 'var(--primary)'; 
+                  e.currentTarget.style.transform = 'translateX(3px)';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(37, 99, 235, 0.05)';
+                }}
+                onMouseLeave={(e) => { 
+                  e.currentTarget.style.background = 'var(--surface-2)'; 
+                  e.currentTarget.style.borderColor = 'var(--glass-border)'; 
+                  e.currentTarget.style.transform = 'none';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                  <span style={{ 
+                    fontSize: '1.25rem', 
+                    minWidth: '32px', 
+                    height: '32px',
+                    borderRadius: '0.4rem',
+                    background: 'var(--surface-1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                  }}>{fmt.icon}</span>
+                  <div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-1)' }}>{fmt.label}</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginTop: '2px' }}>{fmt.desc}</div>
+                  </div>
+                </div>
+                <Download className="w-4 h-4 text-primary" style={{ opacity: 0.8 }} />
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>

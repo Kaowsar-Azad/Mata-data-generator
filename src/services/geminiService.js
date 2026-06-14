@@ -11,11 +11,10 @@ import { fetchMistral } from "./apis/mistral.js";
  */
 
 const modelsToTry = [
+  "gemini-3.1-pro-preview",
   "gemini-3.5-flash",
   "gemini-3.1-flash-lite",
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite"
+  "gemini-2.5-flash"
 ];
 
 // Fallback dynamic fetch
@@ -213,12 +212,13 @@ ${platformContext}${mediaHintStr}${customInstStr}
 == TITLE (SEO Optimized Headline) ==
 Formula: [Primary Subject] + [Specific Action/Attribute] + [Setting/Context]
 Rules:
-- Write a highly descriptive, factual sentence. Answer: Who, What, Where, and Why.
-- NEVER start with articles (A/An/The) or adjectives. Start with the most searched noun.
-- Be highly specific: "Businesswoman typing on silver laptop in modern glass office" NOT "Woman working on laptop".
-- For vectors/illustrations: explicitly state the style ("flat vector illustration", "3D render", "seamless pattern").
+- Write a complete, descriptive sentence answering Who, What, Where, and Why (the 5W structure Shutterstock's semantic engine relies on).
+- NEVER start with articles (A/An/The) or adjectives. Start with the most-searched noun.
+- Be hyper-specific: "Businesswoman typing on silver laptop in modern glass office" NOT "Woman working on laptop".
+- For vectors/illustrations: explicitly state the style ("flat vector illustration", "3D render", "seamless pattern", "glyph icon set").
 - Forbidden words: stunning, vibrant, captivating, breathtaking, mesmerizing, showcasing, beautifully, perfect, amazing.
-- Target Length: STRICTLY between ${s.titleMinChars || 10} and ${s.titleMaxChars || 80} characters. The title MUST be a complete, finished, grammatically correct sentence that fits entirely within this limit. Do NOT exceed this length.${s.negTitleEnabled && s.negTitleWords ? `\n- Forbidden in title: ${s.negTitleWords}.` : ""}
+- Target Length: STRICTLY between ${s.titleMinChars || 10} and ${s.titleMaxChars || 80} characters. The title MUST be a complete grammatically correct sentence.${s.negTitleEnabled && s.negTitleWords ? `\n- Forbidden in title: ${s.negTitleWords}.` : ""}
+- CRITICAL FOR ADOBE STOCK: Every important noun, adjective and verb in your title MUST also appear in the keyword list, because Adobe Stock titles are NOT searchable — only keywords are indexed.
 
 == DESCRIPTION (SEO Optimized Detail) ==
 Formula: [Factual visual description + Style/Lighting] + [2-3 specific commercial use-cases]
@@ -228,17 +228,27 @@ Rules:
 - Sentence 2: Name concrete commercial applications (e.g., "Ideal for corporate presentations, marketing materials, and web banners").
 - Keep it professional, objective, and active voice.
 - Forbidden words: stunning, breathtaking, meticulously, "This image shows", "Here we can see".
-- Target Length: STRICTLY between ${s.descMinChars || 50} and ${s.descMaxChars || 120} characters. The description MUST be a complete, finished, grammatically correct sentence that fits entirely within this limit. Do NOT exceed this length.
+- Target Length: STRICTLY between ${s.descMinChars || 50} and ${s.descMaxChars || 120} characters.
 
 == ${kwMode} ==
 
 Keyword rules (apply to all modes):
-- Order of Importance: Place the absolute most relevant 10 keywords FIRST. Include all Title words in the first 10 keywords.
-- NO generic filler: "thing", "item", "nice", "great", "image", "photo", "picture", "background", "graphic".
-- Rule for Abstract Concepts: DO NOT use abstract concepts (e.g., "fun", "reality", "enjoyment", "virtual") UNLESS they are the absolute primary commercial theme of the specific image. Stick strictly to concrete, visible nouns and highly relevant industry terms.
-- NO root duplicates: do not use both "car" and "cars", or "color" and "colorful". Use the single most commercial form.
-- Be hyper-specific: use "beagle puppy" instead of just "dog".
-- No brand/trademark names. No banned words: "free", "download", "copyright", "watermark".
+
+SLOT ORDER — You MUST place keywords in this exact 4-slot priority sequence:
+  SLOT 1 (Positions 1-10): PRIMARY SUBJECTS & CORE THEME — The main visible subjects, actions, and the single most important commercial concept. These receive the highest algorithmic weight on Adobe Stock. Every word from the title MUST appear here.
+  SLOT 2 (Positions 11-20): SPECIFIC DESCRIPTIONS — Colors, materials, lighting style, camera angle, composition, and mood.
+  SLOT 3 (Positions 21-30): CONCEPTUAL & COMMERCIAL TERMS — Abstract themes, emotions, and buyer use-cases that ad agencies and marketers search (e.g., "innovation", "trust", "teamwork", "sustainability", "lifestyle"). Only include if genuinely relevant.
+  SLOT 4 (Positions 31+): GRAPHIC & TECHNICAL TAGS — Style descriptors and format tags (e.g., "vector", "flat design", "icon", "illustration", "3D render", "seamless pattern", "isolated", "white background", "transparent").
+
+GRAMMAR RULES (Adobe Stock NLP requirements):
+- Use SINGULAR nouns only. The algorithm auto-expands to plural. Write "dog" not "dogs", "camera" not "cameras".
+- Use INFINITIVE verb forms only. Write "run", "smile", "hold" — NOT "running", "smiled", "holding".
+
+QUALITY RULES:
+- NO generic filler: "thing", "item", "nice", "great", "image", "photo", "picture", "graphic", "element".
+- STRICT VISIBILITY RULE: ONLY describe what is PHYSICALLY VISIBLE. Never infer tech concepts not shown (e.g., a physical camera icon does NOT justify adding "software", "web", "data", "application", "wireless").
+- NO root duplicates: never use both "camera" and "cameras", or "color" and "colorful". Pick the most commercial singular form.
+- NO brand/trademark names. No banned words: "free", "download", "copyright", "watermark".
 - No hashtags. ${singleWordRule}${negInstructions}
 
 == CATEGORY ==
@@ -253,12 +263,13 @@ Evaluate this image's COMMERCIAL POTENTIAL for stock photo marketplaces (Adobe S
 
 In "scoreReason": write exactly 1 sentence (max 15 words) naming the PRIMARY factor.
 
-== KEYWORD SCORES (CRITICAL) ==
+== KEYWORD SCORES (ABSOLUTE CRITICAL MANDATE) ==
 You MUST evaluate EVERY SINGLE keyword you generate and assign it a "Commercial Relevance Score" from 1 to 100 based strictly on how accurately and importantly it describes THIS SPECIFIC image.
+CRITICAL RULE: The number of items in your "keywordScores" object MUST EXACTLY MATCH the number of keywords in your "keywords" string. Do NOT skip scoring ANY keyword. If you output 48 keywords, you MUST output 48 scores.
 We use this score to color-code keywords (Green/Yellow/Red):
-- 80-100 (Green): Highly relevant. The keyword perfectly describes the primary subjects, main actions, or core themes visible in this specific image.
-- 40-79 (Yellow): Moderately relevant. The keyword describes background details, secondary elements, or broader related concepts.
-- 1-39 (Red): Low relevance. Generic words or weakly applicable terms. (Avoid generating these, but score accurately if you do).
+- 80-100 (Green): Highly relevant SEO terms. The keyword perfectly describes the primary subjects, main actions, or core themes physically visible in this specific image.
+- 40-79 (Yellow): Moderately relevant. The keyword describes background details, secondary elements, or broader related commercial concepts.
+- 1-39 (Red): Low relevance or generic. DO NOT GENERATE THESE. Every keyword must be a high-value SEO search term.
 Evaluate each keyword honestly based on the image content. Do not artificially inflate scores.
 
 Output ONLY valid JSON, no markdown:
@@ -455,7 +466,7 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
       if (/^\d{4,}\w*$/.test(kl) && kl.length >= 8) continue;// date-prefixed strings like 20260608abcd
 
       // 2. Camera specs / technical spam: hard rejection
-      if (/\b(dslr|4k|8k|camera|megapixels|mp|resolution|fps|lens|shutter|iso|aperture|slr|sensor|photography|photo|photographs|photographed|shoot|shooting|frame)\b/i.test(kl)) {
+      if (/\b(dslr|4k|8k|camera|megapixels|mp|resolution|fps|lens|shutter|iso|aperture|slr|sensor|photographs|photographed|shoot|shooting|frame)\b/i.test(kl)) {
         continue;
       }
 
@@ -563,16 +574,19 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
         
         remainingNeeds = minSmartCount - highQualityKws.length;
         if (remainingNeeds > 0) {
-          const premiumStock = [
-             "creative", "modern", "concept", "style", "art", "background", "digital",
-             "template", "abstract", "business", "technology", "texture", "pattern", "shape",
-             "color", "layout", "decoration", "presentation", "banner", "sign", "symbol", "icon",
-             "isolated", "white", "blank", "empty", "space", "commercial", "industry", "minimal",
-             "elegant", "luxury", "premium", "quality", "professional", "corporate", "success",
-             "growth", "innovation", "future", "network", "global"
-          ];
-          const premiumExtra = premiumStock.filter(w => !highQualityKws.includes(w) && getKeywordScore(w) >= 40);
-          highQualityKws.push(...premiumExtra.slice(0, remainingNeeds));
+          // Use lower-quality AI keywords before resorting to title/desc words
+          const lowerQualityAiKws = kws.filter(k => getKeywordScore(k) < 40 && !highQualityKws.includes(k));
+          highQualityKws.push(...lowerQualityAiKws.slice(0, remainingNeeds));
+        }
+        
+        remainingNeeds = minSmartCount - highQualityKws.length;
+        if (remainingNeeds > 0) {
+          // Use words from title/desc as last resort (no generic array injection)
+          const titleDescWords = ((result.title || "") + " " + (result.description || ""))
+            .toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/)
+            .filter(w => w.length >= 4 && !/^(the|and|for|with|this|that|from|have|has|are|was|were|you|your|also|into|more|some|than|when|will|they)$/.test(w));
+          const uniqueExtra = [...new Set(titleDescWords)].filter(w => !highQualityKws.includes(w));
+          highQualityKws.push(...uniqueExtra.slice(0, remainingNeeds));
         }
       }
       
@@ -810,18 +824,36 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
         console.warn(`[Fail] ${modelName} on key ${currentKeyIndex}: ${error.message}`);
         lastError = error;
 
-        if (
+        // Key is definitively invalid → skip this key entirely
+        const isKeyInvalid =
           error.message.includes("API_KEY_INVALID") ||
           error.message.toLowerCase().includes("key not valid") ||
           error.message.toLowerCase().includes("invalid key") ||
-          error.message.includes("403") ||
+          error.message.includes("401") ||
+          error.message.includes("403");
+
+        if (isKeyInvalid) {
+          console.warn(`[Key Invalid] Key index ${currentKeyIndex} is invalid. Proceeding to next key.`);
+          keyHitRateLimit = true;
+          break; // Break inner model loop → try next key
+        }
+
+        // Rate limit / quota on THIS MODEL → try next model on same key first
+        const isRateLimit =
           error.message.includes("429") ||
           error.message.toLowerCase().includes("quota") ||
-          error.message.toLowerCase().includes("limit")
-        ) {
-          console.warn(`[Key Exhausted] Key index ${currentKeyIndex} is invalid or exhausted. Proceeding to next key.`);
-          keyHitRateLimit = true;
-          break; // Break the inner model loop to try the next key
+          error.message.toLowerCase().includes("rate limit") ||
+          error.message.toLowerCase().includes("resource_exhausted");
+
+        if (isRateLimit) {
+          console.warn(`[Rate Limit] Model ${modelName} rate limited on key ${currentKeyIndex}. Trying next model...`);
+          // Only break to next key if this is the LAST model to try
+          if (i === modelsToAttempt.length - 1) {
+            console.warn(`[Key Exhausted] All models rate limited on key ${currentKeyIndex}. Proceeding to next key.`);
+            keyHitRateLimit = true;
+            break;
+          }
+          continue; // Try next model on same key
         }
 
         if (error.message.includes("400")) {
@@ -902,18 +934,14 @@ CRITICAL RULES:
     // OpenAI Compatible Route (Groq, etc.)
     if (currentProvider !== "gemini") {
       try {
-        const enrichedPrompt = `You are an Expert AI Prompt Engineer specialized in Midjourney and Stable Diffusion. 
-Your task is to analyze the attached image and write a MASTERPIECE prompt.
-
-${prompt}
-
-ADVICE FOR EXCELLENCE: 
-Use professional photography terms (e.g. "85mm lens", "soft bokeh", "rim lighting", "high dynamic range"). 
-Be vivid and poetic but stay within a single paragraph.`;
-
         console.log(`[Attempt] Provider: ${currentProvider} (Image to Prompt) using key index ${currentKeyIndex}`);
-        const text = await fetchOpenAICompatible(currentProvider, apiKey, enrichedPrompt, imageBuffer, mimeType, false);
-        return text;
+        let text;
+        if (currentProvider === "groq") text = await fetchGroq(apiKey, prompt, imageBuffer, mimeType, false);
+        else if (currentProvider === "openai") text = await fetchOpenAI(apiKey, prompt, imageBuffer, mimeType, false);
+        else if (currentProvider === "openrouter") text = await fetchOpenRouter(apiKey, prompt, imageBuffer, mimeType, false);
+        else if (currentProvider === "mistral") text = await fetchMistral(apiKey, prompt, imageBuffer, mimeType, false);
+        else throw new Error("Unknown provider: " + currentProvider);
+        return typeof text === 'string' ? text.trim() : (text?.title || JSON.stringify(text));
       } catch (error) {
         lastError = error;
         if (error.message.includes("401") || error.message.includes("403") || error.message.includes("429")) {
@@ -1024,7 +1052,12 @@ Return ONLY a valid JSON object matching this schema:
     if (currentProvider !== "gemini") {
       try {
         const enrichedPrompt = `You are a strict Stock Photography AI Moderator.\n${prompt}`;
-        const parsed = await fetchOpenAICompatible(currentProvider, apiKey, enrichedPrompt, imageBuffer, mimeType, true);
+        let parsed;
+        if (currentProvider === "groq") parsed = await fetchGroq(apiKey, enrichedPrompt, imageBuffer, mimeType, true);
+        else if (currentProvider === "openai") parsed = await fetchOpenAI(apiKey, enrichedPrompt, imageBuffer, mimeType, true);
+        else if (currentProvider === "openrouter") parsed = await fetchOpenRouter(apiKey, enrichedPrompt, imageBuffer, mimeType, true);
+        else if (currentProvider === "mistral") parsed = await fetchMistral(apiKey, enrichedPrompt, imageBuffer, mimeType, true);
+        else throw new Error("Unknown provider: " + currentProvider);
         return parsed;
       } catch (error) {
         lastError = error;

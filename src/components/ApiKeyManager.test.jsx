@@ -122,8 +122,8 @@ describe('ApiKeyManager Component', () => {
     );
     
     const checkboxes = screen.getAllByRole('checkbox');
-    // The second checkbox is Groq (index 1)
-    fireEvent.click(checkboxes[1]);
+    // The third checkbox is Groq (index 2, after gemini=0 and mistral=1)
+    fireEvent.click(checkboxes[2]);
     
     await waitFor(() => {
       expect(mockOnProviderChange).toHaveBeenCalledWith(['gemini', 'groq']);

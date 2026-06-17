@@ -3,9 +3,17 @@ import { recordApiUsage } from "../apiUsageTracker.js";
 /**
  * Base fetcher for all OpenAI-compatible API endpoints.
  */
-export async function fetchOpenAICompatible(provider, endpoint, models, apiKey, prompt, base64Data, mimeType, forceJson = true) {
+export async function fetchOpenAICompatible(provider, endpoint, models, apiKey, prompt, base64Data, mimeType, forceJson = true, promptSettings = {}) {
   let lastResponseText = null;
   let lastError = null;
+
+  // Build dynamic keyword count instruction from promptSettings (mirrors geminiService buildPrompt logic)
+  const s = promptSettings || {};
+  const isSmartMode = !!s.smartMode;
+  const targetKwCount = isSmartMode ? null : Math.min(100, (s.keywordCount || 48) + 25);
+  const kwCountInstruction = isSmartMode
+    ? `KEYWORDS: Generate between 15 and 30 of the most relevant keywords only. No padding, no filler.`
+    : `KEYWORDS: You MUST generate EXACTLY ${targetKwCount} keywords. Not ${targetKwCount - 5}, not ${targetKwCount + 5}. EXACTLY ${targetKwCount}. Count them before outputting. If you have fewer, add high-value synonyms or commercial use-case terms. If you have more, remove the weakest ones.`;
 
   for (let i = 0; i < models.length; i++) {
     const currentModel = models[i];
@@ -18,12 +26,32 @@ export async function fetchOpenAICompatible(provider, endpoint, models, apiKey, 
       messageContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } });
     }
 
-    // System prompt for OpenAI-compatible providers: focus on quality and strict adherence to rules
-    const systemInstruction = `You are a highly strict professional stock media metadata expert and SEO specialist. You MUST STRICTLY obey the user's prompt. Your absolute highest priorities are: 
-1) Detecting any trademarks, brands, corporate logos, or design copyright (IP) policy violations in the image. If ANY trademark, logo, or brand is visible, you MUST write a specific explanation in the "policyWarning" field of your JSON output. 
-2) Generating EXACTLY the requested number of keywords (or adhering to the 15-30 "Sweet Spot" mode limit).
-3) Outputting valid JSON matching the exact schema requested.
-Do not hallucinate. Failure to follow the exact keyword count or missing a trademark/brand is unacceptable.`;
+    // System prompt for OpenAI-compatible providers: focus on output structure and critical rules.
+    const systemInstruction = `You are a professional stock media metadata expert. Your ENTIRE job is to respond with ONLY a single valid JSON object conforming EXACTLY to the guidelines, count requirements, grammar rules, and trademark scanning instructions provided in the user prompt. 
+
+CRITICAL RULES:
+1. TRADEMARK & IP SAFETY: You must perform the detailed IP/Trademark Scan requested in the user prompt. If any brand name, trademark, company logo, or protected design is found, you MUST set "policyWarning" to a brief (max 2 sentences), specific, actionable message explaining it. If clean, set to null.
+2. KEYWORD COUNT: You must generate the exact keyword count requested in the user prompt (${isSmartMode ? "15-30" : targetKwCount} words). Add commercial use-cases, abstract concepts, or industry terms if you need more keywords to reach this target. Do not stop early.
+3. KEYWORD SCORES: You must score every single keyword 1-100. The number of scores in the "keywordScores" object MUST EXACTLY MATCH the number of keywords in your "keywords" string.
+
+REQUIRED JSON FORMAT:
+{
+  "title": "Specific sentence following user prompt guidelines.",
+  "description": "Factual details plus commercial use cases.",
+  "keywords": "word1, word2, word3, ... (MUST match the requested count)",
+  "keywordScores": {
+    "word1": 95,
+    "word2": 80,
+    "word3": 45
+  },
+  "categories": ["Category Name"],
+  "commercialConcept": "popular",
+  "subjectClarity": "clear",
+  "technicalQuality": "professional",
+  "marketDemand": "high",
+  "scoreReason": "Brief explanation.",
+  "policyWarning": null
+}`;
 
     const payload = {
       model: currentModel,

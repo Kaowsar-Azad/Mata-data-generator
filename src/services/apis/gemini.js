@@ -3,7 +3,7 @@ import { recordApiUsage } from "../apiUsageTracker.js";
 
 const modelsToTry = [
   "gemini-3.5-flash",
-  "gemini-3.1-pro"
+  "gemini-2.5-pro"
 ];
 
 // Fallback dynamic fetch (kept here for logic completeness)

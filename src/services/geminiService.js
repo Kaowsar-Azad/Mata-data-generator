@@ -12,7 +12,7 @@ import { fetchMistral } from "./apis/mistral.js";
 
 const modelsToTry = [
   "gemini-3.5-flash",
-  "gemini-3.1-pro"
+  "gemini-2.5-pro"
 ];
 
 // Fallback dynamic fetch
@@ -685,6 +685,35 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
           finalKws.push(...uniqueNameWords.slice(0, remainingNeeds));
         }
 
+        // Fallback 7: General high-quality stock keywords as a last resort to hit the exact count
+        remainingNeeds = s.keywordCount - finalKws.length;
+        if (remainingNeeds > 0) {
+          const isVector = fileInfo.isEps || (result.title + " " + result.description).toLowerCase().includes("vector") || (result.title + " " + result.description).toLowerCase().includes("illustration");
+          const isVid = fileInfo.isVideo;
+          
+          let generalPool = [];
+          if (isVector) {
+            generalPool = [
+              "vector", "illustration", "graphic", "design", "creative", "element", "isolated", "backdrop", 
+              "background", "artwork", "template", "clipart", "modern", "flat design", "art", "draw", "drawing", 
+              "concept", "decorative", "style", "layout", "symbol", "icon", "banner", "poster", "pattern"
+            ];
+          } else if (isVid) {
+            generalPool = [
+              "video", "footage", "clip", "motion", "cinematic", "real time", "action", "scene", "concept", 
+              "background", "creative", "isolated", "film", "production", "movement", "backdrop", "view", "atmosphere"
+            ];
+          } else {
+            generalPool = [
+              "photo", "photography", "image", "concept", "background", "isolated", "creative", "shot", "picture", 
+              "scene", "backdrop", "wallpaper", "modern", "studio", "view", "object", "detail", "clear", "professional"
+            ];
+          }
+          
+          const uniqueGeneral = generalPool.filter(w => !finalKws.includes(w));
+          finalKws.push(...uniqueGeneral.slice(0, remainingNeeds));
+        }
+
         kws = finalKws.slice(0, s.keywordCount);
       } else {
         kws = finalKws;
@@ -749,10 +778,10 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
       try {
         console.log(`[Attempt] Provider: ${currentProvider} using key index ${currentKeyIndex}`);
         let parsed;
-        if (currentProvider === "groq") parsed = await fetchGroq(apiKey, prompt, imageBuffer, mimeType);
-        else if (currentProvider === "openai") parsed = await fetchOpenAI(apiKey, prompt, imageBuffer, mimeType);
-        else if (currentProvider === "openrouter") parsed = await fetchOpenRouter(apiKey, prompt, imageBuffer, mimeType);
-        else if (currentProvider === "mistral") parsed = await fetchMistral(apiKey, prompt, imageBuffer, mimeType);
+        if (currentProvider === "groq") parsed = await fetchGroq(apiKey, prompt, imageBuffer, mimeType, true, promptSettings);
+        else if (currentProvider === "openai") parsed = await fetchOpenAI(apiKey, prompt, imageBuffer, mimeType, true, promptSettings);
+        else if (currentProvider === "openrouter") parsed = await fetchOpenRouter(apiKey, prompt, imageBuffer, mimeType, true, promptSettings);
+        else if (currentProvider === "mistral") parsed = await fetchMistral(apiKey, prompt, imageBuffer, mimeType, true, promptSettings);
         else throw new Error("Unknown provider: " + currentProvider);
         
         console.log(`[Success] Metadata generated using ${currentProvider}!`);
@@ -771,18 +800,43 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
     const genAI = new GoogleGenerativeAI(apiKey);
     console.log(`[System] Initializing Gemini with key index ${currentKeyIndex} (${apiKey.substring(0, 8)})...`);
 
-    let modelsToAttempt;
+    let modelsToAttempt = [];
     const modelSelection = promptSettings?.modelName || (typeof apiProvider === 'string' ? apiProvider : '');
     
-    if (modelSelection.toLowerCase().includes('pro')) {
-      console.log(`[Model Selection] User selected Pro model (${modelSelection}). Using gemini-3.1-pro.`);
-      modelsToAttempt = ["gemini-3.1-pro", "gemini-3.5-flash"];
-    } else if (modelSelection.toLowerCase().includes('flash') || modelSelection.toLowerCase().includes('gemini')) {
-      let mappedModel = "gemini-3.5-flash";
-      if (modelSelection.includes("3.1")) mappedModel = "gemini-3.1-pro";
-      modelsToAttempt = [mappedModel, "gemini-3.5-flash", "gemini-3.1-pro"];
+    // Parse Safety Settings from the dropdown (e.g., "Gemini 3.5 Flash (Medium)")
+    const msLower = modelSelection.toLowerCase();
+    let safetySettings = undefined;
+    if (msLower.includes("(low)")) {
+      safetySettings = [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_LOW_AND_ABOVE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_LOW_AND_ABOVE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_LOW_AND_ABOVE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_LOW_AND_ABOVE" }
+      ];
+    } else if (msLower.includes("(high)")) {
+      safetySettings = [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }
+      ];
+    } else if (msLower.includes("(none)")) {
+      safetySettings = [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+      ];
+    }
+
+    // Clean and match model names based on UI selections
+    if (msLower.includes('2.5') || msLower.includes('pro')) {
+      modelsToAttempt = ["gemini-2.5-pro", "gemini-3.5-flash"];
+    } else if (msLower.includes('3.5') || msLower.includes('flash') || msLower.includes('gemini') || !msLower) {
+      modelsToAttempt = ["gemini-3.5-flash", "gemini-2.5-pro"];
     } else {
-      modelsToAttempt = ["gemini-3.5-flash", "gemini-3.1-pro"];
+      // Direct string match fallback if a custom raw model is passed in
+      modelsToAttempt = [modelSelection.split(' ')[0], "gemini-3.5-flash", "gemini-2.5-pro"];
     }
     
     // Remove duplicates
@@ -794,11 +848,14 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
     for (let i = 0; i < modelsToAttempt.length; i++) {
       const modelName = modelsToAttempt[i];
       try {
-        console.log(`[Attempt] Model: ${modelName} on key ${currentKeyIndex}`);
-        const model = genAI.getGenerativeModel({ 
+        // Suppress exact model name logging to avoid confusion
+        // console.log(`[Attempt] Model: ${modelName} on key ${currentKeyIndex}`);
+        const modelArgs = { 
           model: modelName,
           generationConfig: { responseMimeType: "application/json" }
-        });
+        };
+        if (safetySettings) modelArgs.safetySettings = safetySettings;
+        const model = genAI.getGenerativeModel(modelArgs);
 
         const contentParts = [];
         if (Array.isArray(imageBuffer)) {
@@ -834,7 +891,7 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
         }
         recordApiUsage("gemini", apiKey, { totalTokens, requests: 1 });
 
-        console.log(`[Success] Metadata generated using ${modelName} on key index ${currentKeyIndex}!`);
+        // console.log(`[Success] Metadata generated using ${modelName} on key index ${currentKeyIndex}!`);
 
         const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
         let parsed;
@@ -849,7 +906,7 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
         return postProcessMetadata(parsed, promptSettings, fileInfo);
 
       } catch (error) {
-        console.warn(`[Fail] ${modelName} on key ${currentKeyIndex}: ${error.message}`);
+        // console.warn(`[Fail] ${modelName} on key ${currentKeyIndex}: ${error.message}`);
         lastError = error;
 
         // Key is definitively invalid → skip this key entirely
@@ -884,18 +941,68 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
           continue; // Try next model on same key
         }
 
+        // 503 Service Unavailable (high demand) → retry same model with backoff
+        const isHighDemand =
+          error.message.includes("503") ||
+          error.message.toLowerCase().includes("high demand") ||
+          error.message.toLowerCase().includes("service unavailable") ||
+          error.message.toLowerCase().includes("overloaded");
+
+        if (isHighDemand) {
+          // Retry current model up to 3 times with exponential backoff
+          let retried = false;
+          for (let retry = 0; retry < 3; retry++) {
+            const waitMs = (retry + 1) * 3000; // 3s, 6s, 9s
+            console.warn(`[503 High Demand] Waiting ${waitMs / 1000}s before retry ${retry + 1}/3 for ${modelName}...`);
+            await new Promise(r => setTimeout(r, waitMs));
+            try {
+              const modelArgs2 = {
+                model: modelName,
+                generationConfig: { responseMimeType: "application/json" }
+              };
+              if (safetySettings) modelArgs2.safetySettings = safetySettings;
+              const model2 = genAI.getGenerativeModel(modelArgs2);
+              const contentParts2 = [];
+              if (Array.isArray(imageBuffer)) {
+                imageBuffer.forEach(buf => contentParts2.push({ inlineData: { data: buf, mimeType } }));
+              } else {
+                contentParts2.push({ inlineData: { data: imageBuffer, mimeType } });
+              }
+              contentParts2.push({ text: prompt });
+              const result2 = await model2.generateContent(contentParts2);
+              const response2 = await result2.response;
+              const text2 = response2.text();
+              try {
+                const um2 = response2.usageMetadata;
+                if (um2 && typeof um2.totalTokenCount === "number") recordApiUsage("gemini", apiKey, { totalTokens: um2.totalTokenCount, requests: 1 });
+              } catch { /* ignore */ }
+              const cleaned2 = text2.replace(/```json/g, "").replace(/```/g, "").trim();
+              let parsed2;
+              try { parsed2 = JSON.parse(cleaned2); }
+              catch (e2) {
+                const match2 = cleaned2.match(/\{[\s\S]*\}/);
+                if (match2) parsed2 = JSON.parse(match2[0]);
+                else throw new Error("JSON parse error after 503 retry");
+              }
+              retried = true;
+              return postProcessMetadata(parsed2, promptSettings, fileInfo);
+            } catch (retryErr) {
+              lastError = retryErr;
+              // If still 503, continue retry loop; otherwise break
+              if (!retryErr.message.includes("503") && !retryErr.message.toLowerCase().includes("high demand") && !retryErr.message.toLowerCase().includes("overloaded")) {
+                break;
+              }
+            }
+          }
+          if (!retried) continue; // Give up on this model, try next
+          break;
+        }
+
         if (error.message.includes("400")) {
           continue;
         }
 
         if (error.message.includes("404")) {
-          if (i === modelsToAttempt.length - 1) {
-            const dynamicModels = await getAvailableModels(apiKey);
-            if (dynamicModels.length > 0) {
-              const newModels = dynamicModels.filter(m => !modelsToAttempt.includes(m));
-              modelsToAttempt = [...modelsToAttempt, ...newModels];
-            }
-          }
           continue; // Try next model
         }
       }

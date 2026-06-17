@@ -1,11 +1,11 @@
 export const DUPLICATE_THRESHOLD = 10;
 
-export const computePHash = (src) =>
+export const computePHash = (src, shouldRevoke = true) =>
   new Promise((resolve) => {
     const SIZE = 8;
     const img = new Image();
     img.onload = () => {
-      if (src && src.startsWith('blob:')) {
+      if (shouldRevoke && src && src.startsWith('blob:')) {
         URL.revokeObjectURL(src);
       }
       try {
@@ -26,7 +26,7 @@ export const computePHash = (src) =>
       }
     };
     img.onerror = () => {
-      if (src && src.startsWith('blob:')) {
+      if (shouldRevoke && src && src.startsWith('blob:')) {
         URL.revokeObjectURL(src);
       }
       resolve(null);
@@ -44,15 +44,19 @@ export const hammingDistance = (a, b) => {
 export const computeHashForEntry = async (entry) => {
   try {
     let src = null;
+    let shouldRevoke = false;
     if (entry.preview && !entry.preview.includes('placeholder')) {
       src = entry.preview;
+      shouldRevoke = false;
     } else if (entry.visualFile) {
       src = URL.createObjectURL(entry.visualFile);
+      shouldRevoke = true;
     } else if (entry.file && !entry.isEps && !entry.isVideo) {
       src = URL.createObjectURL(entry.file);
+      shouldRevoke = true;
     }
     if (!src) return null;
-    return await computePHash(src);
+    return await computePHash(src, shouldRevoke);
   } catch {
     return null;
   }

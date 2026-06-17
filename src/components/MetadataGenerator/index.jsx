@@ -71,11 +71,8 @@ const resizeImageToBase64Worker = (file, maxSize = 1024) => {
   });
 };
 
-// A small component to safely render thumbnails with stateful fallback to avoid React reconciliation/direct DOM manipulation bugs
 const PolicyViolationThumbnail = ({ img }) => {
-  const [error, setError] = useState(false);
-
-  if (!img.preview || error) {
+  if (!img.preview) {
     return (
       <div style={{ display: 'flex', width: '100%', height: '100%', background: 'rgba(239, 68, 68, 0.15)', borderRadius: '0.2rem', alignItems: 'center', justifyContent: 'center' }}>
         <ImageIcon size={14} style={{ color: '#ef4444' }} />
@@ -88,7 +85,6 @@ const PolicyViolationThumbnail = ({ img }) => {
       src={img.preview} 
       alt="Thumbnail" 
       style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '0.2rem' }} 
-      onError={() => setError(true)}
     />
   );
 };

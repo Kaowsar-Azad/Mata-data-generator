@@ -148,7 +148,7 @@ const MetadataCard = memo(({
               }}>
                 <ShieldAlert style={{ color: '#ef4444', width: '1rem', height: '1rem', flexShrink: 0, marginTop: '0.1rem' }} />
                 <div>
-                  <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '0.2rem' }}>⚠ IP / Policy Violation Detected</span>
+                  <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '0.2rem' }}>⚠ Stock Site Policy Violation Detected</span>
                   <p style={{ fontSize: '0.73rem', color: 'var(--text-1)', margin: 0, lineHeight: 1.5 }}>{img.result.policyWarning}</p>
                 </div>
               </div>

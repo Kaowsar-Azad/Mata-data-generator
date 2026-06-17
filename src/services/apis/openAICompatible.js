@@ -18,8 +18,12 @@ export async function fetchOpenAICompatible(provider, endpoint, models, apiKey, 
       messageContent.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Data}` } });
     }
 
-    // System prompt for OpenAI-compatible providers: focus on quality and valid JSON
-    const systemInstruction = `You are a professional stock media metadata expert and SEO specialist. Your job is to generate accurate, highly relevant, and premium-quality metadata for stock agencies in valid JSON format. Always produce complete, valid JSON. Do not hallucinate irrelevant keywords. Focus on quality over quantity.`;
+    // System prompt for OpenAI-compatible providers: focus on quality and strict adherence to rules
+    const systemInstruction = `You are a highly strict professional stock media metadata expert and SEO specialist. You MUST STRICTLY obey the user's prompt. Your absolute highest priorities are: 
+1) Detecting any trademarks, brands, corporate logos, or design copyright (IP) policy violations in the image. If ANY trademark, logo, or brand is visible, you MUST write a specific explanation in the "policyWarning" field of your JSON output. 
+2) Generating EXACTLY the requested number of keywords (or adhering to the 15-30 "Sweet Spot" mode limit).
+3) Outputting valid JSON matching the exact schema requested.
+Do not hallucinate. Failure to follow the exact keyword count or missing a trademark/brand is unacceptable.`;
 
     const payload = {
       model: currentModel,

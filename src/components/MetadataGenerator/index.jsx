@@ -71,6 +71,28 @@ const resizeImageToBase64Worker = (file, maxSize = 1024) => {
   });
 };
 
+// A small component to safely render thumbnails with stateful fallback to avoid React reconciliation/direct DOM manipulation bugs
+const PolicyViolationThumbnail = ({ img }) => {
+  const [error, setError] = useState(false);
+
+  if (!img.preview || error) {
+    return (
+      <div style={{ display: 'flex', width: '100%', height: '100%', background: 'rgba(239, 68, 68, 0.15)', borderRadius: '0.2rem', alignItems: 'center', justifyContent: 'center' }}>
+        <ImageIcon size={14} style={{ color: '#ef4444' }} />
+      </div>
+    );
+  }
+
+  return (
+    <img 
+      src={img.preview} 
+      alt="Thumbnail" 
+      style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '0.2rem' }} 
+      onError={() => setError(true)}
+    />
+  );
+};
+
 export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptSettings, ftpConfigs = [] }) {
   const [images, setImages] = useState([]);
   const imagesRef = useRef([]);
@@ -1752,6 +1774,40 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           </div>
         );
       })()}
+
+      {/* Policy Violation Summary Banner */}
+      {images.some(img => img.result?.policyWarning) && (
+        <div className="glass card animate-fade-in p-4" style={{ background: 'rgba(239, 68, 68, 0.05)', borderLeft: '4px solid #ef4444', marginBottom: '1.25rem' }}>
+          <div className="flex items-center gap-3">
+            <span style={{ fontSize: '1.5rem' }}>🛑</span>
+            <div style={{ flex: 1 }}>
+              <h4 style={{ margin: 0, fontSize: '0.95rem', color: '#ef4444', fontWeight: 800 }}>STOCK SITE POLICY VIOLATION DETECTED</h4>
+              <p className="text-muted" style={{ fontSize: '0.8rem', margin: '2px 0 0 0', color: 'var(--text-2)' }}>
+                {images.filter(img => img.result?.policyWarning).length}টি ইমেজে পলিসি ভায়োলেশন পাওয়া গেছে। আপনি চাইলে এখান থেকেই ইমেজগুলো ডিলিট করে দিতে পারেন।
+              </p>
+            </div>
+          </div>
+          <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {images.filter(img => img.result?.policyWarning).map(img => (
+              <div key={img.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', padding: '0.3rem 0.5rem 0.3rem 0.3rem', borderRadius: '0.4rem', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                <div style={{ position: 'relative', width: '28px', height: '28px', flexShrink: 0 }}>
+                  <PolicyViolationThumbnail img={img} />
+                </div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-1)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>{img.file.name}</span>
+                <button 
+                  onClick={() => removeImage(img.id)}
+                  style={{ background: 'var(--surface-1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', cursor: 'pointer', padding: '0.2rem', borderRadius: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                  title="Remove this image"
+                  onMouseOver={(e) => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = '#fff'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.background = 'var(--surface-1)'; e.currentTarget.style.color = '#ef4444'; }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* View Container */}
       <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'stretch' }}>

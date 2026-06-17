@@ -38,6 +38,39 @@ const isVideoFile = (file) => {
   return ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext);
 };
 
+let imageWorker = null;
+let workerMsgId = 0;
+const workerCallbacks = new Map();
+
+function getWorker() {
+  if (!imageWorker) {
+    imageWorker = new Worker(new URL('../../workers/imageWorker.js', import.meta.url), { type: 'module' });
+    imageWorker.onmessage = (e) => {
+      const { id, success, dataUrl, error } = e.data;
+      const cb = workerCallbacks.get(id);
+      if (cb) {
+        workerCallbacks.delete(id);
+        if (success) cb.resolve(dataUrl);
+        else cb.reject(new Error(error));
+      }
+    };
+  }
+  return imageWorker;
+}
+
+const resizeImageToBase64Worker = (file, maxSize = 1024) => {
+  return new Promise((resolve, reject) => {
+    try {
+      const worker = getWorker();
+      const id = ++workerMsgId;
+      workerCallbacks.set(id, { resolve, reject });
+      worker.postMessage({ file, maxSize, id });
+    } catch (err) {
+      reject(err);
+    }
+  });
+};
+
 export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptSettings, ftpConfigs = [] }) {
   const [images, setImages] = useState([]);
   const imagesRef = useRef([]);
@@ -137,7 +170,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     };
   }, []);
 
-  const concurrentLimit = promptSettings?.concurrentLimit || 2;
+  const concurrentLimit = promptSettings?.concurrentLimit || 10;
   const setConcurrentLimit = (val) => {
     if (typeof setPromptSettings === "function") {
       setPromptSettings((prev) => ({ ...prev, concurrentLimit: val }));
@@ -460,44 +493,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     setDismissedDuplicates(false);
   };
 
-  const resizeImageToBase64 = (file, maxSize = 800) =>
-    new Promise((resolve, reject) => {
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(file);
-      
-      img.onload = () => {
-        URL.revokeObjectURL(objectUrl);
-        let width = img.width;
-        let height = img.height;
-        
-        if (width > height) {
-          if (width > maxSize) {
-            height = Math.round((height * maxSize) / width);
-            width = maxSize;
-          }
-        } else {
-          if (height > maxSize) {
-            width = Math.round((width * maxSize) / height);
-            height = maxSize;
-          }
-        }
-        
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        resolve(canvas.toDataURL("image/jpeg", 0.7));
-      };
-      
-      img.onerror = (err) => {
-        URL.revokeObjectURL(objectUrl);
-        reject(err);
-      };
-      
-      img.src = objectUrl;
-    });
+  const resizeImageToBase64 = (file, maxSize = 1024) => resizeImageToBase64Worker(file, maxSize);
 
   const [progress, setProgress] = useState(0);
 
@@ -582,7 +578,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 )
               );
             } else if (img.visualFile) {
-              const dataUrl = await resizeImageToBase64(img.visualFile, 800);
+              const dataUrl = await resizeImageToBase64(img.visualFile, 1024);
               base64 = dataUrl.split(",")[1];
               mimeType = "image/jpeg";
             } else if (img.isEps) {
@@ -1028,22 +1024,34 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         
         try {
           const uploadPromises = uploadConfigs.map(async (conf) => {
-            const ftpRes = await window.electronAPI.uploadFtp(conf, filesToUpload, jobId);
-            if (!ftpRes.success) {
-              throw new Error(`Failed on ${conf.websiteName || conf.host}: ${ftpRes.error}`);
+            try {
+              const ftpRes = await window.electronAPI.uploadFtp(conf, filesToUpload, jobId);
+              if (!ftpRes.success) {
+                return { host: conf.websiteName || conf.host, globalError: ftpRes.error, fileErrors: {} };
+              }
+              return { host: conf.websiteName || conf.host, fileErrors: ftpRes.fileErrors || {}, globalError: null };
+            } catch (err) {
+              return { host: conf.websiteName || conf.host, globalError: err.message, fileErrors: {} };
             }
-            return { host: conf.websiteName || conf.host, fileErrors: ftpRes.fileErrors || {} };
           });
           
           const uploadResults = await Promise.all(uploadPromises);
 
           const fileErrorsMap = {};
           for (const res of uploadResults) {
-            for (const [filePath, err] of Object.entries(res.fileErrors)) {
-              if (err) {
+            if (res.globalError) {
+              for (const filePath of filesToUpload) {
                 const normalizedPath = filePath.replace(/\\/g, '/');
                 if (!fileErrorsMap[normalizedPath]) fileErrorsMap[normalizedPath] = {};
-                fileErrorsMap[normalizedPath][res.host] = err;
+                fileErrorsMap[normalizedPath][res.host] = res.globalError;
+              }
+            } else {
+              for (const [filePath, err] of Object.entries(res.fileErrors)) {
+                if (err) {
+                  const normalizedPath = filePath.replace(/\\/g, '/');
+                  if (!fileErrorsMap[normalizedPath]) fileErrorsMap[normalizedPath] = {};
+                  fileErrorsMap[normalizedPath][res.host] = err;
+                }
               }
             }
           }

@@ -1633,6 +1633,19 @@ class ProgressTransform extends Transform {
   }
 }
 
+const globalMetadataLocks = new Map();
+
+async function acquireMetadataLock(filePath) {
+  while (globalMetadataLocks.get(filePath)) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+  globalMetadataLocks.set(filePath, true);
+}
+
+function releaseMetadataLock(filePath) {
+  globalMetadataLocks.delete(filePath);
+}
+
 async function uploadFilesParallel(config, filePaths, type, jobId, event) {
   const validPaths = filePaths.filter(p => fs.existsSync(p));
   const fileErrors = {};
@@ -1683,8 +1696,10 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
         const ext = path.extname(filePath).toLowerCase();
         // Only process common formats we can write metadata to (jpg, jpeg, png, eps, webp, tiff)
         if (['.jpg', '.jpeg', '.png', '.eps', '.webp', '.tiff'].includes(ext)) {
-          const exiftool = await getExifTool();
-          let tags = {};
+          await acquireMetadataLock(filePath);
+          try {
+            const exiftool = await getExifTool();
+            let tags = {};
           try {
             tags = await exiftool.read(filePath);
           } catch (e) {
@@ -1759,6 +1774,9 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
             }
           } else {
             fileLog(`[upload-metadata] File ${fileName} has no metadata. Uploading as-is without adding metadata.`);
+          }
+          } finally {
+            releaseMetadataLock(filePath);
           }
         }
       } catch (metadataErr) {

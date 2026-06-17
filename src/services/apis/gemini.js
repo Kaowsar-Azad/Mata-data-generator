@@ -2,10 +2,8 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { recordApiUsage } from "../apiUsageTracker.js";
 
 const modelsToTry = [
-  "gemini-3.1-pro-preview",
   "gemini-3.5-flash",
-  "gemini-3.1-flash-lite",
-  "gemini-2.5-flash"
+  "gemini-3.1-pro"
 ];
 
 // Fallback dynamic fetch (kept here for logic completeness)

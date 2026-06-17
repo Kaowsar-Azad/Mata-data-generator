@@ -4,6 +4,7 @@ import { CheckCircle2, Copy } from "lucide-react";
 export function MetaField({ label, value, onChange, isTextArea, isKeywords, img }) {
   const [copied, setCopied] = useState(false);
   const [isTextMode, setIsTextMode] = useState(false);
+  const [newKeyword, setNewKeyword] = useState("");
 
   const handleCopy = () => {
     navigator.clipboard.writeText(value);
@@ -45,6 +46,21 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img 
     const keywords = (value || '').split(',').map(k => k.trim()).filter(Boolean);
     const newKws = keywords.filter((_, idx) => idx !== idxToRemove);
     onChange(newKws.join(', '));
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const trimmed = newKeyword.trim();
+      if (trimmed) {
+        const keywords = (value || '').split(',').map(k => k.trim()).filter(Boolean);
+        if (!keywords.includes(trimmed)) {
+          keywords.push(trimmed);
+          onChange(keywords.join(', '));
+        }
+        setNewKeyword("");
+      }
+    }
   };
 
   return (
@@ -92,68 +108,96 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img 
       {isKeywords && !isTextMode ? (
         <div 
           className="flex flex-wrap gap-2 p-3 rounded-lg"
-          style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', minHeight: '90px', alignContent: 'flex-start' }}
+          style={{ 
+            background: 'rgba(255, 255, 255, 0.02)', 
+            border: '1px solid var(--glass-border)', 
+            boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.05)',
+            backdropFilter: 'blur(10px)',
+            minHeight: '90px', 
+            alignContent: 'flex-start' 
+          }}
+          onClick={(e) => {
+             if (e.target === e.currentTarget) {
+                 const input = e.currentTarget.querySelector('input[type="text"]');
+                 if (input) input.focus();
+             }
+          }}
         >
           {(value || '').split(',').map(k => k.trim()).filter(Boolean).map((kw, idx) => {
             const cleanedKw = kw.replace(/\s+\d+$/, '');
             const score = getKeywordScore(cleanedKw, img);
             let colorStr = score >= 75 ? '#10b981' : score >= 40 ? '#f59e0b' : '#ef4444';
+            let bgStr = score >= 75 ? 'rgba(16, 185, 129, 0.1)' : score >= 40 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)';
             
             return (
               <div 
                 key={idx} 
                 className="group flex items-center transition-all"
                 style={{ 
-                  background: 'var(--surface-1)', 
+                  background: bgStr, 
                   color: 'var(--text-1)', 
-                  border: '1px solid var(--glass-border)',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                  border: `1px solid ${colorStr}40`,
+                  boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
                   fontSize: '0.72rem',
-                  fontWeight: '500',
+                  fontWeight: '600',
                   borderRadius: '100px',
-                  padding: '2px 6px 2px 8px',
-                  gap: '5px',
-                  height: '24px',
-                  boxSizing: 'border-box'
+                  padding: '3px 8px 3px 10px',
+                  gap: '6px',
+                  height: '26px',
+                  boxSizing: 'border-box',
+                  transform: 'scale(1)',
+                  cursor: 'default'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.transform = 'scale(1.03)';
+                  e.currentTarget.style.boxShadow = `0 4px 10px ${colorStr}30`;
+                  e.currentTarget.style.borderColor = colorStr;
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.boxShadow = '0 2px 5px rgba(0,0,0,0.05)';
+                  e.currentTarget.style.borderColor = `${colorStr}40`;
                 }}
                 title={`Relevance: ${score >= 75 ? 'High' : score >= 40 ? 'Medium' : 'Low'} (${score}/100)`}
               >
                 <span 
                   style={{ 
-                    width: '5px', 
-                    height: '5px', 
+                    width: '6px', 
+                    height: '6px', 
                     borderRadius: '50%', 
                     backgroundColor: colorStr,
                     display: 'inline-block',
-                    flexShrink: 0
+                    flexShrink: 0,
+                    boxShadow: `0 0 5px ${colorStr}`
                   }} 
                 />
-                <span className="select-none" style={{ letterSpacing: '0.01em', whiteSpace: 'nowrap' }}>{cleanedKw}</span>
+                <span className="select-none" style={{ letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>{cleanedKw}</span>
                 <span 
                   role="button"
-                  onClick={() => removeKeyword(idx)}
+                  onClick={(e) => { e.stopPropagation(); removeKeyword(idx); }}
                   className="flex items-center justify-center rounded-full transition-all"
                   style={{ 
                     cursor: 'pointer',
-                    color: 'var(--text-3)',
+                    color: colorStr,
                     padding: '2px',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    opacity: 0.6,
-                    width: '14px',
-                    height: '14px',
-                    flexShrink: 0
+                    opacity: 0.7,
+                    width: '16px',
+                    height: '16px',
+                    flexShrink: 0,
+                    marginLeft: '2px'
                   }}
                   onMouseOver={(e) => { 
-                    e.currentTarget.style.color = 'var(--text-1)';
-                    e.currentTarget.style.background = 'rgba(156, 163, 175, 0.15)';
+                    e.currentTarget.style.color = '#fff';
+                    e.currentTarget.style.background = colorStr;
                     e.currentTarget.style.opacity = '1';
                   }}
                   onMouseOut={(e) => { 
-                    e.currentTarget.style.color = 'var(--text-3)';
+                    e.currentTarget.style.color = colorStr;
                     e.currentTarget.style.background = 'transparent';
-                    e.currentTarget.style.opacity = '0.6';
+                    e.currentTarget.style.opacity = '0.7';
                   }}
                 >
                   &times;
@@ -161,6 +205,26 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img 
               </div>
             );
           })}
+          
+          <input
+            type="text"
+            value={newKeyword}
+            onChange={(e) => setNewKeyword(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="+ Add keyword..."
+            style={{
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: 'var(--text-1)',
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              minWidth: '100px',
+              flex: '1 1 auto',
+              padding: '2px 4px',
+              height: '24px'
+            }}
+          />
         </div>
       ) : isTextArea ? (
         <textarea

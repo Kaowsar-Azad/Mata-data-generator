@@ -11,10 +11,8 @@ import { fetchMistral } from "./apis/mistral.js";
  */
 
 const modelsToTry = [
-  "gemini-3.1-pro-preview",
   "gemini-3.5-flash",
-  "gemini-3.1-flash-lite",
-  "gemini-2.5-flash"
+  "gemini-3.1-pro"
 ];
 
 // Fallback dynamic fetch
@@ -146,15 +144,15 @@ Generate metadata as if you are looking at a vector illustration about "${cleanN
   if (s.smartMode) {
     keywordEmphasis = `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-KEYWORD STRATEGY — SMART QUALITY MODE
+KEYWORD STRATEGY — SWEET SPOT MODE (ADOBE OPTIMIZED)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Generate ONLY the most commercially valuable, high-buyer-intent keywords. No padding, no generic filler.
+Adobe Stock recommends generating exactly 15 to 30 highly relevant keywords. You MUST ignore any other count requirements and ONLY generate the best 15 to 30 keywords. No padding, no generic filler.
 
-Use this 4-tier framework:
-  TIER 1 — EXACT MATCH (highest priority): The precise literal terms a buyer types to find THIS specific image (3-8 keywords)
-  TIER 2 — LONG-TAIL PHRASES: 2-word combinations that capture specific buyer intent (5-10 keywords)
-  TIER 3 — SEMANTIC/CONCEPTUAL: Broader themes, moods, emotions, and contexts strongly implied by the image (5-10 keywords)
-  TIER 4 — COMMERCIAL APPLICATION: Real use-cases, industries, or contexts where buyers license this image (3-7 keywords)
+Use this framework to find the best 15-30 keywords:
+  TIER 1 — EXACT MATCH (highest priority): The precise literal terms a buyer types to find THIS specific image.
+  TIER 2 — LONG-TAIL PHRASES: 2-word combinations that capture specific buyer intent.
+  TIER 3 — SEMANTIC/CONCEPTUAL: Broader themes, moods, emotions, and contexts strongly implied by the image.
+  TIER 4 — COMMERCIAL APPLICATION: Real use-cases, industries, or contexts where buyers license this image.
 
 Do NOT generate generic terms like "image", "photo", "picture", "file", "design", "element" unless they appear as part of a specific compound like "flat design" or "vector element".
 Do NOT pad the list. Every keyword must pass this test: "Would a buyer searching ONLY this term want to find this specific image?"`;  
@@ -165,41 +163,39 @@ KEYWORD STRATEGY — MAXIMUM COVERAGE MODE (EXACTLY ${promptKeywordsCount} keywo
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 You MUST generate EXACTLY ${promptKeywordsCount} keywords using this precise 6-tier framework:
 
-  TIER 1 — PRIMARY SUBJECTS (15-20 keywords): The literal nouns visible in the image. Most important tier — buyers search these first.
+  TIER 1 — PRIMARY SUBJECTS: The literal nouns visible in the image. Most important tier — buyers search these first.
     Examples: "laptop", "coffee", "woman", "mountain", "heart icon", "stethoscope"
 
-  TIER 2 — DESCRIPTIVE ATTRIBUTES (12-18 keywords): Specific colors, materials, quantities, styles, lighting, and conditions.
+  TIER 2 — DESCRIPTIVE ATTRIBUTES: Specific colors, materials, quantities, styles, lighting, and conditions.
     Examples: "red", "wooden", "three", "hand-drawn", "transparent background", "overhead view", "studio light"
 
-  TIER 3 — ACTIONS & STATES (8-12 keywords): What is happening, movement, poses, interactions.
+  TIER 3 — ACTIONS & STATES: What is happening, movement, poses, interactions.
     Examples: "working", "smiling", "flying", "isolated", "growing", "connected", "holding"
 
-  TIER 4 — MOODS & CONCEPTS (12-18 keywords): High-value abstract ideas, emotions, and themes the image conveys.
+  TIER 4 — MOODS & CONCEPTS: High-value abstract ideas, emotions, and themes the image conveys.
     Examples: "success", "freedom", "teamwork", "healthcare", "innovation", "sustainability", "leadership"
 
-  TIER 5 — COMMERCIAL USE-CASES (8-12 keywords): Specific industries or ways buyers will use this image.
+  TIER 5 — COMMERCIAL USE-CASES: Specific industries or ways buyers will use this image.
     Examples: "website banner", "social media", "presentation", "infographic", "logo", "packaging"
 
-  TIER 6 — HIGH-VALUE SYNONYMS & RELATED CONCEPTS (Fill exactly to reach ${promptKeywordsCount}): Do NOT use generic filler. Use highly specific, related commercial terms, regional variants, and niche industry vocabulary.
-    Examples: "fintech", "wellness", "e-commerce", "startup", "remote work", "cybersecurity"
+  TIER 6 — HIGH-VALUE SYNONYMS & RELATED CONCEPTS (Fill exactly to reach ${promptKeywordsCount}): Use highly specific, related commercial terms, regional variants, and niche industry vocabulary. DO NOT USE GENERIC FILLER.
 
 COUNT ENFORCEMENT PROTOCOL:
   Step 1: Generate all keywords across all 6 tiers using ONLY highly descriptive, valuable terms.
-  Step 2: Count your total. If below ${promptKeywordsCount}, expand Tier 6 with more high-value synonyms or related industry terms. Do NOT use generic words like "nice", "picture", "background".
+  Step 2: Count your total. If below ${promptKeywordsCount}, expand Tier 6 with more high-value synonyms or related industry terms. 
+  CRITICAL RULE: NEVER invent random, "garbage" keywords, or hallucinate physical objects that are not in the image. To reach the exact count of ${promptKeywordsCount}, you MUST use broader commercial concepts, industry themes, and abstract meanings. You may include a maximum of 1 or 2 focal color names (e.g., "navy blue").
   Step 3: If above ${promptKeywordsCount}, remove the weakest keywords.
-  Step 4: Final count MUST be EXACTLY ${promptKeywordsCount}. Not one more, not one less.
+  Step 4: Final count MUST be EXACTLY ${promptKeywordsCount}. Not one more, not one less. This is an absolute requirement.
 
-ABSOLUTE MINIMUM STANDARD: Every single keyword must be a highly relevant, commercial search term a real buyer would type. No generic filler!`;
+ABSOLUTE MINIMUM STANDARD: Every single keyword must be a highly relevant, commercial search term a real buyer would type. No generic filler and NO hallucinated elements!`;
   }
 
   // ── Master prompt assembly (token-efficient) ──────────────────────────────
   const kwMode = s.smartMode
-    ? `KEYWORDS — QUALITY MODE: Generate only the most relevant, high buyer-intent keywords suitable for the image (typically 20 to 45 keywords). Do not feel forced to reach any specific count, and do not pad with generic or irrelevant words. Output only keywords that are directly relevant to this specific asset.`
-    : `KEYWORDS — COUNT MODE: Generate EXACTLY ${promptKeywordsCount} keywords using 6 tiers:
-  T1 Primary nouns/subjects (15-20), T2 Colors/materials/style attributes (10-15),
-  T3 Actions/states/composition (8-12), T4 Moods/concepts/emotions (10-15),
-  T5 Commercial use-cases (8-12), T6 Industry/niche/synonym terms (fill to hit ${promptKeywordsCount} exactly).
-  Count before output. Adjust T6 up/down to hit exactly ${promptKeywordsCount}. Never submit fewer.`;
+    ? `KEYWORDS — SWEET SPOT MODE: Generate EXACTLY 15 to 30 of the most relevant, high buyer-intent keywords. Do not exceed 30 keywords. Do not pad with generic or irrelevant words. Output only keywords that are directly relevant to this specific asset.`
+    : `KEYWORDS — COUNT MODE: Generate EXACTLY ${promptKeywordsCount} keywords using 6 tiers.
+  T1 Primary nouns, T2 Attributes, T3 Actions, T4 Concepts, T5 Use-cases, T6 Industry terms (fill to hit ${promptKeywordsCount} exactly).
+  Count before output. Adjust T6 up/down to hit exactly ${promptKeywordsCount}. Never submit fewer or more.`;
 
   return `${fileContext}
 
@@ -234,11 +230,10 @@ Rules:
 
 Keyword rules (apply to all modes):
 
-SLOT ORDER — You MUST place keywords in this exact 4-slot priority sequence:
-  SLOT 1 (Positions 1-10): PRIMARY SUBJECTS & CORE THEME — The main visible subjects, actions, and the single most important commercial concept. These receive the highest algorithmic weight on Adobe Stock. Every word from the title MUST appear here.
-  SLOT 2 (Positions 11-20): SPECIFIC DESCRIPTIONS — Colors, materials, lighting style, camera angle, composition, and mood.
-  SLOT 3 (Positions 21-30): CONCEPTUAL & COMMERCIAL TERMS — Abstract themes, emotions, and buyer use-cases that ad agencies and marketers search (e.g., "innovation", "trust", "teamwork", "sustainability", "lifestyle"). Only include if genuinely relevant.
-  SLOT 4 (Positions 31+): GRAPHIC & TECHNICAL TAGS — Style descriptors and format tags (e.g., "vector", "flat design", "icon", "illustration", "3D render", "seamless pattern", "isolated", "white background", "transparent").
+SLOT ORDER & STRICT RANKING — You MUST order and rank keywords exactly by their relevance to the image. The most accurate, literal, and important words MUST come first:
+  TOP 10 KEYWORDS (Positions 1-10): THE CORE (CRITICAL FOR ADOBE STOCK) — These are the absolute most important, highest-ranking, literal, and descriptive search terms for this specific image. You MUST place them at the very front.
+  SLOT 2 (Positions 11-25): ATTRIBUTES & SECONDARY SUBJECTS — Colors, materials, lighting style, camera angle, composition, secondary background elements, and specific demographics.
+  SLOT 3 (Positions 26+): COMMERCIAL CONCEPTS & THEMES — To reach your exact total keyword count, fill these slots primarily with abstract themes, emotions, industry niches, and buyer use-cases. You may include a MAXIMUM of 1 or 2 specific focal colors. DO NOT hallucinate fake physical objects.
 
 GRAMMAR RULES (Adobe Stock NLP requirements):
 - Use SINGULAR nouns only. The algorithm auto-expands to plural. Write "dog" not "dogs", "camera" not "cameras".
@@ -248,8 +243,22 @@ QUALITY RULES:
 - NO generic filler: "thing", "item", "nice", "great", "image", "photo", "picture", "graphic", "element".
 - STRICT VISIBILITY RULE: ONLY describe what is PHYSICALLY VISIBLE. Never infer tech concepts not shown (e.g., a physical camera icon does NOT justify adding "software", "web", "data", "application", "wireless").
 - NO root duplicates: never use both "camera" and "cameras", or "color" and "colorful". Pick the most commercial singular form.
-- NO brand/trademark names. No banned words: "free", "download", "copyright", "watermark".
+- UNIVERSAL BRAND & TRADEMARK BAN: You must NEVER include ANY brand name, company name, corporate entity, trademarked term, product model name, or protected design name in keywords, titles, or descriptions. This ban applies universally to ALL brands and trademarks globally (not just famous ones like Nike, Apple, Adidas, etc.). You must use generic, non-branded alternatives instead (e.g., "smartwatch" instead of "Apple Watch", "athletic shoes" instead of "Nikes", "carbonated soft drink" instead of "Coca-Cola", "gaming console" instead of "PlayStation").
+- No banned words: "free", "download", "copyright", "watermark".
 - No hashtags. ${singleWordRule}${negInstructions}
+
+== IP & POLICY VIOLATION SCAN (UNIVERSAL TRADEMARK CHECK) ==
+Before generating metadata, carefully examine the image for elements that would cause REJECTION on Adobe Stock, Shutterstock, or Getty Images due to intellectual property (IP) laws. You must check for:
+- LOGOS & BRANDING: Any visible logo, wordmark, brand name, corporate identity, emblem, or trademarked symbol on clothing, products, vehicles, devices, signs, or in the background.
+- TRADEMARKED SPORTS DESIGNS: Distinctive designs or official match items associated with specific sports leagues, teams, tournaments, or sponsors.
+- COMMERCIAL PRODUCTS WITH PROTECTED DESIGN: Recognizable toys, specific consumer electronics, designer goods, or vehicles where the product's shape or design itself is protected.
+- COPYRIGHTED ARTWORK: Art, murals, sculptures, graffiti, or illustrations created by a known or unknown artist that are clearly visible and identifiable.
+- RESTRICTED ARCHITECTURE: Modern buildings, landmarks, or private properties with a distinctive trademarked design.
+- METADATA KEYWORD VIOLATIONS: Any brand name or trademarked word in the generated title, description, or keywords.
+
+CRITICAL MANDATE FOR WARNINGS: If you detect ANY brand name, trademark, company logo, or protected design in the image (regardless of whether it is a famous brand or not), you MUST set the "policyWarning" field in your JSON output to a brief (max 2 sentences), specific, actionable message explaining exactly what the trademark or brand issue is and what the user should do about it. If there is absolutely no trademark, brand, logo, or design copyright issue, set "policyWarning" to null.
+
+Example warning: "The soccer ball features a trademarked brand design, which may cause an IP refusal. Consider using a generic soccer ball without the pattern."
 
 == CATEGORY ==
 Choose 1-2 best-fit from: ${categoryList}
@@ -268,12 +277,12 @@ You MUST evaluate EVERY SINGLE keyword you generate and assign it a "Commercial 
 CRITICAL RULE: The number of items in your "keywordScores" object MUST EXACTLY MATCH the number of keywords in your "keywords" string. Do NOT skip scoring ANY keyword. If you output 48 keywords, you MUST output 48 scores.
 We use this score to color-code keywords (Green/Yellow/Red):
 - 80-100 (Green): Highly relevant SEO terms. The keyword perfectly describes the primary subjects, main actions, or core themes physically visible in this specific image.
-- 40-79 (Yellow): Moderately relevant. The keyword describes background details, secondary elements, or broader related commercial concepts.
+- 40-79 (Yellow): Moderately relevant. The keyword describes background details, secondary elements, or broader related commercial concepts (this includes your Tier 6 conceptual keywords).
 - 1-39 (Red): Low relevance or generic. DO NOT GENERATE THESE. Every keyword must be a high-value SEO search term.
-Evaluate each keyword honestly based on the image content. Do not artificially inflate scores.
+Evaluate each keyword with brutal honesty based on the image content. Rank and score them exactly and accurately according to their true relevance to the image. Do not artificially inflate scores. A keyword must NEVER receive a high score if it is not physically visible or directly relevant.
 
 Output ONLY valid JSON, no markdown:
-{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":45},"categories":["Cat1"],"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"..."}`;
+{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":45},"categories":["Cat1"],"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"...","policyWarning":null}`;
 }
 
 
@@ -762,7 +771,23 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
     const genAI = new GoogleGenerativeAI(apiKey);
     console.log(`[System] Initializing Gemini with key index ${currentKeyIndex} (${apiKey.substring(0, 8)})...`);
 
-    let modelsToAttempt = [...modelsToTry];
+    let modelsToAttempt;
+    const modelSelection = promptSettings?.modelName || (typeof apiProvider === 'string' ? apiProvider : '');
+    
+    if (modelSelection.toLowerCase().includes('pro')) {
+      console.log(`[Model Selection] User selected Pro model (${modelSelection}). Using gemini-3.1-pro.`);
+      modelsToAttempt = ["gemini-3.1-pro", "gemini-3.5-flash"];
+    } else if (modelSelection.toLowerCase().includes('flash') || modelSelection.toLowerCase().includes('gemini')) {
+      let mappedModel = "gemini-3.5-flash";
+      if (modelSelection.includes("3.1")) mappedModel = "gemini-3.1-pro";
+      modelsToAttempt = [mappedModel, "gemini-3.5-flash", "gemini-3.1-pro"];
+    } else {
+      modelsToAttempt = ["gemini-3.5-flash", "gemini-3.1-pro"];
+    }
+    
+    // Remove duplicates
+    modelsToAttempt = [...new Set(modelsToAttempt)];
+
     let keyHitRateLimit = false;
 
     // Try available models for this specific key
@@ -770,7 +795,10 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
       const modelName = modelsToAttempt[i];
       try {
         console.log(`[Attempt] Model: ${modelName} on key ${currentKeyIndex}`);
-        const model = genAI.getGenerativeModel({ model: modelName });
+        const model = genAI.getGenerativeModel({ 
+          model: modelName,
+          generationConfig: { responseMimeType: "application/json" }
+        });
 
         const contentParts = [];
         if (Array.isArray(imageBuffer)) {
@@ -971,36 +999,22 @@ Be specific, vivid, and commercially viable. Avoid watermarks, brand names, and 
     throw (lastError || new Error(`Could not connect to any ${apiProvider} model.`));
   }
 
-  const exactMatchPrompt = `You are a world-class AI image forensic analyst and prompt engineer. Your task is to analyze the provided image with extreme precision and generate a multi-format recreation prompt package.
+  const exactMatchPrompt = `Act as a professional photographer and AI art director. Analyze the provided image in extreme detail and write a comprehensive, technical image generation prompt that will recreate this exact image in a text-to-image AI model (like Midjourney or DALL-E).
 
-GOAL: Maximum possible 1:1 recreation accuracy. Capture EVERY visually distinct element.
-
-STEP 1 — DEEP ANALYSIS (internal, not shown in output):
-Before writing, mentally note:
-- Exact subject: age, ethnicity, gender, body type, hair color/length/style, eye color, facial expression, exact body pose, hand position
-- Exact clothing: every garment, color, texture, pattern, fit, accessories, shoes, jewelry
-- Background: location type, specific objects, colors, depth, distance from subject
-- Lighting: direction (left/right/top/back), type (hard/soft/ambient), color temperature (warm/cool), shadows
-- Camera: lens angle (wide/normal/telephoto), focal point, depth of field, portrait/landscape/square orientation
-- Style/Medium: is it a photo, illustration, 3D render, painting, vector?
-
-STEP 2 — OUTPUT exactly these 5 sections with no extra text before or after:
-
-MIDJOURNEY: [Optimized for Midjourney v6. Comma-separated tags of 30-50 ultra-specific tags followed by Midjourney parameters. MUST end with: --ar [ratio] --v 6.1 --style raw]
-
-FLUX: [Optimized for Flux/Stable Diffusion. Comma-separated tags of 30-50 tags. Include quality boosters: masterpiece, best quality, ultra-detailed, 8k uhd, photorealistic]
-
-NEGATIVE: [20-30 comma-separated negative tags. Always include: blurry, low quality, watermark, text, logo, extra fingers, deformed hands, distorted face, bad anatomy, worst quality, jpeg artifacts. Add specific negatives for things NOT in this image.]
-
-ASPECT: [One of: 1:1 / 16:9 / 9:16 / 4:5 / 3:4 / 4:3 / 3:2 — estimate from the image]
-
-TOOL_TIP: [Exactly 2 sentences. Sentence 1: the single most important visual detail that will make or break the recreation. Sentence 2: which tool best recreates this (Midjourney v6 / Flux Dev / DALL-E 3 / Stable Diffusion XL) and exactly why.]
+Focus on capturing these specific dimensions in your description:
+1. Primary subject(s) and their exact physical appearance, attire, and pose.
+2. Camera details and framing (e.g., 85mm lens, macro, wide shot, depth of field, f/1.8). If it's an illustration, specify the art style and medium (e.g., digital painting, vector art, 3D render).
+3. Lighting setup (e.g., cinematic, softbox, harsh sunlight, neon glow, rim lighting).
+4. Color palette, color grading, and overall mood/atmosphere.
+5. Background and environmental details.
 
 CRITICAL RULES:
-- Tags must be hyper-specific. NOT "woman" but "South Asian woman in her late 20s with wavy shoulder-length dark brown hair". NOT "red dress" but "fitted sleeveless crimson velvet midi dress with ruched bodice".
-- Do NOT write narrative sentences in MIDJOURNEY or FLUX sections. Only comma-separated tags.
-- Do NOT describe or mention watermarks, logos, or copyright text.
-- The MIDJOURNEY section MUST end with --ar [ratio] --v 6.1 --style raw`;
+- Output ONLY the final raw prompt text.
+- Do NOT include any introductory sentences, explanations, or tips.
+- Do NOT use markdown, bold text, or bullet points.
+- Output the result as a single, continuous paragraph.
+- SAFETY RULE: Ensure the vocabulary is completely safe. Avoid any overly sensitive, violent, or explicit terminology that could trigger strict AI safety filters.`;
+
 
 
   // Prioritize keys that match the selected provider, fallback to others if limit is reached
@@ -1120,51 +1134,37 @@ CRITICAL RULES:
   );
 }
 
-/**
- * Parses the structured PROMPT/NEGATIVE/ASPECT output from Exact Match mode.
- * Returns a formatted string for display in the UI textarea.
- */
 function parseExactMatchOutput(raw) {
-  try {
-    // Parse all 5 sections from the new format
-    const midjourneyMatch = raw.match(/MIDJOURNEY:\s*([\s\S]*?)(?=\nFLUX:|$)/i);
-    const fluxMatch       = raw.match(/FLUX:\s*([\s\S]*?)(?=\nNEGATIVE:|$)/i);
-    const negativeMatch   = raw.match(/NEGATIVE:\s*([\s\S]*?)(?=\nASPECT:|$)/i);
-    const aspectMatch     = raw.match(/ASPECT:\s*([\s\S]*?)(?=\nTOOL_TIP:|$)/i);
-    const tipMatch        = raw.match(/TOOL_TIP:\s*([\s\S]*?)$/i);
-
-    const clean = (s) => s ? s.replace(/^\[|\]$/g, '').trim() : '';
-
-    const mjText  = clean(midjourneyMatch?.[1]);
-    const fluxText   = clean(fluxMatch?.[1]);
-    const negText    = clean(negativeMatch?.[1]);
-    const aspectText = clean(aspectMatch?.[1]);
-    const tipText    = clean(tipMatch?.[1]);
-
-    // If none of the new sections were found, fall back to old PROMPT: format
-    if (!mjText && !fluxText) {
-      const oldPromptMatch = raw.match(/PROMPT:\s*([\s\S]*?)(?=\nNEGATIVE:|$)/i);
-      const oldNegMatch    = raw.match(/NEGATIVE:\s*([\s\S]*?)(?=\nASPECT:|$)/i);
-      const oldAspectMatch = raw.match(/ASPECT:\s*([\s\S]*?)$/i);
-      const p = clean(oldPromptMatch?.[1]);
-      if (!p) return raw;
-      let out = p;
-      const n = clean(oldNegMatch?.[1]); if (n) out += `\n\n🚫 NEGATIVE PROMPT:\n${n}`;
-      const a = clean(oldAspectMatch?.[1]); if (a) out += `\n\n📐 ASPECT RATIO: ${a}`;
-      return out;
+  if (!raw) return '';
+  let clean = raw.trim();
+  
+  // Remove markdown code blocks if any (e.g. ```markdown ... ```)
+  clean = clean.replace(/```[a-zA-Z]*\n?([\s\S]*?)```/g, '$1').trim();
+  
+  // Remove common prefixes
+  clean = clean.replace(/^(here is the prompt:|prompt:|\*\*prompt:\*\*|>|interactive prompt:)/i, '').trim();
+  
+  // Strip leading/trailing double quotes or single quotes
+  clean = clean.replace(/^["']|["']$/g, '').trim();
+  
+  // Strip common tips/notes sections at the end
+  const splitKeywords = [
+    /\n\s*Tips for/i,
+    /\n\s*Note:/i,
+    /\n\s*\*\*Tips/i,
+    /\n\s*\*\*Note/i,
+    /\n\s*### Tips/i,
+    /\n\s*### Note/i,
+    /\n\s*Aspect Ratio/i
+  ];
+  for (const rx of splitKeywords) {
+    const index = clean.search(rx);
+    if (index !== -1) {
+      clean = clean.substring(0, index).trim();
     }
-
-    // Build clean output for the new 5-section format
-    let output = '';
-    if (mjText)    output += `🎨 MIDJOURNEY v6 PROMPT:\n${mjText}`;
-    if (fluxText)  output += `\n\n⚡ FLUX / SD PROMPT:\n${fluxText}`;
-    if (negText)   output += `\n\n🚫 NEGATIVE PROMPT:\n${negText}`;
-    if (aspectText)output += `\n\n📐 ASPECT RATIO: ${aspectText}`;
-    if (tipText)   output += `\n\n💡 PRO TIP:\n${tipText}`;
-    return output || raw;
-  } catch {
-    return raw; // Safe fallback
   }
+  
+  return clean;
 }
 
 /**

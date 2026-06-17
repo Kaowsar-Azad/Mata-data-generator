@@ -1,5 +1,5 @@
 import React, { memo } from "react";
-import { Video, Loader2, FileCode2, Image as ImageIcon, AlertTriangle, CheckCircle2, X, Upload } from "lucide-react";
+import { Video, Loader2, FileCode2, Image as ImageIcon, AlertTriangle, CheckCircle2, X, Upload, ShieldAlert } from "lucide-react";
 import { StatusBadge, getScoreMeta } from "./workflowHelpers";
 import { MetaField } from "./MetaField";
 
@@ -132,8 +132,30 @@ const MetadataCard = memo(({
                 </div>
               );
             })()}
+
+            {/* IP / POLICY WARNING BANNER */}
+            {img.result.policyWarning && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.65rem',
+                marginTop: '0.75rem',
+                padding: '0.65rem 0.85rem',
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.35)',
+                borderRadius: '0.6rem',
+                borderLeft: '3px solid #ef4444',
+              }}>
+                <ShieldAlert style={{ color: '#ef4444', width: '1rem', height: '1rem', flexShrink: 0, marginTop: '0.1rem' }} />
+                <div>
+                  <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '0.2rem' }}>⚠ IP / Policy Violation Detected</span>
+                  <p style={{ fontSize: '0.73rem', color: 'var(--text-1)', margin: 0, lineHeight: 1.5 }}>{img.result.policyWarning}</p>
+                </div>
+              </div>
+            )}
           </div>
         )}
+
 
         {img.status === "error" && <p className="text-xs text-red-400 bg-red-400/10 p-2 rounded mt-2">⚠ {img.error}</p>}
         {img.status === "pending" && <p className="text-xs italic text-muted mt-2">{img.isVideo ? "🎬 Ready — Frame will be extracted for AI analysis" : img.isPaired ? "✨ Ready (Using JPG for AI)" : (img.isEps && !img.epsData) ? "⚙ Extracting EPS preview..." : "Awaiting analysis..."}</p>}

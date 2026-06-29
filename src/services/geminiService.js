@@ -12,7 +12,9 @@ import { fetchMistral } from "./apis/mistral.js";
 
 const modelsToTry = [
   "gemini-3.5-flash",
-  "gemini-2.5-pro"
+  "gemini-2.5-pro",
+  "gemini-1.5-pro",
+  "gemini-1.5-flash"
 ];
 
 // Fallback dynamic fetch
@@ -731,6 +733,32 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
 let globalKeyIndex = 0;
 
 /**
+ * Helper to run content generation with a strict timeout (default 15 seconds).
+ */
+async function generateContentWithTimeout(model, contentParts, timeoutMs = 60000) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error("Model request timed out (60s). Google API is taking too long.")), timeoutMs);
+  });
+
+  const executeRequest = async () => {
+    const res = await model.generateContent(contentParts);
+    const resp = await res.response;
+    return resp;
+  };
+
+  try {
+    const response = await Promise.race([
+      executeRequest(),
+      timeoutPromise
+    ]);
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
  * Generate metadata for an image or EPS file.
  *
  * @param {string}  imageBuffer  - Base64-encoded image data (PNG/JPEG preview)
@@ -831,12 +859,18 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
 
     // Clean and match model names based on UI selections
     if (msLower.includes('2.5') || msLower.includes('pro')) {
-      modelsToAttempt = ["gemini-2.5-pro", "gemini-3.5-flash"];
+      modelsToAttempt = ["gemini-2.5-pro", "gemini-1.5-pro", "gemini-3.5-flash", "gemini-1.5-flash"];
     } else if (msLower.includes('3.5') || msLower.includes('flash') || msLower.includes('gemini') || !msLower) {
-      modelsToAttempt = ["gemini-3.5-flash", "gemini-2.5-pro"];
+      modelsToAttempt = ["gemini-3.5-flash", "gemini-2.5-pro", "gemini-1.5-pro", "gemini-1.5-flash"];
     } else {
       // Direct string match fallback if a custom raw model is passed in
-      modelsToAttempt = [modelSelection.split(' ')[0], "gemini-3.5-flash", "gemini-2.5-pro"];
+      modelsToAttempt = [
+        modelSelection.split(' ')[0],
+        "gemini-3.5-flash",
+        "gemini-2.5-pro",
+        "gemini-1.5-pro",
+        "gemini-1.5-flash"
+      ];
     }
     
     // Remove duplicates
@@ -877,9 +911,7 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
         }
         contentParts.push({ text: prompt });
 
-        const result = await model.generateContent(contentParts);
-
-        const response = await result.response;
+        const response = await generateContentWithTimeout(model, contentParts);
         const text = response.text();
 
         let totalTokens = 0;
@@ -907,7 +939,11 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
 
       } catch (error) {
         // console.warn(`[Fail] ${modelName} on key ${currentKeyIndex}: ${error.message}`);
-        lastError = error;
+        if (lastError && lastError.message && lastError.message.includes("Combined Errors:")) {
+          lastError = new Error(`${lastError.message}\n- [${modelName}]: ${error.message}`);
+        } else {
+          lastError = error;
+        }
 
         // Key is definitively invalid → skip this key entirely
         const isKeyInvalid =
@@ -932,6 +968,9 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
 
         if (isRateLimit) {
           console.warn(`[Rate Limit] Model ${modelName} rate limited on key ${currentKeyIndex}. Trying next model...`);
+          if (!lastError.message.includes("Combined Errors:")) {
+            lastError = new Error(`Combined Errors:\n- [${modelName}]: ${error.message}`);
+          }
           // Only break to next key if this is the LAST model to try
           if (i === modelsToAttempt.length - 1) {
             console.warn(`[Key Exhausted] All models rate limited on key ${currentKeyIndex}. Proceeding to next key.`);
@@ -969,8 +1008,7 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
                 contentParts2.push({ inlineData: { data: imageBuffer, mimeType } });
               }
               contentParts2.push({ text: prompt });
-              const result2 = await model2.generateContent(contentParts2);
-              const response2 = await result2.response;
+              const response2 = await generateContentWithTimeout(model2, contentParts2);
               const text2 = response2.text();
               try {
                 const um2 = response2.usageMetadata;
@@ -999,11 +1037,16 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
         }
 
         if (error.message.includes("400")) {
-          continue;
+          console.error(`[400 Error] Model ${modelName} on key ${currentKeyIndex} failed with 400:`, error.message);
+          throw new Error(`Invalid Image or Prompt (400 Bad Request): ${error.message}`);
         }
 
         if (error.message.includes("404")) {
           continue; // Try next model
+        }
+
+        if (error.message.toLowerCase().includes("timed out")) {
+          throw new Error(`Google API Timeout: ${error.message}`);
         }
       }
     }
@@ -1012,7 +1055,8 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
   }
 
   if (lastError && (lastError.message.includes("429") || lastError.message.includes("quota"))) {
-    throw new Error(`API Rate Limit Reached on all ${apiKeys.length} keys. Please wait 30 seconds before generating again.`);
+    // If the last error was indeed a rate limit, and we're out of keys, append extra info
+    throw new Error(`API Rate Limit Reached on all ${apiKeys.length} keys. Please wait 30 seconds before generating again. Last Error: ${lastError.message}`);
   }
 
   throw (
@@ -1088,8 +1132,7 @@ Be specific, vivid, and commercially viable. Avoid watermarks, brand names, and 
         const modelName = modelsToAttempt[i];
         try {
           const model = genAI.getGenerativeModel({ model: modelName });
-          const result = await model.generateContent([{ inlineData: { data: imageBuffer, mimeType } }, { text: promptToUse }]);
-          const response = await result.response;
+          const response = await generateContentWithTimeout(model, [{ inlineData: { data: imageBuffer, mimeType } }, { text: promptToUse }]);
           const out = response.text().trim();
           let totalTokens = 0;
           try { const um = response.usageMetadata; if (um && typeof um.totalTokenCount === "number") totalTokens = um.totalTokenCount; } catch { /* ignore */ }
@@ -1182,7 +1225,7 @@ CRITICAL RULES:
       const modelName = modelsToAttempt[i];
       try {
         const model = genAI.getGenerativeModel({ model: modelName });
-        const result = await model.generateContent([
+        const response = await generateContentWithTimeout(model, [
           {
             inlineData: {
               data: imageBuffer,
@@ -1191,8 +1234,6 @@ CRITICAL RULES:
           },
           { text: exactMatchPrompt },
         ]);
-
-        const response = await result.response;
         const out = response.text().trim();
 
         let totalTokens = 0;
@@ -1225,7 +1266,9 @@ CRITICAL RULES:
           break; // Break inner model loop to smoothly test the NEXT API key in the outer loop
         }
 
-        if (error.message.includes("400")) continue;
+        if (error.message.includes("400")) {
+          throw new Error(`Invalid Image or Prompt (400 Bad Request): ${error.message}`);
+        }
         if (error.message.includes("404")) continue;
       }
     }
@@ -1335,7 +1378,7 @@ Return ONLY a valid JSON object matching this schema:
       const modelName = modelsToAttempt[i];
       try {
         const model = genAI.getGenerativeModel({ model: modelName });
-        const result = await model.generateContent([
+        const response = await generateContentWithTimeout(model, [
           {
             inlineData: {
               data: imageBuffer,
@@ -1344,8 +1387,6 @@ Return ONLY a valid JSON object matching this schema:
           },
           { text: prompt },
         ]);
-
-        const response = await result.response;
         const out = response.text().trim();
         const cleaned = out.replace(/```json/g, "").replace(/```/g, "").trim();
         
@@ -1381,7 +1422,10 @@ Return ONLY a valid JSON object matching this schema:
           console.warn(`[Key Exhausted] Key index ${currentKeyIndex} is invalid or exhausted. Proceeding to next key.`);
           break; // Break inner loop, go to next key
         }
-        if (error.message.includes("400") || error.message.includes("404")) continue;
+        if (error.message.includes("400")) {
+          throw new Error(`Invalid Image or Prompt (400 Bad Request): ${error.message}`);
+        }
+        if (error.message.includes("404")) continue;
       }
     }
   }

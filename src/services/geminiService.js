@@ -13,8 +13,8 @@ import { fetchMistral } from "./apis/mistral.js";
 const modelsToTry = [
   "gemini-3.5-flash",
   "gemini-2.5-pro",
-  "gemini-1.5-pro",
-  "gemini-1.5-flash"
+  "gemini-2.5-flash",
+  "gemini-2.0-flash"
 ];
 
 // Fallback dynamic fetch
@@ -859,17 +859,17 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
 
     // Clean and match model names based on UI selections
     if (msLower.includes('2.5') || msLower.includes('pro')) {
-      modelsToAttempt = ["gemini-2.5-pro", "gemini-1.5-pro", "gemini-3.5-flash", "gemini-1.5-flash"];
+      modelsToAttempt = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.0-flash"];
     } else if (msLower.includes('3.5') || msLower.includes('flash') || msLower.includes('gemini') || !msLower) {
-      modelsToAttempt = ["gemini-3.5-flash", "gemini-2.5-pro", "gemini-1.5-pro", "gemini-1.5-flash"];
+      modelsToAttempt = ["gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"];
     } else {
       // Direct string match fallback if a custom raw model is passed in
       modelsToAttempt = [
         modelSelection.split(' ')[0],
         "gemini-3.5-flash",
         "gemini-2.5-pro",
-        "gemini-1.5-pro",
-        "gemini-1.5-flash"
+        "gemini-2.5-flash",
+        "gemini-2.0-flash"
       ];
     }
     

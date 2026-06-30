@@ -1250,3 +1250,30 @@ input[type="checkbox"].ios-toggle:disabled {
   border: none;
 }
 
+.thumbnail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 1.25rem;
+}
+
+.thumbnail-card-img-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* Filter input — completely static, no hover or focus visual changes */
+.filter-input,
+.filter-input:hover,
+.filter-input:focus,
+.filter-input:active,
+.filter-input:focus-visible,
+.filter-input:focus-within {
+  border: 1.5px solid #c0c7d4 !important;
+  background: #f0f2f5 !important;
+  outline: none !important;
+  box-shadow: none !important;
+}

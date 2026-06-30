@@ -10,6 +10,7 @@ import {
   Trash2,
   X,
   RefreshCw,
+  Search,
   FileCode2,
   Image as ImageIcon,
   Video,
@@ -38,7 +39,7 @@ import { computeHashForEntry, detectDuplicates } from "./duplicateDetector";
 import { downloadCSV, parseCSV } from "./csvHandlers";
 import { StatusBadge } from "./workflowHelpers";
 import { ExportFormatModal } from "./ExportFormatModal";
-import { MetadataGrid } from "./MetadataGrid";
+import { MetadataThumbnailGrid } from "./MetadataThumbnailGrid";
 import { MetadataCardList } from "./MetadataCardList";
 import { MetadataEditorPanel } from "./MetadataEditorPanel";
 
@@ -127,6 +128,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const [selectedRows, setSelectedRows] = useState(new Set()); // row IDs selected in grid
   const [gridSort, setGridSort] = useState({ field: null, dir: 'asc' }); // column sort
   const [gridFilter, setGridFilter] = useState(''); // quick filter text
+  const [isFilterFocused, setIsFilterFocused] = useState(false);
   const cellRefs = useRef({}); // { [id_field]: textareaDOM }
 
   // ─── Duplicate Detection State ─────────────────────────────────────────────
@@ -1793,22 +1795,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               )}
 
 
-            {viewMode === 'grid' && (
-              <div className="flex items-center gap-2" style={{ marginRight: '0.5rem' }}>
-                <input
-                  type="text"
-                  placeholder="🔍 Filter rows..."
-                  value={gridFilter}
-                  onChange={e => setGridFilter(e.target.value)}
-                  className="grid-filter-input"
-                />
-                {selectedRows.size > 0 && (
-                  <span className="grid-selected-pill">
-                    {selectedRows.size} selected · Ctrl+Enter to apply
-                  </span>
-                )}
-              </div>
-            )}
+            {/* Search filter moved below */}
 
 
             {/* End of dynamic controls */}
@@ -1962,52 +1949,115 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         </div>
       )}
 
-      {/* View Container */}
-      <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'stretch' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {viewMode === 'grid' ? (
-            <MetadataGrid 
-              images={images}
-              gridImages={getGridImages()}
-              selectedRows={selectedRows}
-              setSelectedRows={setSelectedRows}
-              gridSort={gridSort}
-              toggleSort={toggleSort}
-              activeCell={activeCell}
-              setActiveCell={setActiveCell}
-              cellRefs={cellRefs}
-              handleMetaChange={handleMetaChange}
-              applyToSelected={applyToSelected}
-              removeImage={removeImage}
-              getTitleCounterClass={getTitleCounterClass}
-              getDescriptionCounterClass={getDescriptionCounterClass}
-              getKeywordsCounterClass={getKeywordsCounterClass}
+      {/* Search & Filter Bar */}
+      {images.length > 0 && viewMode === 'grid' && (
+        <div className="flex items-center justify-between mb-3 w-full animate-fade-in" style={{ gap: '1rem', marginTop: '0.5rem' }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, maxWidth: '320px' }}>
+            <input
+              type="text"
+              className="filter-input"
+              placeholder="Filter files..."
+              value={gridFilter}
+              onChange={e => setGridFilter(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.45rem 2.2rem 0.45rem 2.25rem',
+                borderRadius: '0.55rem',
+                border: '1.5px solid #c0c7d4',
+                background: '#f0f2f5',
+                color: 'var(--text-1)',
+                outline: 'none',
+                fontSize: '0.82rem',
+                boxSizing: 'border-box'
+              }}
             />
-          ) : (
-            <MetadataCardList 
-              images={images}
-              duplicatePairs={duplicatePairs}
-              removeImage={removeImage}
-              handleMetaChange={handleMetaChange}
-              activeProviderName={activeProviderName}
-              upscaleScale={upscaleScale}
-              ftpConfigs={ftpConfigs}
+            <Search 
+              style={{ 
+                position: 'absolute', 
+                left: '12px', 
+                color: '#6b7280',
+                width: '15px', 
+                height: '15px',
+                zIndex: 2,
+                pointerEvents: 'none'
+              }} 
             />
+            {gridFilter && (
+              <button
+                onClick={() => setGridFilter('')}
+                style={{
+                  position: 'absolute',
+                  right: '10px',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'rgba(255, 255, 255, 0.4)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '2px',
+                  borderRadius: '50%'
+                }}
+              >
+                <X style={{ width: '12px', height: '12px' }} />
+              </button>
+            )}
+          </div>
+          {selectedRows.size > 0 && (
+            <span className="grid-selected-pill" style={{
+              background: 'rgba(34, 197, 94, 0.12)',
+              color: '#22C55E',
+              border: '1.5px solid rgba(34, 197, 94, 0.35)',
+              padding: '0.35rem 0.8rem',
+              borderRadius: '99px',
+              fontSize: '0.78rem',
+              fontWeight: 600
+            }}>
+              {selectedRows.size} selected · Ctrl+Enter to apply
+            </span>
           )}
         </div>
+      )}
 
-        {/* Right-hand side panel editor shown in grid mode */}
-        {viewMode === 'grid' && (
-          <div style={{ width: '360px', flexShrink: 0 }}>
-            <MetadataEditorPanel
-              img={images.find(img => img.id === activeCell?.id)}
-              handleMetaChange={handleMetaChange}
-              activeCell={activeCell}
-              setActiveCell={setActiveCell}
-            />
+      {/* View Container */}
+      {images.length > 0 && (
+        <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'stretch' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {viewMode === 'grid' ? (
+              <MetadataThumbnailGrid 
+                images={getGridImages()}
+                selectedRows={selectedRows}
+                setSelectedRows={setSelectedRows}
+                activeCell={activeCell}
+                setActiveCell={setActiveCell}
+                removeImage={removeImage}
+              />
+            ) : (
+              <MetadataCardList 
+                images={getGridImages()}
+                duplicatePairs={duplicatePairs}
+                removeImage={removeImage}
+                handleMetaChange={handleMetaChange}
+                activeProviderName={activeProviderName}
+                upscaleScale={upscaleScale}
+                ftpConfigs={ftpConfigs}
+              />
+            )}
           </div>
-        )}
-      </div>
+
+          {/* Right-hand side panel editor shown in grid mode */}
+          {viewMode === 'grid' && (
+            <div style={{ width: '360px', flexShrink: 0 }}>
+              <MetadataEditorPanel
+                img={images.find(img => img.id === activeCell?.id)}
+                handleMetaChange={handleMetaChange}
+                activeCell={activeCell}
+                setActiveCell={setActiveCell}
+              />
+            </div>
+          )}
+        </div>
+      )}
       
       {/* Embedding Permission Modal */}
       {showPermissionModal && (

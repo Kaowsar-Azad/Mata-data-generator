@@ -11,6 +11,65 @@ import { EpsPreviewGenerator } from './components/EpsPreviewGenerator'
 import { ImageUpscaler } from './components/ImageUpscaler'
 import { AiImageGenerator } from './components/AiImageGenerator'
 import { Sparkles, Zap, Image as ImageIcon, Eraser, Box, ChevronLeft, ChevronRight, Server, Key, Camera, Maximize, Cpu } from 'lucide-react'
+import { motion } from 'framer-motion'
+
+const tabVariants = {
+  active: (isFlexColumn) => ({
+    opacity: 1, 
+    y: 0, 
+    pointerEvents: 'auto', 
+    display: isFlexColumn ? 'flex' : 'block'
+  }),
+  inactive: { 
+    opacity: 0, 
+    y: 15, 
+    pointerEvents: 'none', 
+    transitionEnd: { display: 'none' } 
+  }
+};
+
+const TabWrapper = ({ active, children, isFlexColumn, padding }) => (
+  <motion.div
+    custom={isFlexColumn}
+    variants={tabVariants}
+    initial={active ? "active" : "inactive"}
+    animate={active ? "active" : "inactive"}
+    transition={{ duration: 0.25, ease: 'easeOut' }}
+    style={{
+      gridArea: '1 / 1 / 2 / 2',
+      flexDirection: isFlexColumn ? 'column' : undefined,
+      width: '100%',
+      height: '100%',
+      padding: padding || 0,
+      overflow: active ? 'auto' : 'hidden'
+    }}
+  >
+    {children}
+  </motion.div>
+);
+
+const SidebarIcon = ({ icon: Icon, color, active }) => {
+  return (
+    <div style={{
+      width: '24px',
+      height: '24px',
+      borderRadius: '6px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: active ? color : `${color}22`,
+      boxShadow: active ? `0 2px 6px ${color}40` : 'none',
+      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+      flexShrink: 0,
+      position: 'relative',
+      zIndex: 1,
+    }}
+    className="sidebar-icon-badge"
+    >
+      <Icon style={{ width: '13px', height: '13px', color: active ? '#ffffff' : color }} />
+    </div>
+  )
+}
 
 function App() {
   const [apiKeys, setApiKeys] = useState(() => {
@@ -155,50 +214,95 @@ function App() {
             )}
           </div>
 
-          {/* NAVIGATION */}
+          {/* NAVIGATION — outer wrapper clips blobs, inner nav is transparent so backdrop-filter works */}
           <div style={{
-            background: 'var(--surface-1)',
-            border: '1px solid var(--glass-border)',
+            position: 'relative',
             borderRadius: '0.65rem',
-            padding: '0.3rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.15rem',
+            overflow: 'hidden',   /* ← clips blobs, prevents leaking */
+            border: '1px solid var(--glass-border)',
           }}>
-            {[
-              { id: 'metadata', icon: Zap, label: 'Metadata Generator' },
-              { id: 'prompt', icon: ImageIcon, label: 'Image to Prompt' },
-              { id: 'epspreview', icon: Camera, label: 'Auto EPS Preview' },
-              { id: 'removebg', icon: Eraser, label: 'Background Remover' },
-              { id: 'vector', icon: Box, label: 'Vector Magic' },
-              { id: 'upscale', icon: Maximize, label: 'AI Image Upscaler' },
-              { id: 'aiimage', icon: Cpu, label: 'Cloud GPU Image Gen' },
-              { id: 'ftp', icon: Server, label: 'FTP Upload System' },
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                style={{
-                  background: activeTab === tab.id ? 'var(--primary)' : 'transparent',
-                  color: activeTab === tab.id ? '#fff' : 'var(--text-2)',
-                  border: 'none',
-                  padding: sidebarOpen ? '0.45rem 0.65rem' : '0.45rem',
-                  borderRadius: '0.45rem',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  fontSize: '0.78rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: sidebarOpen ? 'flex-start' : 'center',
-                  gap: '0.45rem',
-                  transition: 'all 0.15s',
-                  ...(activeTab === tab.id ? { boxShadow: '0 1px 4px rgba(37,99,235,0.25)' } : {})
-                }}
-              >
-                <tab.icon style={{ width: '0.85rem', height: '0.85rem', flexShrink: 0 }} />
-                {sidebarOpen && tab.label}
-              </button>
-            ))}
+            {/* Ambient glow blobs — inside the overflow:hidden wrapper so they never leak */}
+            <div aria-hidden="true" style={{
+              position: 'absolute', top: '-25%', left: '-15%',
+              width: '75%', height: '50%',
+              borderRadius: '50%',
+              background: 'rgba(139, 92, 246, 0.35)',
+              filter: 'blur(36px)',
+              pointerEvents: 'none', zIndex: 0,
+            }} />
+            <div aria-hidden="true" style={{
+              position: 'absolute', bottom: '-15%', right: '-15%',
+              width: '65%', height: '50%',
+              borderRadius: '50%',
+              background: 'rgba(236, 72, 153, 0.30)',
+              filter: 'blur(36px)',
+              pointerEvents: 'none', zIndex: 0,
+            }} />
+            <div aria-hidden="true" style={{
+              position: 'absolute', top: '40%', left: '15%',
+              width: '55%', height: '35%',
+              borderRadius: '50%',
+              background: 'rgba(6, 182, 212, 0.20)',
+              filter: 'blur(30px)',
+              pointerEvents: 'none', zIndex: 0,
+            }} />
+
+            {/* Nav container — transparent bg so blobs show through for backdrop-filter */}
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.55)',   /* semi-transparent so blobs are visible */
+              borderRadius: '0.65rem',
+              padding: '0.2rem 0.25rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.08rem',
+              position: 'relative',
+              zIndex: 1,
+            }}>
+              {[
+                { id: 'metadata', icon: Zap, label: 'Metadata Generator', color: '#8b5cf6' },
+                { id: 'prompt', icon: ImageIcon, label: 'Image to Prompt', color: '#ec4899' },
+                { id: 'epspreview', icon: Camera, label: 'Auto EPS Preview', color: '#10b981' },
+                { id: 'removebg', icon: Eraser, label: 'Background Remover', color: '#ef4444' },
+                { id: 'vector', icon: Box, label: 'Vector Magic', color: '#f59e0b' },
+                { id: 'upscale', icon: Maximize, label: 'AI Image Upscaler', color: '#3b82f6' },
+                { id: 'aiimage', icon: Cpu, label: 'Cloud GPU Image Gen', color: '#06b6d4' },
+                { id: 'ftp', icon: Server, label: 'FTP Upload System', color: '#6366f1' },
+              ].map(tab => {
+                const isActive = activeTab === tab.id;
+                return (
+                <button
+                  key={tab.id}
+                  className="sidebar-nav-btn"
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    position: 'relative',
+                    zIndex: 1,
+                    /* backdrop-filter blurs the blobs visible through the semi-transparent nav bg */
+                    background: isActive ? 'rgba(255, 255, 255, 0.30)' : 'transparent',
+                    backdropFilter: isActive ? 'blur(20px) saturate(180%)' : 'none',
+                    WebkitBackdropFilter: isActive ? 'blur(20px) saturate(180%)' : 'none',
+                    color: isActive ? '#1a1a2e' : 'var(--text-2)',
+                    border: isActive ? '1px solid rgba(255, 255, 255, 0.6)' : '1px solid transparent',
+                    padding: sidebarOpen ? '0.35rem 0.5rem' : '0.35rem',
+                    borderRadius: '0.5rem',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: '0.73rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: sidebarOpen ? 'flex-start' : 'center',
+                    gap: '0.4rem',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    boxShadow: isActive
+                      ? `0 4px 16px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.8), 0 0 0 0.5px ${tab.color}25`
+                      : 'none',
+                  }}
+                >
+                  <SidebarIcon icon={tab.icon} color={tab.color} active={isActive} />
+                  {sidebarOpen && <span style={{ position: 'relative', zIndex: 1 }}>{tab.label}</span>}
+                </button>
+              )})}
+            </div>
           </div>
         </div>
 
@@ -267,8 +371,8 @@ function App() {
       </aside>
 
       {/* ─── MAIN WORKSPACE ─── */}
-      <main className="dashboard-main">
-        <div style={{ display: activeTab === 'metadata' ? 'block' : 'none', width: '100%', height: '100%' }}>
+      <main className="dashboard-main" style={{ position: 'relative', overflow: 'hidden' }}>
+        <TabWrapper active={activeTab === 'metadata'}>
           <ImageWorkflow 
             apiKeys={apiKeys} 
             apiProvider={apiProvider} 
@@ -276,34 +380,40 @@ function App() {
             setPromptSettings={setPromptSettings} 
             ftpConfigs={ftpConfigs} 
           />
-        </div>
-        <div style={{ display: activeTab === 'prompt' ? 'block' : 'none', width: '100%', height: '100%' }}>
+        </TabWrapper>
+        
+        <TabWrapper active={activeTab === 'prompt'}>
           <ImageToPrompt apiKeys={apiKeys} apiProvider={apiProvider} promptSettings={promptSettings} setPromptSettings={setPromptSettings} />
-        </div>
-        <div style={{ display: activeTab === 'removebg' ? 'block' : 'none', width: '100%', height: '100%' }}>
+        </TabWrapper>
+        
+        <TabWrapper active={activeTab === 'removebg'}>
           <BackgroundRemover />
-        </div>
-        <div style={{ display: activeTab === 'ftp' ? 'flex' : 'none', flexDirection: 'column', width: '100%', height: '100%', overflowY: 'auto', padding: '1rem' }}>
+        </TabWrapper>
+        
+        <TabWrapper active={activeTab === 'ftp'} isFlexColumn={true} padding="1rem">
           <FtpUploader 
             ftpConfigs={ftpConfigs} 
             setFtpConfigs={setFtpConfigs}
             editingConfig={editingFtpConfig}
             setEditingConfig={setEditingFtpConfig}
           />
-        </div>
+        </TabWrapper>
 
-        <div style={{ display: activeTab === 'vector' ? 'block' : 'none', width: '100%', height: '100%' }}>
+        <TabWrapper active={activeTab === 'vector'}>
           <VectorMagic />
-        </div>
-        <div style={{ display: activeTab === 'upscale' ? 'block' : 'none', width: '100%', height: '100%' }}>
+        </TabWrapper>
+        
+        <TabWrapper active={activeTab === 'upscale'}>
           <ImageUpscaler />
-        </div>
-        <div style={{ display: activeTab === 'aiimage' ? 'block' : 'none', width: '100%', height: '100%' }}>
+        </TabWrapper>
+        
+        <TabWrapper active={activeTab === 'aiimage'}>
           <AiImageGenerator apiKeys={apiKeys} apiProvider={apiProvider} />
-        </div>
-        <div style={{ display: activeTab === 'epspreview' ? 'block' : 'none', width: '100%', height: '100%' }}>
+        </TabWrapper>
+        
+        <TabWrapper active={activeTab === 'epspreview'}>
           <EpsPreviewGenerator />
-        </div>
+        </TabWrapper>
       </main>
 
       {/* ─── MODALS ─── */}

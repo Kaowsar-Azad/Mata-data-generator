@@ -1,7 +1,9 @@
 
 import React, { useState, useRef, useEffect } from "react";
+import { MdCloudUpload } from "react-icons/md";
 import {
   Upload,
+  UploadCloud,
   Download,
   CheckCircle2,
   Loader2,
@@ -13,10 +15,22 @@ import {
   Video,
   LayoutGrid,
   List,
-  AlertTriangle
+  AlertTriangle,
+  Clock,
+  Rocket,
+  Sparkles,
+  FileSpreadsheet,
+  Tag,
+  ImagePlus,
+  Server
 } from "lucide-react";
 
 import { generateMetadata, analyzeImageSecurity } from "../../services/geminiService";
+
+import uploadIcon from "../../assets/icons/upload.png";
+import downloadIcon from "../../assets/icons/download.png";
+import trashIcon from "../../assets/icons/trash.png";
+import checkIcon from "../../assets/icons/check.png";
 import { processEpsFile, isEpsFile } from "../../services/epsService";
 
 import { computeHashForEntry, detectDuplicates } from "./duplicateDetector";
@@ -1292,7 +1306,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   };
   const activeProviderName = getProviderName(Array.isArray(apiProvider) ? apiProvider[0] : apiProvider);
 
-  const doneCount = images.filter((i) => i.result !== null).length;
+  const metadataDoneCount = images.filter((i) => i.result !== null).length;
+  const upscaleDoneCount = images.filter((i) => i.status === "done" && (i.upscaleModel || i.upscaleProgress !== undefined)).length;
+  const doneCount = images.filter((i) => i.status === "done").length;
   const errorCount = images.filter((i) => i.status === "error").length;
   const pendingCount = images.filter((i) => i.status === "pending").length;
   const epsCount = images.filter((i) => i.isEps).length;
@@ -1318,8 +1334,20 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           onChange={onFileChange}
         />
         <div className="flex flex-col items-center">
-          <div className="upload-icon-wrap">
-            <Upload style={{ width: '2rem', height: '2rem', color: 'var(--primary-light)' }} />
+          <div className="upload-icon-wrap" style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '4.5rem',
+            height: '4.5rem',
+            borderRadius: '1.25rem',
+            background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
+            boxShadow: '0 8px 20px -4px rgba(139, 92, 246, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.3)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            marginBottom: '1.25rem',
+            transition: 'transform 0.2s ease',
+          }}>
+            <MdCloudUpload style={{ width: '2.5rem', height: '2.5rem', color: '#ffffff' }} />
           </div>
           <h2 style={{ marginBottom: '0.4rem', fontSize: '1.2rem' }}>Upload Media, EPS or Video Files</h2>
           <p className="text-muted" style={{ marginBottom: '1rem' }}>
@@ -1508,67 +1536,155 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       {images.length > 0 && (
         <div className="control-bar">
           <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex items-center gap-2">
-              <span style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text-1)' }}>
-                {images.length} File{images.length !== 1 ? 's' : ''}
-              </span>
-              {epsCount > 0 && (
+            {epsCount > 0 && (
+              <div className="flex items-center gap-2">
                 <span className="eps-badge" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>
                   {epsCount} EPS
+                </span>
+              </div>
+            )}
+
+
+            <div className="flex gap-3 text-sm font-semibold items-center">
+              <span style={{
+                color: '#6366f1',
+                background: '#f3f4f6',
+                border: '1px solid #e5e7eb',
+                padding: '0.2rem 0.6rem',
+                borderRadius: '99px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }} title="Waiting to process">
+                <UploadCloud style={{ width: '0.9rem', height: '0.9rem' }} /> {pendingCount} Upload file
+              </span>
+              <span style={{
+                color: '#3b82f6',
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                padding: '0.2rem 0.6rem',
+                borderRadius: '99px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }} title="Metadata Generated">
+                <FileCode2 style={{ width: '0.9rem', height: '0.9rem' }} /> {metadataDoneCount} Metadata done
+              </span>
+              <span style={{
+                color: '#0d9488',
+                background: '#f0fdfa',
+                border: '1px solid #ccfbf1',
+                padding: '0.2rem 0.6rem',
+                borderRadius: '99px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }} title="Successfully Upscaled">
+                <ImagePlus style={{ width: '0.9rem', height: '0.9rem' }} /> {upscaleDoneCount} Upscale done
+              </span>
+              <span style={{
+                color: '#10b981',
+                background: '#ecfdf5',
+                border: '1px solid #d1fae5',
+                padding: '0.2rem 0.6rem',
+                borderRadius: '99px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }} title="Successfully generated and upscaled">
+                <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem' }} /> {doneCount} All done
+              </span>
+              <span style={{
+                color: '#7c3aed',
+                background: '#f5f3ff',
+                border: '1px solid #ddd6fe',
+                padding: '0.2rem 0.6rem',
+                borderRadius: '99px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }} title="Successfully uploaded to server">
+                <Server style={{ width: '0.9rem', height: '0.9rem' }} /> {embeddingSuccessCount} Server Synced
+              </span>
+              {errorCount > 0 && (
+                <span style={{ color: 'var(--danger)' }} className="flex items-center gap-1" title="Failed (Rate limit or error)">
+                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(239, 68, 68, 0.8)' }} /> {errorCount}
+                </span>
+              )}
+              {embeddingErrorCount > 0 && (
+                <span style={{ color: '#ef4444' }} className="flex items-center gap-1" title="Failed Upload/Embed">
+                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(239, 68, 68, 0.8)' }} /> {embeddingErrorCount} Failed Upload
                 </span>
               )}
             </div>
 
-            <div style={{ width: '1px', height: '1.2rem', background: 'var(--glass-border)' }}></div>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: '#ffffff', border: '1px solid #f3f4f6' }}>
+                <button
+                  className="btn-icon"
+                  style={{ padding: '0.35rem', borderRadius: '0.5rem', background: viewMode === 'card' ? '#f3f4f6' : 'transparent', color: viewMode === 'card' ? '#1f2937' : '#9ca3af', border: 'none', cursor: 'pointer' }}
+                  onClick={() => { setViewMode('card'); setSelectedRows(new Set()); }}
+                  title="Card View"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+                <button
+                  className="btn-icon"
+                  style={{ padding: '0.35rem', borderRadius: '0.5rem', background: viewMode === 'grid' ? '#f3f4f6' : 'transparent', color: viewMode === 'grid' ? '#1f2937' : '#9ca3af', border: 'none', cursor: 'pointer' }}
+                  onClick={() => setViewMode('grid')}
+                  title="Spreadsheet View (Bulk Edit)"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
+              </div>
 
-            <div className="flex gap-3 text-sm font-semibold">
-              <span className="text-muted" title="Waiting to process">⏳ {pendingCount}</span>
-              <span style={{ color: 'var(--success)' }} title="Successfully generated">✔ {doneCount}</span>
-              {errorCount > 0 && (
-                <span style={{ color: 'var(--danger)' }} title="Failed (Rate limit or error)">✖ {errorCount}</span>
-              )}
-              {embeddingSuccessCount > 0 && (
-                <span style={{ color: '#10b981', marginLeft: '0.5rem' }} title="Successfully Uploaded/Embedded">🚀 {embeddingSuccessCount} Uploaded</span>
-              )}
-              {embeddingErrorCount > 0 && (
-                <span style={{ color: '#ef4444' }} title="Failed Upload/Embed">✖ {embeddingErrorCount} Failed Upload</span>
-              )}
+              <button style={{
+                color: '#ef4444',
+                background: '#fef2f2',
+                border: '1px solid #fee2e2',
+                borderRadius: '99px',
+                fontSize: '0.8rem',
+                fontWeight: 500,
+                padding: '0.35rem 0.8rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer'
+              }} onClick={clearAll}>
+                <Trash2 style={{ width: '0.9rem', height: '0.9rem' }} /> Clear all
+              </button>
             </div>
-
-            <button className="btn-outline" style={{ color: 'var(--danger)', fontSize: '0.75rem', padding: '0.3rem 0.6rem', marginLeft: 'auto' }} onClick={clearAll}>
-              <Trash2 className="w-3 h-3" /> Clear All
-            </button>
           </div>
 
-          <div className="flex gap-2 flex-wrap mt-3 sm:mt-0 items-center">
-            {window.electronAPI && (
-              <>
-                <label 
+          <div className="flex gap-3 flex-wrap mt-3 sm:mt-0 items-center">
+              {window.electronAPI && (
+                <>
+                  <label 
                   className="flex items-center gap-2 text-sm cursor-pointer mr-2 select-none"
                   title="Automatically embed metadata and upload to FTP when generation finishes"
-                  style={{ color: autoEmbed ? 'var(--accent)' : 'var(--text-3)', transition: 'color 0.2s' }}
+                  style={{ color: '#1f2937' }}
                 >
                   <input 
                     type="checkbox" 
+                    className="ios-toggle"
                     checked={autoEmbed} 
                     onChange={handleAutoEmbedChange}
-                    style={{ accentColor: 'var(--accent)', width: '1.1rem', height: '1.1rem', cursor: 'pointer' }}
                   />
-                  <span style={{ fontWeight: autoEmbed ? 600 : 500 }}>Auto Embed & Upload</span>
+                  <span style={{ fontWeight: 500 }}>Auto embed and upload</span>
                 </label>
                 
                 <label 
                   className="flex items-center gap-2 text-sm cursor-pointer mr-2 select-none"
                   title="Automatically upscale images before generating metadata"
-                  style={{ color: autoUpscale ? 'var(--accent)' : 'var(--text-3)', transition: 'color 0.2s' }}
+                  style={{ color: '#6b7280' }}
                 >
                   <input 
                     type="checkbox" 
+                    className="ios-toggle"
                     checked={autoUpscale} 
                     onChange={(e) => setAutoUpscale(e.target.checked)}
-                    style={{ accentColor: 'var(--accent)', width: '1.1rem', height: '1.1rem', cursor: 'pointer' }}
                   />
-                  <span style={{ fontWeight: autoUpscale ? 600 : 500 }}>Auto Upscale</span>
+                  <span style={{ fontWeight: 500 }}>Auto upscale</span>
                 </label>
                 
                 {autoUpscale && (
@@ -1623,24 +1739,6 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               </>
             )}
 
-            <div className="flex items-center gap-1 p-1 rounded-md" style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', marginRight: '0.5rem' }}>
-              <button
-                className="btn-icon"
-                style={{ padding: '0.3rem', borderRadius: '0.3rem', background: viewMode === 'card' ? 'var(--surface-3)' : 'transparent', color: viewMode === 'card' ? 'var(--text-1)' : 'var(--text-3)', border: 'none', cursor: 'pointer' }}
-                onClick={() => { setViewMode('card'); setSelectedRows(new Set()); }}
-                title="Card View"
-              >
-                <List className="w-4 h-4" />
-              </button>
-              <button
-                className="btn-icon"
-                style={{ padding: '0.3rem', borderRadius: '0.3rem', background: viewMode === 'grid' ? 'var(--surface-3)' : 'transparent', color: viewMode === 'grid' ? 'var(--text-1)' : 'var(--text-3)', border: 'none', cursor: 'pointer' }}
-                onClick={() => setViewMode('grid')}
-                title="Spreadsheet View (Bulk Edit)"
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-            </div>
 
             {viewMode === 'grid' && (
               <div className="flex items-center gap-2" style={{ marginRight: '0.5rem' }}>
@@ -1660,26 +1758,49 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             )}
 
 
-
-            <button
-              className="btn-primary"
+            {/* End of dynamic controls */}
+            
+              <button
+              style={{
+                background: '#3b82f6',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '0.55rem',
+                padding: '0.45rem 1.1rem',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: (isProcessing || images.every(img => img.status === 'done')) ? 'not-allowed' : 'pointer',
+                opacity: (isProcessing || images.every(img => img.status === 'done')) ? 0.6 : 1,
+                boxShadow: '0 4px 10px rgba(59, 130, 246, 0.2)'
+              }}
               disabled={isProcessing || images.every(img => img.status === 'done')}
               onClick={() => processBatch(false)}
               title="Keyboard shortcut: Enter"
             >
-              {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-              {isProcessing ? 'Generating...' : (images.every(img => img.status === 'done') ? 'All Done!' : 'Generate All')}
+              {isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles style={{ width: '0.95rem', height: '0.95rem' }} />}
+              {isProcessing ? 'Generating...' : (images.every(img => img.status === 'done') ? 'All Done!' : 'Generate all')}
             </button>
             
             {window.electronAPI ? (
               <button
-                className={`btn-outline ${doneCount > 0 && !isProcessing && !isEmbedding ? 'animate-pulse' : ''}`}
+                className={`${doneCount > 0 && !isProcessing && !isEmbedding ? 'animate-pulse' : ''}`}
                 style={{ 
-                  color: 'var(--accent)', 
-                  borderColor: doneCount > 0 && !isProcessing && !isEmbedding ? 'var(--accent)' : 'var(--glass-border)',
+                  background: '#f9fafb',
+                  color: '#6b7280', 
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '0.55rem',
+                  padding: '0.45rem 0.9rem',
+                  fontSize: '0.82rem',
+                  fontWeight: 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
                   opacity: doneCount === 0 ? 0.6 : undefined,
-                  boxShadow: doneCount > 0 && !isProcessing && !isEmbedding ? '0 0 15px var(--accent-glow)' : 'none',
-                  transition: 'background-color 0.3s, border-color 0.3s, box-shadow 0.3s'
+                  cursor: (isEmbedding || doneCount === 0) ? 'not-allowed' : 'pointer',
+                  transition: 'background-color 0.3s, border-color 0.3s'
                 }}
                 disabled={isEmbedding || doneCount === 0}
                 onClick={() => {
@@ -1688,28 +1809,52 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 }}
                 title="Embed Title & Keywords into your original files"
               >
-                {isEmbedding ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                {isEmbedding ? 'Embedding...' : 'Embed to Files'}
+                {isEmbedding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Tag style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} />}
+                {isEmbedding ? 'Embedding...' : 'Embed to files'}
               </button>
             ) : (
               <button
-                className="btn-outline"
-                style={{ color: 'var(--text-3)', borderColor: 'var(--glass-border)', opacity: 0.6, cursor: 'not-allowed' }}
+                style={{ 
+                  background: '#f9fafb',
+                  color: '#9ca3af', 
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '0.55rem',
+                  padding: '0.45rem 0.9rem',
+                  fontSize: '0.82rem',
+                  fontWeight: 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  opacity: 0.6,
+                  cursor: 'not-allowed'
+                }}
                 onClick={() => alert("ফাইলের ভেতর সরাসরি মেটাডেটা এম্বেড করতে অ্যাপটি ডেস্কটপ অ্যাপ্লিকেশন হিসেবে চালান (npm run app:dev)। ব্রাউজারে এটি সম্ভব নয়।")}
                 title="Direct embedding is only supported in Desktop app mode"
                 disabled={doneCount === 0}
               >
-                <CheckCircle2 className="w-4 h-4" /> Embed to Files
+                <Tag style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Embed to files
               </button>
             )}
 
             <button
-              className="btn-outline"
-              style={{ color: 'var(--success)', borderColor: 'rgba(52,211,153,0.25)' }}
+              style={{
+                background: '#f0fdf4',
+                color: '#059669',
+                border: '1px solid #bbf7d0',
+                borderRadius: '0.55rem',
+                padding: '0.45rem 0.9rem',
+                fontSize: '0.82rem',
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                cursor: (isProcessing || doneCount === 0) ? 'not-allowed' : 'pointer',
+                opacity: (isProcessing || doneCount === 0) ? 0.6 : 1
+              }}
               disabled={isProcessing || doneCount === 0}
               onClick={() => setShowExportModal(true)}
             >
-              <Download className="w-4 h-4" /> Export CSV ({doneCount})
+              <FileSpreadsheet style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Export CSV ({doneCount})
             </button>
           </div>
           {!window.electronAPI && (

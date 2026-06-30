@@ -1,5 +1,6 @@
 import React from "react";
-import { Download, X } from "lucide-react";
+import { X } from "lucide-react";
+import downloadIcon from "../../assets/icons/download.png";
 
 export function ExportFormatModal({ isOpen, onClose, onSelect, activePlatform }) {
   if (!isOpen) return null;
@@ -70,7 +71,7 @@ export function ExportFormatModal({ isOpen, onClose, onSelect, activePlatform })
                 color: 'var(--primary)',
                 flexShrink: 0
               }}>
-                <Download className="w-5 h-5" />
+                <img src={downloadIcon} alt="Download" style={{ width: '1.4rem', height: '1.4rem', objectFit: 'contain' }} />
               </div>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-1)', margin: 0 }}>
                 Select CSV Export Format
@@ -161,7 +162,7 @@ export function ExportFormatModal({ isOpen, onClose, onSelect, activePlatform })
                     <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginTop: '2px' }}>{fmt.desc}</div>
                   </div>
                 </div>
-                <Download className="w-4 h-4 text-primary" style={{ opacity: 0.8 }} />
+                <img src={downloadIcon} alt="Download" style={{ width: '1.1rem', height: '1.1rem', objectFit: 'contain', opacity: 0.8 }} />
               </button>
             ))}
           </div>

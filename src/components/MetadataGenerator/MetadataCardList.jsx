@@ -1,5 +1,7 @@
 import React, { memo } from "react";
 import { Video, Loader2, FileCode2, Image as ImageIcon, AlertTriangle, CheckCircle2, X, Upload, ShieldAlert } from "lucide-react";
+import { MdCloudUpload } from "react-icons/md";
+import checkIcon from "../../assets/icons/check.png";
 import { StatusBadge, getScoreMeta } from "./workflowHelpers";
 import { MetaField } from "./MetaField";
 
@@ -52,7 +54,7 @@ const MetadataCard = memo(({
               zIndex: 3, letterSpacing: '0.03em',
             }}
           >
-            <AlertTriangle style={{ width: '0.55rem', height: '0.55rem' }} /> DUP
+            <AlertTriangle style={{ width: '0.55rem', height: '0.55rem', stroke: '#fbbf24' }} /> DUP
           </div>
         )}
 
@@ -146,7 +148,7 @@ const MetadataCard = memo(({
                 borderRadius: '0.6rem',
                 borderLeft: '3px solid #ef4444',
               }}>
-                <ShieldAlert style={{ color: '#ef4444', width: '1rem', height: '1rem', flexShrink: 0, marginTop: '0.1rem' }} />
+                <ShieldAlert style={{ stroke: '#ef4444', width: '1rem', height: '1rem', flexShrink: 0, marginTop: '0.1rem' }} />
                 <div>
                   <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: '0.2rem' }}>⚠ Stock Site Policy Violation Detected</span>
                   <p style={{ fontSize: '0.73rem', color: 'var(--text-1)', margin: 0, lineHeight: 1.5 }}>{img.result.policyWarning}</p>
@@ -181,7 +183,21 @@ const MetadataCard = memo(({
               return (
                 <div className="w-full" style={{ width: '100%' }}>
                   <div className="flex justify-between items-center mb-1">
-                    <span className="flex items-center gap-2"><Upload className="w-3 h-3 animate-bounce" /> Uploading to FTP server...</span>
+                    <span className="flex items-center gap-2" style={{ display: 'flex', alignItems: 'center' }}>
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '1.25rem',
+                        height: '1.25rem',
+                        borderRadius: '0.35rem',
+                        background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
+                        marginRight: '0.1rem'
+                      }} className="animate-bounce">
+                        <MdCloudUpload style={{ width: '0.85rem', height: '0.85rem', color: '#ffffff' }} />
+                      </div>
+                      Uploading to FTP server...
+                    </span>
                     <span className="font-bold">{singleProgress}%</span>
                   </div>
                   <div style={{ width: '100%', height: '4px', background: 'rgba(245,158,11,0.2)', borderRadius: '2px', overflow: 'hidden' }}>
@@ -190,8 +206,8 @@ const MetadataCard = memo(({
                 </div>
               );
             })()}
-            {img.embeddingStatus === 'success' && <><CheckCircle2 className="w-3 h-3" /><span>Metadata embedded & processed!</span></>}
-            {img.embeddingStatus === 'error' && <><X className="w-3 h-3" /><span>Failed: {img.embeddingError}</span></>}
+            {img.embeddingStatus === 'success' && <><img src={checkIcon} alt="Success" style={{ width: '1.2rem', height: '1.2rem', objectFit: 'contain' }} /><span>Metadata embedded & processed!</span></>}
+            {img.embeddingStatus === 'error' && <><X style={{ width: '0.8rem', height: '0.8rem', stroke: '#ef4444' }} /><span>Failed: {img.embeddingError}</span></>}
           </div>
         )}
       </div>

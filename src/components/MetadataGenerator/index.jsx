@@ -22,7 +22,8 @@ import {
   FileSpreadsheet,
   Tag,
   ImagePlus,
-  Server
+  Server,
+  Square
 } from "lucide-react";
 
 import { generateMetadata, analyzeImageSecurity } from "../../services/geminiService";
@@ -112,6 +113,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const cancelRef = useRef(false);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [autoEmbed, setAutoEmbed] = useState(() => localStorage.getItem("autoEmbed") === "true");
+  const [embedScale, setEmbedScale] = useState(() => parseInt(localStorage.getItem("embedScale")) || 2);
+  const [embedEngine, setEmbedEngine] = useState(() => localStorage.getItem("embedEngine") || "mata_ai");
   const [embeddingCount, setEmbeddingCount] = useState(0);
   const isEmbedding = embeddingCount > 0;
   const [autoUpscale, setAutoUpscale] = useState(() => localStorage.getItem("autoUpscale") === "true");
@@ -525,9 +528,34 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     setDismissedDuplicates(false);
   };
 
+  const stopProcessing = () => {
+    cancelRef.current = true;
+    setIsProcessing(false);
+    setProgress(0);
+    if (activeJobId && window.electronAPI?.cancelFtp) {
+      window.electronAPI.cancelFtp(activeJobId).catch(console.error);
+    }
+    setImages(prev => prev.map(img => 
+      (img.status === 'processing' || img.status === 'extracting' || img.status === 'upscaling' || img.status === 'upscale_queued') 
+      ? { ...img, status: 'pending' } 
+      : img
+    ));
+  };
+
   const resizeImageToBase64 = (file, maxSize = 1024) => resizeImageToBase64Worker(file, maxSize);
 
   const [progress, setProgress] = useState(0);
+
+
+  const handleEmbedScaleChange = (val) => {
+    setEmbedScale(val);
+    localStorage.setItem("embedScale", val.toString());
+  };
+
+  const handleEmbedEngineChange = (val) => {
+    setEmbedEngine(val);
+    localStorage.setItem("embedEngine", val);
+  };
 
   const processBatch = async (onlyErrors = false) => {
     if (apiKeys.length === 0) {
@@ -668,8 +696,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               fileInfo
             );
 
+            const activeScale = autoUpscale ? upscaleScale : (autoEmbed ? embedScale : 2);
+            const activeEngine = autoUpscale ? upscaleEngine : (autoEmbed ? embedEngine : 'mata_ai');
             const targetPath = img.visualFile?.path || (!img.isEps && !img.isVideo ? img.file?.path : null);
-            const needsUpscale = (autoUpscale && window.electronAPI && targetPath && !img.isVideo);
+            const needsUpscale = ((autoUpscale || autoEmbed) && window.electronAPI && targetPath && !img.isVideo);
 
             setImages((prev) =>
               prev.map((item) =>
@@ -708,24 +738,23 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
                 const smartNameForModel = img.file?.name || originalFileName;
                 let modelName;
-                
-                if (upscaleEngine === 'auto_detect') {
+                if (activeEngine === 'auto_detect') {
                   modelName = detectModelFromMetadata(metadata, smartNameForModel);
-                } else if (upscaleEngine === 'mata_ai') {
+                } else if (activeEngine === 'mata_ai') {
                   modelName = hasFaceOrPerson(metadata) ? 'mata_ai_face' : 'mata_ai';
                 } else {
-                  modelName = pickMataAIModel(smartNameForModel, upscaleEngine);
+                  modelName = pickMataAIModel(smartNameForModel, activeEngine);
                 }
                 
-                console.log(`[Mata AI] Engine: ${upscaleEngine} | Model: ${modelName} | File: ${smartNameForModel}`);
+                console.log(`[Mata AI] Engine: ${activeEngine} | Model: ${modelName} | File: ${smartNameForModel}`);
                 setImages(prev => prev.map(i => i.id === img.id ? { ...i, upscaleModel: modelName } : i));
-
+ 
                 let arrayBuffer;
-
+ 
                 try {
                   const upscalePromise = window.electronAPI.upscaleLocalNcnn(
                     targetPath,
-                    upscaleScale,
+                    activeScale,
                     modelName,
                     outputFormat,
                     upscaleFolder
@@ -743,7 +772,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 } catch (localErr) {
                   console.warn('[Mata AI] Local GPU failed, falling back to server API...', localErr.message);
                   const formData = new FormData();
-                  formData.append('scale', upscaleScale);
+                  formData.append('scale', activeScale);
                   formData.append('filePath', targetPath);
                   const upscaleRes = await fetch('http://127.0.0.1:3002/api/upscale', {
                     method: 'POST',
@@ -754,11 +783,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                     throw new Error(errData.error || upscaleRes.statusText);
                   }
                   arrayBuffer = await upscaleRes.arrayBuffer();
-                  const savePath = `${upscaleFolder}${pathSeparator}${baseName}_${upscaleScale}x${ext}`;
+                  const savePath = `${upscaleFolder}${pathSeparator}${baseName}_${activeScale}x${ext}`;
                   const saveRes = await window.electronAPI.saveFile(savePath, new Uint8Array(arrayBuffer));
                   if (!saveRes.success) throw new Error(saveRes.error);
                   upscaledPath = savePath;
-                  upscaledName = `${baseName}_${upscaleScale}x${ext}`;
+                  upscaledName = `${baseName}_${activeScale}x${ext}`;
                   console.log(`[Mata AI] ✅ Server API fallback success: ${upscaledName}`);
                 }
 
@@ -1549,19 +1578,19 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               <span style={{
                 color: '#06b6d4',
                 background: 'transparent',
-                border: '1px solid rgba(6, 182, 212, 0.2)',
+                border: '1.5px solid rgba(6, 182, 212, 0.35)',
                 padding: '0.2rem 0.6rem',
                 borderRadius: '99px',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px'
               }} title="Waiting to process">
-                <UploadCloud style={{ width: '0.9rem', height: '0.9rem' }} /> {pendingCount} Upload file
+                <UploadCloud style={{ width: '0.9rem', height: '0.9rem' }} /> {images.length} Upload file
               </span>
               <span style={{
                 color: '#3b82f6',
                 background: 'transparent',
-                border: '1px solid rgba(59, 130, 246, 0.2)',
+                border: '1.5px solid rgba(59, 130, 246, 0.35)',
                 padding: '0.2rem 0.6rem',
                 borderRadius: '99px',
                 display: 'inline-flex',
@@ -1570,42 +1599,48 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               }} title="Metadata Generated">
                 <FileCode2 style={{ width: '0.9rem', height: '0.9rem' }} /> {metadataDoneCount} Metadata done
               </span>
-              <span style={{
-                color: '#6366f1',
-                background: 'transparent',
-                border: '1px solid rgba(99, 102, 241, 0.2)',
-                padding: '0.2rem 0.6rem',
-                borderRadius: '99px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px'
-              }} title="Successfully Upscaled">
-                <ImagePlus style={{ width: '0.9rem', height: '0.9rem' }} /> {upscaleDoneCount} Upscale done
-              </span>
-              <span style={{
-                color: '#8b5cf6',
-                background: 'transparent',
-                border: '1px solid rgba(139, 92, 246, 0.2)',
-                padding: '0.2rem 0.6rem',
-                borderRadius: '99px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px'
-              }} title="Successfully uploaded to server">
-                <Server style={{ width: '0.9rem', height: '0.9rem' }} /> {embeddingSuccessCount} Server Synced
-              </span>
-              <span style={{
-                color: '#10b981',
-                background: 'transparent',
-                border: '1px solid rgba(16, 185, 129, 0.2)',
-                padding: '0.2rem 0.6rem',
-                borderRadius: '99px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px'
-              }} title="Successfully generated and upscaled">
-                <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem' }} /> {doneCount} All done
-              </span>
+              {autoUpscale && (
+                <span style={{
+                  color: '#6366f1',
+                  background: 'transparent',
+                  border: '1.5px solid rgba(99, 102, 241, 0.35)',
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '99px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }} title="Successfully Upscaled">
+                  <ImagePlus style={{ width: '0.9rem', height: '0.9rem' }} /> {upscaleDoneCount} Upscale done
+                </span>
+              )}
+              {autoEmbed && (
+                <span style={{
+                  color: '#8b5cf6',
+                  background: 'transparent',
+                  border: '1.5px solid rgba(139, 92, 246, 0.35)',
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '99px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }} title="Successfully uploaded to server">
+                  <Server style={{ width: '0.9rem', height: '0.9rem' }} /> {embeddingSuccessCount} Server Synced
+                </span>
+              )}
+              {(autoEmbed || autoUpscale) && (
+                <span style={{
+                  color: '#10b981',
+                  background: 'transparent',
+                  border: '1.5px solid rgba(16, 185, 129, 0.35)',
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '99px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }} title="Successfully generated and upscaled">
+                  <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem' }} /> {doneCount} All done
+                </span>
+              )}
               {errorCount > 0 && (
                 <span style={{ color: '#f43f5e' }} className="flex items-center gap-1" title="Failed (Rate limit or error)">
                   <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {errorCount}
@@ -1617,7 +1652,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 </span>
               )}
 
-              <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: 'transparent', border: '1px solid rgba(255, 255, 255, 0.3)', marginLeft: 'auto' }}>
+              <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: 'transparent', border: '1px solid rgba(255, 255, 255, 0.3)' }}>
                 <button
                   className="btn-icon"
                   style={{ padding: '0.35rem', borderRadius: '0.4rem', background: viewMode === 'card' ? 'rgba(255, 255, 255, 0.4)' : 'transparent', color: viewMode === 'card' ? '#1f2937' : '#9ca3af', border: 'none', cursor: 'pointer' }}
@@ -1636,118 +1671,126 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 </button>
               </div>
 
-              <button style={{
-                color: '#f43f5e',
-                background: 'transparent',
-                border: '1px solid rgba(244, 63, 94, 0.3)',
-                borderRadius: '99px',
-                fontSize: '0.8rem',
-                fontWeight: 500,
-                padding: '0.35rem 0.8rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                cursor: 'pointer'
-              }} onClick={clearAll}>
-                <Trash2 style={{ width: '0.9rem', height: '0.9rem' }} /> Clear all
-              </button>
+              {isProcessing ? (
+                <button style={{
+                  color: '#f43f5e',
+                  background: 'transparent',
+                  border: '1.5px solid rgba(244, 63, 94, 0.45)',
+                  borderRadius: '99px',
+                  fontSize: '0.8rem',
+                  fontWeight: 500,
+                  padding: '0.35rem 0.8rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer'
+                }} onClick={stopProcessing}>
+                  <Square style={{ width: '0.85rem', height: '0.85rem', fill: 'currentColor' }} /> Stop
+                </button>
+              ) : (
+                <button style={{
+                  color: '#f43f5e',
+                  background: 'transparent',
+                  border: '1px solid rgba(244, 63, 94, 0.3)',
+                  borderRadius: '99px',
+                  fontSize: '0.8rem',
+                  fontWeight: 500,
+                  padding: '0.35rem 0.8rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: 'pointer'
+                }} onClick={clearAll}>
+                  <Trash2 style={{ width: '0.9rem', height: '0.9rem' }} /> Clear all
+                </button>
+              )}
             </div>
           </div>
 
           <div className="flex gap-3 flex-wrap mt-3 sm:mt-0 items-center w-full">
               {window.electronAPI && (
                 <>
-                  <label 
-                  className="flex items-center gap-2 text-sm cursor-pointer mr-2 select-none"
-                  title="Automatically embed metadata and upload to FTP when generation finishes"
-                  style={{ 
-                    color: '#f43f5e',
-                    background: 'transparent',
-                    border: '1px solid rgba(244, 63, 94, 0.2)',
-                    padding: '0.35rem 0.8rem',
-                    borderRadius: '0.55rem'
-                  }}
-                >
-                  <input 
-                    type="checkbox" 
-                    className="ios-toggle"
-                    checked={autoEmbed} 
-                    onChange={handleAutoEmbedChange}
-                  />
-                  <span style={{ fontWeight: 500 }}>Auto embed and upload</span>
-                </label>
-                
-                <label 
-                  className="flex items-center gap-2 text-sm cursor-pointer mr-2 select-none"
-                  title="Automatically upscale images before generating metadata"
-                  style={{ 
-                    color: '#10b981',
-                    background: 'transparent',
-                    border: '1px solid rgba(16, 185, 129, 0.2)',
-                    padding: '0.35rem 0.8rem',
-                    borderRadius: '0.55rem'
-                  }}
-                >
-                  <input 
-                    type="checkbox" 
-                    className="ios-toggle"
-                    checked={autoUpscale} 
-                    onChange={(e) => setAutoUpscale(e.target.checked)}
-                  />
-                  <span style={{ fontWeight: 500 }}>Auto upscale</span>
-                </label>
-                
-                {autoUpscale && (
-                  <>
-                    <select
-                      value={upscaleScale}
-                      onChange={(e) => setUpscaleScale(parseInt(e.target.value) || 2)}
-                      style={{
-                        padding: '0.2rem 0.5rem',
-                        borderRadius: '0.4rem',
-                        background: 'var(--surface-2)',
-                        color: 'var(--text-1)',
-                        border: '1px solid var(--glass-border)',
-                        fontSize: '0.8rem',
-                        cursor: 'pointer',
-                        marginRight: '0.35rem',
-                        outline: 'none'
-                      }}
-                    >
-                      <option value="2">2x</option>
-                      <option value="3">3x</option>
-                      <option value="4">4x</option>
-                      <option value="5">5x</option>
-                      <option value="6">6x</option>
-                      <option value="8">8x</option>
-                      <option value="10">10x</option>
-                    </select>
-
-                    <select
-                      value={upscaleEngine}
-                      onChange={(e) => setUpscaleEngine(e.target.value)}
-                      title="Mata AI: Smart model auto-selection for best quality"
-                      style={{
-                        padding: '0.2rem 0.5rem',
-                        borderRadius: '0.4rem',
-                        background: upscaleEngine === 'mata_ai' ? 'linear-gradient(135deg, #7c3aed22, #2563eb22)' : 'var(--surface-2)',
-                        color: 'var(--text-1)',
-                        border: upscaleEngine === 'mata_ai' ? '1px solid #7c3aed88' : '1px solid var(--glass-border)',
-                        fontSize: '0.8rem',
-                        cursor: 'pointer',
-                        marginRight: '0.75rem',
-                        outline: 'none',
-                        fontWeight: upscaleEngine === 'mata_ai' ? 600 : 400
-                      }}
-                    >
-                      <option value="mata_ai">✨ Mata AI</option>
-                      <option value="auto_detect">🔍 Auto Detect</option>
-                      <option value="fast">⚡ Fast</option>
-                    </select>
-                  </>
-                )}
-              </>
-            )}
+                  <div 
+                    className={`${autoEmbed ? 'btn-glass-green-custom' : 'btn-glass-inactive'} flex items-center gap-2 select-none`}
+                    title="Automatically embed metadata and upload to FTP when generation finishes"
+                  >
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="ios-toggle ios-toggle-green-custom"
+                        checked={autoEmbed} 
+                        onChange={handleAutoEmbedChange}
+                      />
+                      <span style={{ fontWeight: 500 }}>Auto embed and upload</span>
+                    </label>
+                  </div>
+                  
+                  <div 
+                    className={`${autoUpscale ? 'btn-glass-green-custom' : 'btn-glass-inactive'} flex items-center gap-2 select-none`}
+                    title="Automatically upscale images before generating metadata"
+                  >
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="ios-toggle ios-toggle-green-custom"
+                        checked={autoUpscale} 
+                        onChange={(e) => setAutoUpscale(e.target.checked)}
+                      />
+                      <span style={{ fontWeight: 500 }}>Auto upscale</span>
+                    </label>
+                    
+                    {autoUpscale && (
+                      <>
+                        <div style={{ width: '1.5px', height: '1.2rem', background: 'rgba(22, 163, 74, 0.3)', margin: '0 4px' }} />
+                        <select
+                          value={upscaleScale}
+                          onChange={(e) => setUpscaleScale(parseInt(e.target.value) || 2)}
+                          style={{
+                            background: 'rgba(22, 163, 74, 0.08)',
+                            color: '#15803D',
+                            border: '1px solid rgba(22, 163, 74, 0.3)',
+                            borderRadius: '0.35rem',
+                            fontSize: '0.82rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            outline: 'none',
+                            padding: '0.15rem 0.4rem'
+                          }}
+                        >
+                          <option value="2" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>2x</option>
+                          <option value="3" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>3x</option>
+                          <option value="4" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>4x</option>
+                          <option value="5" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>5x</option>
+                          <option value="6" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>6x</option>
+                          <option value="8" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>8x</option>
+                          <option value="10" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>10x</option>
+                        </select>
+                        <div style={{ width: '1.5px', height: '1.2rem', background: 'rgba(22, 163, 74, 0.3)', margin: '0 4px' }} />
+                        <select
+                          value={upscaleEngine}
+                          onChange={(e) => setUpscaleEngine(e.target.value)}
+                          title="Mata AI: Smart model auto-selection for best quality"
+                          style={{
+                            background: 'rgba(22, 163, 74, 0.08)',
+                            color: '#15803D',
+                            border: '1px solid rgba(22, 163, 74, 0.3)',
+                            borderRadius: '0.35rem',
+                            fontSize: '0.82rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            outline: 'none',
+                            padding: '0.15rem 0.4rem'
+                          }}
+                        >
+                          <option value="mata_ai" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>✨ Mata AI</option>
+                          <option value="auto_detect" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>🔍 Auto Detect</option>
+                          <option value="fast" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>⚡ Fast</option>
+                        </select>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
 
 
             {viewMode === 'grid' && (
@@ -1771,19 +1814,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             {/* End of dynamic controls */}
             
               <button
+              className="btn-glass-blue"
               style={{
-                background: 'transparent',
-                color: '#3b82f6',
-                border: '1.5px solid rgba(59, 130, 246, 0.35)',
-                borderRadius: '0.55rem',
                 padding: '0.45rem 1.1rem',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                cursor: (isProcessing || images.every(img => img.status === 'done')) ? 'not-allowed' : 'pointer',
-                opacity: (isProcessing || images.every(img => img.status === 'done')) ? 0.6 : 1,
                 boxShadow: 'none'
               }}
               disabled={isProcessing || images.every(img => img.status === 'done')}
@@ -1796,20 +1829,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             
             {window.electronAPI ? (
               <button
-                className={`${doneCount > 0 && !isProcessing && !isEmbedding ? 'animate-pulse' : ''}`}
+                className={`btn-glass-blue ${doneCount > 0 && !isProcessing && !isEmbedding ? 'animate-pulse' : ''}`}
                 style={{ 
-                  background: 'transparent',
-                  color: doneCount === 0 ? 'rgba(139, 92, 246, 0.6)' : '#8b5cf6', 
-                  border: doneCount === 0 ? '1px solid rgba(139, 92, 246, 0.2)' : '1.5px solid rgba(139, 92, 246, 0.35)',
-                  borderRadius: '0.55rem',
                   padding: '0.38rem 0.8rem',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  cursor: (isEmbedding || doneCount === 0) ? 'not-allowed' : 'pointer',
-                  opacity: (isEmbedding || doneCount === 0) ? 0.6 : 1,
                   transition: 'background-color 0.3s, border-color 0.3s'
                 }}
                 disabled={isEmbedding || doneCount === 0}
@@ -1824,42 +1846,22 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               </button>
             ) : (
               <button
+                className="btn-glass-blue"
                 style={{ 
-                  background: 'transparent',
-                  color: 'rgba(139, 92, 246, 0.6)', 
-                  border: '1px solid rgba(139, 92, 246, 0.2)',
-                  borderRadius: '0.55rem',
                   padding: '0.38rem 0.8rem',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  opacity: 0.6,
-                  cursor: 'not-allowed'
                 }}
                 onClick={() => alert("ফাইলের ভেতর সরাসরি মেটাডেটা এম্বেড করতে অ্যাপটি ডেস্কটপ অ্যাপ্লিকেশন হিসেবে চালান (npm run app:dev)। ব্রাউজারে এটি সম্ভব নয়।")}
                 title="Direct embedding is only supported in Desktop app mode"
-                disabled={doneCount === 0}
+                disabled
               >
                 <Tag style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Embed to files
               </button>
             )}
 
             <button
+              className="btn-csv-grad"
               style={{
-                background: 'transparent',
-                color: doneCount === 0 ? 'rgba(16, 185, 129, 0.6)' : '#10b981',
-                border: doneCount === 0 ? '1px solid rgba(16, 185, 129, 0.2)' : '1.5px solid rgba(16, 185, 129, 0.35)',
-                borderRadius: '0.55rem',
                 padding: '0.38rem 0.8rem',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                cursor: (isProcessing || doneCount === 0) ? 'not-allowed' : 'pointer',
-                opacity: (isProcessing || doneCount === 0) ? 0.6 : 1
               }}
               disabled={isProcessing || doneCount === 0}
               onClick={() => setShowExportModal(true)}

@@ -518,9 +518,12 @@ input[type="checkbox"].ios-toggle::after {
   box-shadow: 0 2px 4px rgba(0,0,0,0.15);
 }
 input[type="checkbox"].ios-toggle:checked {
-  background: #6366f1; /* purple/indigo */
+  background: #10b981; /* Green */
 }
-input[type="checkbox"].ios-toggle:checked::after {
+input[type="checkbox"].ios-toggle-green-custom:checked {
+  background: #22C55E; /* ON Track Green */
+}
+input[type="checkbox"].ios-toggle:checked::after, input[type="checkbox"].ios-toggle-green-custom:checked::after {
   transform: translateX(18px);
 }
 input[type="checkbox"].ios-toggle:disabled {
@@ -1083,3 +1086,167 @@ input[type="checkbox"].ios-toggle:disabled {
 .animate-scale-in {
   animation: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* ============================================================
+   PREMIUM GLASS BUTTONS WITH UNIQUE COLOR CODING
+   ============================================================ */
+.btn-glass-rose, .btn-glass-teal, .btn-glass-blue, .btn-glass-purple, .btn-glass-emerald {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.35rem 0.8rem;
+  border-radius: 0.55rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.btn-glass-rose:disabled, .btn-glass-teal:disabled, .btn-glass-blue:disabled, .btn-glass-purple:disabled, .btn-glass-emerald:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-glass-rose {
+  background: rgba(244, 63, 94, 0.15);
+  color: #9f1239; /* Rose 800 */
+  border: 1.5px solid rgba(244, 63, 94, 0.5);
+  box-shadow: 0 4px 12px rgba(244, 63, 94, 0.08);
+}
+.btn-glass-rose:hover:not(:disabled) {
+  background: rgba(244, 63, 94, 0.22);
+  border-color: rgba(244, 63, 94, 0.7);
+  color: #881337; /* Rose 900 */
+}
+
+.btn-glass-teal {
+  background: rgba(13, 148, 136, 0.06);
+  color: #0f766e; /* Teal 700 (Dark Teal) */
+  border: 1.5px solid rgba(13, 148, 136, 0.25);
+}
+.btn-glass-teal:hover:not(:disabled) {
+  background: rgba(13, 148, 136, 0.12);
+  border-color: rgba(13, 148, 136, 0.45);
+}
+
+.btn-glass-blue {
+  background: rgba(37, 99, 235, 0.15);
+  color: #1e40af; /* Blue 800 */
+  border: 1.5px solid rgba(37, 99, 235, 0.5);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08);
+}
+.btn-glass-blue:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 0.22);
+  border-color: rgba(37, 99, 235, 0.7);
+  color: #1e3a8a; /* Blue 900 */
+}
+
+.btn-glass-purple {
+  background: rgba(139, 92, 246, 0.15);
+  color: #5b21b6; /* Purple 800 (Darker for contrast) */
+  border: 1.5px solid rgba(139, 92, 246, 0.5);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.08);
+}
+.btn-glass-purple:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.22);
+  border-color: rgba(139, 92, 246, 0.7);
+  color: #4c1d95; /* Purple 900 */
+}
+
+.btn-glass-emerald {
+  background: rgba(16, 185, 129, 0.15);
+  color: #065f46; /* Emerald 800 (Darker for contrast) */
+  border: 1.5px solid rgba(16, 185, 129, 0.5);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.08);
+}
+.btn-glass-emerald:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.22);
+  border-color: rgba(16, 185, 129, 0.7);
+  color: #064e3b; /* Emerald 900 */
+}
+
+.btn-glass-inactive {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.35rem 0.8rem;
+  border-radius: 0.55rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  background: transparent;
+  color: #1e293b; /* Slate 800 (Very Dark slate) */
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8px);
+}
+
+.btn-glass-inactive:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #0f172a; /* Slate 900 */
+}
+
+.btn-glass-green-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.35rem 0.8rem;
+  border-radius: 0.55rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  background: transparent;
+  color: #15803D; /* Softer Active Green Text */
+  border: 1.5px solid rgba(22, 163, 74, 0.45); /* Softened glass border */
+  backdrop-filter: blur(8px);
+}
+.btn-glass-green-custom:hover:not(:disabled) {
+  background: rgba(22, 163, 74, 0.08);
+  border-color: #15803D; /* Hover Green */
+  color: #15803D;
+}
+.btn-glass-green-custom:active:not(:disabled) {
+  background: rgba(22, 163, 74, 0.15);
+  border-color: #15803D; /* Pressed Green */
+  color: #15803D;
+}
+
+.btn-csv-grad {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.38rem 0.8rem;
+  border-radius: 0.55rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.5s ease;
+  text-decoration: none;
+  background-image: linear-gradient(to right, #2563EB 0%, #60A5FA 51%, #2563EB 100%);
+  background-size: 200% auto;
+  color: white;
+  border: none;
+  outline: none;
+  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+}
+
+.btn-csv-grad:hover:not(:disabled) {
+  background-position: right center;
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(37, 99, 235, 0.45);
+}
+
+.btn-csv-grad:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  background-image: linear-gradient(to right, #2563EB 0%, #60A5FA 51%, #2563EB 100%);
+  color: rgba(255, 255, 255, 0.9);
+  box-shadow: none;
+  border: none;
+}
+

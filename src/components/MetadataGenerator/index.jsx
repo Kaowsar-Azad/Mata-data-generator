@@ -1356,7 +1356,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           <div className="flex gap-3">
             <span className="eps-badge"><FileCode2 className="w-3 h-3" /> EPS Vector</span>
             <span className="img-badge"><ImageIcon className="w-3 h-3" /> Raster Image</span>
-            <span className="eps-indicator" style={{ background: 'rgba(124,58,237,0.15)', color: '#a855f7', padding: '0.25rem 0.6rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Video className="w-3 h-3" /> Video</span>
+            <span className="video-badge"><Video className="w-3 h-3" /> Video</span>
           </div>
           <p style={{ fontSize: '0.72rem', color: 'var(--text-3)', marginTop: '0.75rem' }}>
             Maximum recommended: 50 files per batch
@@ -1535,7 +1535,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       {/* Control Bar */}
       {images.length > 0 && (
         <div className="control-bar">
-          <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex justify-between items-center w-full flex-wrap gap-4">
             {epsCount > 0 && (
               <div className="flex items-center gap-2">
                 <span className="eps-badge" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>
@@ -1545,11 +1545,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             )}
 
 
-            <div className="flex gap-3 text-sm font-semibold items-center">
+            <div className="flex gap-3 text-sm font-semibold items-center flex-wrap w-full">
               <span style={{
-                color: '#6366f1',
-                background: '#f3f4f6',
-                border: '1px solid #e5e7eb',
+                color: '#06b6d4',
+                background: 'transparent',
+                border: '1px solid rgba(6, 182, 212, 0.2)',
                 padding: '0.2rem 0.6rem',
                 borderRadius: '99px',
                 display: 'inline-flex',
@@ -1560,8 +1560,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               </span>
               <span style={{
                 color: '#3b82f6',
-                background: '#eff6ff',
-                border: '1px solid #bfdbfe',
+                background: 'transparent',
+                border: '1px solid rgba(59, 130, 246, 0.2)',
                 padding: '0.2rem 0.6rem',
                 borderRadius: '99px',
                 display: 'inline-flex',
@@ -1571,9 +1571,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 <FileCode2 style={{ width: '0.9rem', height: '0.9rem' }} /> {metadataDoneCount} Metadata done
               </span>
               <span style={{
-                color: '#0d9488',
-                background: '#f0fdfa',
-                border: '1px solid #ccfbf1',
+                color: '#6366f1',
+                background: 'transparent',
+                border: '1px solid rgba(99, 102, 241, 0.2)',
                 padding: '0.2rem 0.6rem',
                 borderRadius: '99px',
                 display: 'inline-flex',
@@ -1583,21 +1583,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 <ImagePlus style={{ width: '0.9rem', height: '0.9rem' }} /> {upscaleDoneCount} Upscale done
               </span>
               <span style={{
-                color: '#10b981',
-                background: '#ecfdf5',
-                border: '1px solid #d1fae5',
-                padding: '0.2rem 0.6rem',
-                borderRadius: '99px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px'
-              }} title="Successfully generated and upscaled">
-                <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem' }} /> {doneCount} All done
-              </span>
-              <span style={{
-                color: '#7c3aed',
-                background: '#f5f3ff',
-                border: '1px solid #ddd6fe',
+                color: '#8b5cf6',
+                background: 'transparent',
+                border: '1px solid rgba(139, 92, 246, 0.2)',
                 padding: '0.2rem 0.6rem',
                 borderRadius: '99px',
                 display: 'inline-flex',
@@ -1606,23 +1594,33 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               }} title="Successfully uploaded to server">
                 <Server style={{ width: '0.9rem', height: '0.9rem' }} /> {embeddingSuccessCount} Server Synced
               </span>
+              <span style={{
+                color: '#10b981',
+                background: 'transparent',
+                border: '1px solid rgba(16, 185, 129, 0.2)',
+                padding: '0.2rem 0.6rem',
+                borderRadius: '99px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }} title="Successfully generated and upscaled">
+                <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem' }} /> {doneCount} All done
+              </span>
               {errorCount > 0 && (
-                <span style={{ color: 'var(--danger)' }} className="flex items-center gap-1" title="Failed (Rate limit or error)">
-                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(239, 68, 68, 0.8)' }} /> {errorCount}
+                <span style={{ color: '#f43f5e' }} className="flex items-center gap-1" title="Failed (Rate limit or error)">
+                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {errorCount}
                 </span>
               )}
               {embeddingErrorCount > 0 && (
-                <span style={{ color: '#ef4444' }} className="flex items-center gap-1" title="Failed Upload/Embed">
-                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(239, 68, 68, 0.8)' }} /> {embeddingErrorCount} Failed Upload
+                <span style={{ color: '#f43f5e' }} className="flex items-center gap-1" title="Failed Upload/Embed">
+                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {embeddingErrorCount} Failed Upload
                 </span>
               )}
-            </div>
 
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: '#ffffff', border: '1px solid #f3f4f6' }}>
+              <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: 'transparent', border: '1px solid rgba(255, 255, 255, 0.3)', marginLeft: 'auto' }}>
                 <button
                   className="btn-icon"
-                  style={{ padding: '0.35rem', borderRadius: '0.5rem', background: viewMode === 'card' ? '#f3f4f6' : 'transparent', color: viewMode === 'card' ? '#1f2937' : '#9ca3af', border: 'none', cursor: 'pointer' }}
+                  style={{ padding: '0.35rem', borderRadius: '0.4rem', background: viewMode === 'card' ? 'rgba(255, 255, 255, 0.4)' : 'transparent', color: viewMode === 'card' ? '#1f2937' : '#9ca3af', border: 'none', cursor: 'pointer' }}
                   onClick={() => { setViewMode('card'); setSelectedRows(new Set()); }}
                   title="Card View"
                 >
@@ -1630,7 +1628,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 </button>
                 <button
                   className="btn-icon"
-                  style={{ padding: '0.35rem', borderRadius: '0.5rem', background: viewMode === 'grid' ? '#f3f4f6' : 'transparent', color: viewMode === 'grid' ? '#1f2937' : '#9ca3af', border: 'none', cursor: 'pointer' }}
+                  style={{ padding: '0.35rem', borderRadius: '0.4rem', background: viewMode === 'grid' ? 'rgba(255, 255, 255, 0.4)' : 'transparent', color: viewMode === 'grid' ? '#1f2937' : '#9ca3af', border: 'none', cursor: 'pointer' }}
                   onClick={() => setViewMode('grid')}
                   title="Spreadsheet View (Bulk Edit)"
                 >
@@ -1639,9 +1637,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               </div>
 
               <button style={{
-                color: '#ef4444',
-                background: '#fef2f2',
-                border: '1px solid #fee2e2',
+                color: '#f43f5e',
+                background: 'transparent',
+                border: '1px solid rgba(244, 63, 94, 0.3)',
                 borderRadius: '99px',
                 fontSize: '0.8rem',
                 fontWeight: 500,
@@ -1656,13 +1654,19 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             </div>
           </div>
 
-          <div className="flex gap-3 flex-wrap mt-3 sm:mt-0 items-center">
+          <div className="flex gap-3 flex-wrap mt-3 sm:mt-0 items-center w-full">
               {window.electronAPI && (
                 <>
                   <label 
                   className="flex items-center gap-2 text-sm cursor-pointer mr-2 select-none"
                   title="Automatically embed metadata and upload to FTP when generation finishes"
-                  style={{ color: '#1f2937' }}
+                  style={{ 
+                    color: '#f43f5e',
+                    background: 'transparent',
+                    border: '1px solid rgba(244, 63, 94, 0.2)',
+                    padding: '0.35rem 0.8rem',
+                    borderRadius: '0.55rem'
+                  }}
                 >
                   <input 
                     type="checkbox" 
@@ -1676,7 +1680,13 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 <label 
                   className="flex items-center gap-2 text-sm cursor-pointer mr-2 select-none"
                   title="Automatically upscale images before generating metadata"
-                  style={{ color: '#6b7280' }}
+                  style={{ 
+                    color: '#10b981',
+                    background: 'transparent',
+                    border: '1px solid rgba(16, 185, 129, 0.2)',
+                    padding: '0.35rem 0.8rem',
+                    borderRadius: '0.55rem'
+                  }}
                 >
                   <input 
                     type="checkbox" 
@@ -1762,9 +1772,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             
               <button
               style={{
-                background: '#3b82f6',
-                color: '#ffffff',
-                border: 'none',
+                background: 'transparent',
+                color: '#3b82f6',
+                border: '1.5px solid rgba(59, 130, 246, 0.35)',
                 borderRadius: '0.55rem',
                 padding: '0.45rem 1.1rem',
                 fontSize: '0.82rem',
@@ -1774,7 +1784,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 gap: '6px',
                 cursor: (isProcessing || images.every(img => img.status === 'done')) ? 'not-allowed' : 'pointer',
                 opacity: (isProcessing || images.every(img => img.status === 'done')) ? 0.6 : 1,
-                boxShadow: '0 4px 10px rgba(59, 130, 246, 0.2)'
+                boxShadow: 'none'
               }}
               disabled={isProcessing || images.every(img => img.status === 'done')}
               onClick={() => processBatch(false)}
@@ -1788,18 +1798,18 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               <button
                 className={`${doneCount > 0 && !isProcessing && !isEmbedding ? 'animate-pulse' : ''}`}
                 style={{ 
-                  background: '#f9fafb',
-                  color: '#6b7280', 
-                  border: '1px solid #e5e7eb',
+                  background: 'transparent',
+                  color: doneCount === 0 ? 'rgba(139, 92, 246, 0.6)' : '#8b5cf6', 
+                  border: doneCount === 0 ? '1px solid rgba(139, 92, 246, 0.2)' : '1.5px solid rgba(139, 92, 246, 0.35)',
                   borderRadius: '0.55rem',
-                  padding: '0.45rem 0.9rem',
+                  padding: '0.38rem 0.8rem',
                   fontSize: '0.82rem',
-                  fontWeight: 500,
+                  fontWeight: 600,
                   display: 'flex',
                   alignItems: 'center',
                   gap: '5px',
-                  opacity: doneCount === 0 ? 0.6 : undefined,
                   cursor: (isEmbedding || doneCount === 0) ? 'not-allowed' : 'pointer',
+                  opacity: (isEmbedding || doneCount === 0) ? 0.6 : 1,
                   transition: 'background-color 0.3s, border-color 0.3s'
                 }}
                 disabled={isEmbedding || doneCount === 0}
@@ -1815,13 +1825,13 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             ) : (
               <button
                 style={{ 
-                  background: '#f9fafb',
-                  color: '#9ca3af', 
-                  border: '1px solid #e5e7eb',
+                  background: 'transparent',
+                  color: 'rgba(139, 92, 246, 0.6)', 
+                  border: '1px solid rgba(139, 92, 246, 0.2)',
                   borderRadius: '0.55rem',
-                  padding: '0.45rem 0.9rem',
+                  padding: '0.38rem 0.8rem',
                   fontSize: '0.82rem',
-                  fontWeight: 500,
+                  fontWeight: 600,
                   display: 'flex',
                   alignItems: 'center',
                   gap: '5px',
@@ -1838,13 +1848,13 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
             <button
               style={{
-                background: '#f0fdf4',
-                color: '#059669',
-                border: '1px solid #bbf7d0',
+                background: 'transparent',
+                color: doneCount === 0 ? 'rgba(16, 185, 129, 0.6)' : '#10b981',
+                border: doneCount === 0 ? '1px solid rgba(16, 185, 129, 0.2)' : '1.5px solid rgba(16, 185, 129, 0.35)',
                 borderRadius: '0.55rem',
-                padding: '0.45rem 0.9rem',
+                padding: '0.38rem 0.8rem',
                 fontSize: '0.82rem',
-                fontWeight: 500,
+                fontWeight: 600,
                 display: 'flex',
                 alignItems: 'center',
                 gap: '5px',

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { SlidersHorizontal, ChevronDown, ChevronUp, Type, AlignLeft, Hash, Plus, Ban, Sparkles, Server, ShieldCheck, Loader2, CheckCircle2, AlertCircle, ExternalLink, Settings, Target } from "lucide-react";
 
 /* ── Platform Data ── */
@@ -263,6 +263,12 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
 
   const update = (key, val) => setSettings((p) => ({ ...p, [key]: val }));
 
+  useEffect(() => {
+    if (settings.smartMode) {
+      update('smartMode', false);
+    }
+  }, [settings.smartMode]);
+
   return (
     <div className="ps-wrapper">
       {/* Header Toggle */}
@@ -277,72 +283,6 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
       {/* Body */}
       {isOpen && (
         <div className="ps-body">
-          {/* ── Keyword Mode ── */}
-          {activeTab !== 'prompt' && (
-            <div style={{ marginBottom: '1rem' }}>
-              <div className="ps-section-label" style={{ marginBottom: '0.4rem' }}>KEYWORD MODE</div>
-              <div style={{
-                display: 'flex',
-                background: 'var(--surface-2)',
-                border: '1px solid var(--glass-border)',
-                borderRadius: '0.5rem',
-                padding: '2px',
-                gap: '2px',
-                marginBottom: '0.75rem'
-              }}>
-                <button
-                  type="button"
-                  onClick={() => update('smartMode', false)}
-                  style={{
-                    flex: 1,
-                    background: !settings.smartMode ? 'var(--primary)' : 'transparent',
-                    color: !settings.smartMode ? '#fff' : 'var(--text-2)',
-                    border: 'none',
-                    padding: '0.4rem 0.5rem',
-                    borderRadius: '0.4rem',
-                    cursor: 'pointer',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    transition: 'all 0.2s',
-                    boxShadow: !settings.smartMode ? '0 1px 3px rgba(37,99,235,0.2)' : 'none'
-                  }}
-                >
-                  <Hash style={{ width: '0.85rem', height: '0.85rem' }} />
-                  Set Exact Count
-                </button>
-                <button
-                  type="button"
-                  onClick={() => update('smartMode', true)}
-                  style={{
-                    flex: 1,
-                    background: settings.smartMode ? 'var(--primary)' : 'transparent',
-                    color: settings.smartMode ? '#fff' : 'var(--text-2)',
-                    border: 'none',
-                    padding: '0.4rem 0.5rem',
-                    borderRadius: '0.4rem',
-                    cursor: 'pointer',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    transition: 'all 0.2s',
-                    boxShadow: settings.smartMode ? '0 1px 3px rgba(37,99,235,0.2)' : 'none'
-                  }}
-                >
-                  <Sparkles style={{ width: '0.85rem', height: '0.85rem' }} />
-                  AI Auto Decide
-                </button>
-              </div>
-
-
-            </div>
-          )}
 
           {/* ── Prompt Similarity Mode ── */}
           {activeTab === 'prompt' && (
@@ -470,7 +410,7 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
                   max={200}
                   step={5}
                   unit="chars"
-                  color="var(--text-1)"
+                  color="var(--primary)"
                   onChange={(v) => update("titleMaxChars", v)}
                 />
 
@@ -482,7 +422,7 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
                   max={500}
                   step={10}
                   unit="chars"
-                  color="var(--text-1)"
+                  color="var(--primary)"
                   onChange={(v) => update("descMaxChars", v)}
                 />
 
@@ -495,7 +435,7 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
                     max={50}
                     step={1}
                     unit="keywords"
-                    color="var(--text-1)"
+                    color="var(--primary)"
                     onChange={(v) => update("keywordCount", v)}
                   />
                 )}
@@ -655,7 +595,7 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
         .ps-body {
           padding: 0.6rem 0.85rem 0.85rem;
           border-top: 1px solid var(--glass-border);
-          max-height: calc(100vh - 33rem);
+          max-height: calc(100vh - 14rem);
           overflow-y: auto;
           scrollbar-width: thin;
           scrollbar-color: var(--glass-border) transparent;
@@ -760,15 +700,47 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
           font-size: 0.65rem;
           opacity: 0.7;
         }
+        .ps-range-control {
+          margin-bottom: 0.25rem;
+        }
+        .ps-range-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 0.45rem;
+        }
+        .ps-range-label {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          font-size: 0.68rem;
+          font-weight: 600;
+          letter-spacing: 0.03em;
+          text-transform: uppercase;
+          color: var(--text-2);
+        }
+        .ps-range-value {
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: var(--text-1) !important;
+          font-variant-numeric: tabular-nums;
+        }
+        .ps-range-unit {
+          font-weight: 500;
+          font-size: 0.65rem;
+          color: var(--text-3);
+        }
         .ps-range-track-wrapper {
           position: relative;
-          height: 6px;
+          height: 12px;
+          display: flex;
+          align-items: center;
         }
         .ps-range-slider {
           -webkit-appearance: none;
           appearance: none;
           width: 100%;
-          height: 6px;
+          height: 3px;
           border-radius: 999px;
           outline: none;
           cursor: pointer;
@@ -776,34 +748,45 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
             to right,
             var(--track-color) 0%,
             var(--track-color) var(--fill-pct),
-            var(--glass-border) var(--fill-pct),
-            var(--glass-border) 100%
+            rgba(0, 0, 0, 0.06) var(--fill-pct),
+            rgba(0, 0, 0, 0.06) 100%
           );
           transition: background 0.1s;
         }
         .ps-range-slider::-webkit-slider-thumb {
           -webkit-appearance: none;
-          width: 14px;
-          height: 14px;
+          width: 13px;
+          height: 13px;
           border-radius: 50%;
-          background: white;
-          border: 2px solid var(--text-3);
-          box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+          background: #ffffff;
+          border: 1px solid rgba(0, 0, 0, 0.12);
+          box-shadow: 0 1.5px 3px rgba(0, 0, 0, 0.1), 0 1px 1px rgba(0, 0, 0, 0.06);
           cursor: grab;
-          transition: transform 0.15s;
+          transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+          margin-top: -1px;
         }
         .ps-range-slider::-webkit-slider-thumb:hover {
           transform: scale(1.2);
           border-color: var(--primary);
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15), 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+        .ps-range-slider::-webkit-slider-thumb:active {
+          cursor: grabbing;
+          transform: scale(1.05);
         }
         .ps-range-slider::-moz-range-thumb {
-          width: 14px;
-          height: 14px;
+          width: 13px;
+          height: 13px;
           border-radius: 50%;
-          background: white;
-          border: 2px solid var(--text-3);
-          box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+          background: #ffffff;
+          border: 1px solid rgba(0, 0, 0, 0.12);
+          box-shadow: 0 1.5px 3px rgba(0, 0, 0, 0.1), 0 1px 1px rgba(0, 0, 0, 0.06);
           cursor: grab;
+          transition: transform 0.15s, border-color 0.15s;
+        }
+        .ps-range-slider::-moz-range-thumb:hover {
+          transform: scale(1.2);
+          border-color: var(--primary);
         }
 
         /* Toggles */

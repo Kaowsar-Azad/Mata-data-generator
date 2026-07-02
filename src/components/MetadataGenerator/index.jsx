@@ -24,7 +24,8 @@ import {
   Tag,
   ImagePlus,
   Server,
-  Square
+  Square,
+  Eraser
 } from "lucide-react";
 
 import { generateMetadata, analyzeImageSecurity } from "../../services/geminiService";
@@ -1294,6 +1295,60 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     );
   };
 
+  const removeKeywordsByColor = (color) => {
+    const getKeywordScore = (keyword, img) => {
+      const kl = keyword.toLowerCase().trim();
+      if (img && img.result && img.result.keywordScores) {
+        const scoreKey = Object.keys(img.result.keywordScores).find(
+          k => k.toLowerCase().trim() === kl
+        );
+        if (scoreKey !== undefined) {
+          const exactScore = img.result.keywordScores[scoreKey];
+          if (exactScore !== undefined) {
+            const numScore = Number(exactScore);
+            if (!isNaN(numScore)) {
+              return Math.min(100, Math.max(1, numScore));
+            }
+          }
+        }
+      }
+      const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]);
+      if (junk.has(kl) || kl.length < 3) return 10;
+      return 50;
+    };
+
+    setImages(prev => prev.map(img => {
+      if (!img.result || !img.result.keywords) return img;
+      
+      const kws = img.result.keywords.split(',').map(k => k.trim()).filter(Boolean);
+      const newKws = [];
+      const newScores = { ...img.result.keywordScores };
+
+      kws.forEach(kw => {
+        const score = getKeywordScore(kw, img);
+        const isYellow = score >= 40 && score < 75;
+        const isRed = score < 40;
+
+        if (color === 'yellow' && isYellow) {
+          delete newScores[kw];
+        } else if (color === 'red' && isRed) {
+          delete newScores[kw];
+        } else {
+          newKws.push(kw);
+        }
+      });
+
+      return {
+        ...img,
+        result: {
+          ...img.result,
+          keywords: newKws.join(', '),
+          keywordScores: newScores
+        }
+      };
+    }));
+  };
+
   const getGridImages = () => {
     let list = [...images];
     if (gridFilter.trim()) {
@@ -1404,7 +1459,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               {errorCount} File{errorCount !== 1 ? 's' : ''} Failed to Generate
             </h3>
             <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
-              কিছু ফাইলের মেটাডেটা তৈরি হয়নি (সম্ভবত API rate limit বা সংযোগ সমস্যার কারণে)। শুধু ব্যর্থ ফাইলগুলো পুনরায় চেষ্টা করতে পারেন।
+              Some files failed to generate metadata (possibly due to API rate limit or connection issues). You can retry only the failed files.
             </p>
           </div>
           <button
@@ -1428,7 +1483,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               {embeddingErrorCount} File{embeddingErrorCount !== 1 ? 's' : ''} Failed to Upload/Embed
             </h3>
             <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
-              কিছু ফাইল আপলোড বা এম্বেড হতে ব্যর্থ হয়েছে (সম্ভবত নেটওয়ার্ক বা সার্ভার সমস্যার কারণে)। শুধু ব্যর্থ ফাইলগুলো পুনরায় চেষ্টা করুন।
+              Some files failed to upload or embed (possibly due to network or server issues). Please retry only the failed files.
             </p>
           </div>
           <button
@@ -1459,7 +1514,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 <AlertTriangle style={{ width: '1rem', height: '1rem', flexShrink: 0 }} />
                 {duplicatePairs.length} Duplicate{duplicatePairs.length !== 1 ? 's' : ''} Detected
                 <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-3)', marginLeft: '0.25rem' }}>
-                  — এই ছবিগুলো প্রায় একই। স্টক সাইট reject করতে পারে!
+                  — These images are almost identical. Stock sites might reject them!
                 </span>
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
@@ -1648,11 +1703,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem' }} /> {doneCount} All done
                 </span>
               )}
-              {errorCount > 0 && (
-                <span style={{ color: '#f43f5e', flexShrink: 0 }} className="flex items-center gap-1" title="Failed (Rate limit or error)">
-                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {errorCount}
-                </span>
-              )}
+
               {embeddingErrorCount > 0 && (
                 <span style={{ color: '#f43f5e', flexShrink: 0 }} className="flex items-center gap-1" title="Failed Upload/Embed">
                   <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {embeddingErrorCount} Failed Upload
@@ -1842,19 +1893,21 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
             {/* End of dynamic controls */}
             
+            {images.length > 0 && !images.every(img => img.status === 'done') && (
               <button
-              className="btn-glass-blue"
-              style={{
-                padding: '0.45rem 1.1rem',
-                boxShadow: 'none'
-              }}
-              disabled={isProcessing || images.every(img => img.status === 'done')}
-              onClick={() => processBatch(false)}
-              title="Keyboard shortcut: Enter"
-            >
-              {isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles style={{ width: '0.95rem', height: '0.95rem' }} />}
-              {isProcessing ? 'Generating...' : (images.every(img => img.status === 'done') ? 'All Done!' : 'Generate all')}
-            </button>
+                className="btn-glass-blue"
+                style={{
+                  padding: '0.45rem 1.1rem',
+                  boxShadow: 'none'
+                }}
+                disabled={isProcessing}
+                onClick={() => processBatch(false)}
+                title="Keyboard shortcut: Enter"
+              >
+                {isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles style={{ width: '0.95rem', height: '0.95rem' }} />}
+                {isProcessing ? 'Generating...' : 'Generate all'}
+              </button>
+            )}
             
             {window.electronAPI ? (
               <button
@@ -1897,6 +1950,82 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             >
               <FileSpreadsheet style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Export CSV ({doneCount})
             </button>
+
+            {doneCount > 0 && (
+              <button
+                className="btn-glass-inactive"
+                style={{
+                  padding: '0.38rem 0.8rem',
+                  border: '1.5px solid rgba(245, 158, 11, 0.35)',
+                  color: '#e28704',
+                  background: 'rgba(245, 158, 11, 0.03)',
+                  cursor: isProcessing ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  transition: 'all 0.2s',
+                }}
+                disabled={isProcessing}
+                onClick={() => {
+                  if (confirm("Are you sure you want to remove all Medium (Yellow) keywords across all files?")) {
+                    removeKeywordsByColor('yellow');
+                  }
+                }}
+                onMouseOver={(e) => {
+                  if (!isProcessing) {
+                    e.currentTarget.style.background = 'rgba(245, 158, 11, 0.08)';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = 'rgba(245, 158, 11, 0.03)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                <Eraser style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Remove Yellow Keywords
+              </button>
+            )}
+
+            {doneCount > 0 && (
+              <button
+                className="btn-glass-inactive"
+                style={{
+                  padding: '0.38rem 0.8rem',
+                  border: '1.5px solid rgba(239, 68, 68, 0.35)',
+                  color: '#dc2626',
+                  background: 'rgba(239, 68, 68, 0.03)',
+                  cursor: isProcessing ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.875rem',
+                  fontWeight: 600,
+                  transition: 'all 0.2s',
+                }}
+                disabled={isProcessing}
+                onClick={() => {
+                  if (confirm("Are you sure you want to remove all Low (Red) keywords across all files?")) {
+                    removeKeywordsByColor('red');
+                  }
+                }}
+                onMouseOver={(e) => {
+                  if (!isProcessing) {
+                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.03)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                <Eraser style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Remove Red Keywords
+              </button>
+            )}
           </div>
           {!window.electronAPI && (
             <div style={{ width: '100%', borderTop: '1px solid var(--glass-border)', marginTop: '0.75rem', paddingTop: '0.75rem' }}>

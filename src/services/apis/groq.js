@@ -104,7 +104,7 @@ Generate metadata as if you are looking at a vector illustration about "${cleanN
   // ── Keyword generation strategy ────────────────────────────────────────────
   const keywordEmphasis = s.smartMode
     ? `KEYWORDS: Generate EXACTLY 15 to 30 highly relevant, commercial search terms. Do not exceed 30 keywords. Do not pad with generic words. Ensure they describe the image perfectly.`
-    : `KEYWORDS: Generate AT LEAST 50 highly relevant keywords. Use primary subjects, colors, materials, actions, and commercial themes. NO generic filler. If the image is simple, use synonyms, specific textures, and abstract concepts related to the image instead of inventing physical objects. Separate keywords by commas.`;
+    : `KEYWORDS: Generate EXACTLY 50 highly relevant keywords. Use primary subjects, colors, materials, actions, and commercial themes. NO generic filler. If the image is simple, you MUST use related synonyms, precise color shades, lighting conditions, specific material textures, and relevant design styles to reach 50. ABSOLUTELY DO NOT use random verbs (e.g. 'creates', 'features', 'various'), vague adjectives, or hallucinate unrelated contexts (e.g. 'social', 'media', 'online'). Separate keywords by commas.`;
 
   return `${fileContext}
 
@@ -155,7 +155,7 @@ Follow this STRICT scoring rubric to match our frontend visualization:
 CRITICAL RULE: The number of items in your "keywordScores" object MUST EXACTLY MATCH the number of keywords in your "keywords" string. Do NOT skip scoring ANY keyword.
 
 Output ONLY valid JSON, no markdown formatting:
-{"title":"A complete and grammatically correct sentence describing the image.","description":"A detailed visual description explaining the layout, colors, and specific commercial uses.","keywords":"apple, technology, screen, ... (requested total)","keywordScores":{"apple":95,"technology":80,"screen":45},"categories":"Selected Category","commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"...","policyWarning":null}`;
+{"title":"A complete and grammatically correct sentence describing the image.","description":"A detailed visual description explaining the layout, colors, and specific commercial uses.","keywords":"apple, screen, technology, ... (requested total)","keywordScores":{"apple":95,"screen":85,"technology":60},"categories":"Selected Category","commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"...","policyWarning":null}`;
 }
 
 export async function fetchGroq(apiKey, prompt, base64Data, mimeType, forceJson = true, promptSettings = {}) {

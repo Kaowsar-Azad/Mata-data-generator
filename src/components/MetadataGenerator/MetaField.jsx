@@ -17,9 +17,17 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img 
     
     // Check if AI provided a real SEO score
     if (img && img.result && img.result.keywordScores) {
-        const exactScore = img.result.keywordScores[kl] || img.result.keywordScores[keyword.trim()];
-        if (exactScore !== undefined && typeof exactScore === 'number') {
-           return Math.min(100, Math.max(1, exactScore));
+        const scoreKey = Object.keys(img.result.keywordScores).find(
+          k => k.toLowerCase().trim() === kl
+        );
+        if (scoreKey !== undefined) {
+          const exactScore = img.result.keywordScores[scoreKey];
+          if (exactScore !== undefined) {
+             const numScore = Number(exactScore);
+             if (!isNaN(numScore)) {
+                 return Math.min(100, Math.max(1, numScore));
+             }
+          }
         }
     }
 
@@ -27,19 +35,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img 
     const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]);
     if (junk.has(kl) || kl.length < 3) return 10; 
     
-    let score = 50; // default medium score
-    const title = (img?.result?.title || '').toLowerCase();
-    const desc = (img?.result?.description || '').toLowerCase();
-    
-    // High relevance if present in title, good relevance if in description
-    if (title.includes(kl)) score += 30;
-    else if (desc.includes(kl)) score += 15;
-    
-    const wordCount = kl.split(' ').length;
-    if (wordCount > 1) score += 10; 
-    if (kl.length >= 4 && kl.length <= 25) score += 5; 
-    
-    return Math.min(99, score);
+    return 50; // default exact middle score (Yellow)
   };
 
   const removeKeyword = (idxToRemove) => {

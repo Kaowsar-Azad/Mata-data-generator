@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "concurrently \"node server/index.js\" \"vite --force\"",
     "server": "node server/index.js",
+    "preapp:dev": "powershell -Command \"Get-Process electron -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 1\"",
     "app:dev": "concurrently \"node server/index.js\" \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "app:build": "vite build && electron-builder",
     "build": "vite build",

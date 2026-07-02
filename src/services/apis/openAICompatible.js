@@ -27,7 +27,8 @@ export async function fetchOpenAICompatible(provider, endpoint, models, apiKey, 
     }
 
     // System prompt for OpenAI-compatible providers: focus on output structure and critical rules.
-    const systemInstruction = `You are a professional stock media metadata expert. Your ENTIRE job is to respond with ONLY a single valid JSON object conforming EXACTLY to the guidelines, count requirements, grammar rules, and trademark scanning instructions provided in the user prompt. 
+    const systemInstruction = forceJson
+      ? `You are a professional stock media metadata expert. Your ENTIRE job is to respond with ONLY a single valid JSON object conforming EXACTLY to the guidelines, count requirements, grammar rules, and trademark scanning instructions provided in the user prompt. 
 
 CRITICAL RULES:
 1. TRADEMARK & IP SAFETY: You must perform the detailed IP/Trademark Scan requested in the user prompt. If any brand name, trademark, company logo, or protected design is found, you MUST set "policyWarning" to a brief (max 2 sentences), specific, actionable message explaining it. If clean, set to null.
@@ -51,7 +52,8 @@ REQUIRED JSON FORMAT:
   "marketDemand": "high",
   "scoreReason": "Brief explanation.",
   "policyWarning": null
-}`;
+}`
+      : `You are a helpful AI assistant specializing in describing images in extreme detail and generating highly technical, descriptive AI image prompts. Respond with ONLY the raw prompt text. Do NOT wrap it in JSON.`;
 
     const payload = {
       model: currentModel,
@@ -73,6 +75,9 @@ REQUIRED JSON FORMAT:
       payload.response_format = { type: "json_object" };
     }
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 90000);
+
     try {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -81,8 +86,10 @@ REQUIRED JSON FORMAT:
           "Content-Type": "application/json",
           ...(provider === "openrouter" ? { "HTTP-Referer": "http://localhost:5173", "X-Title": "Metadata Pro" } : {})
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -100,14 +107,19 @@ REQUIRED JSON FORMAT:
       console.log(`[Success] Successfully generated using model string: ${currentModel}`);
       break; // Successfully got response!
     } catch (err) {
-      lastError = err;
+      clearTimeout(timeoutId);
+      let errorToThrow = err;
+      if (err.name === 'AbortError') {
+        errorToThrow = new Error(`Request timed out (90s). ${provider.toUpperCase()} API is taking too long.`);
+      }
+      lastError = errorToThrow;
       // If model is decommissioned, deprecated, or not found (usually 400 or 404), try next model candidate smoothly!
-      if (err.message.includes("400") || err.message.includes("decommissioned") || err.message.includes("not found") || err.message.includes("404")) {
-        console.warn(`[Fallback] Model ${currentModel} failed on ${provider}: ${err.message}. Trying next candidate...`);
+      if (errorToThrow.message.includes("400") || errorToThrow.message.includes("decommissioned") || errorToThrow.message.includes("not found") || errorToThrow.message.includes("404")) {
+        console.warn(`[Fallback] Model ${currentModel} failed on ${provider}: ${errorToThrow.message}. Trying next candidate...`);
         continue;
       }
       // Otherwise break/rethrow immediately (e.g. 401 Unauthorized, 429 Rate Limit)
-      throw err;
+      throw errorToThrow;
     }
   }
 

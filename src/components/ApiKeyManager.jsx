@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Trash2, Key, CheckCircle, X, Shield, ExternalLink } from "lucide-react";
+import { Plus, Trash2, Key, CheckCircle, X, Shield, ExternalLink, Sparkles, Wind, Zap, Cpu, Network } from "lucide-react";
 
 const PROVIDERS = [
-  { id: "gemini",     label: "Google Gemini", icon: "✦", desc: "Google's most capable multimodal AI models", url: "https://aistudio.google.com/app/apikey" },
-  { id: "mistral",    label: "Mistral AI",    icon: "🌪", desc: "High performance open models", url: "https://console.mistral.ai/api-keys/" },
-  { id: "groq",       label: "Groq",          icon: "⚡", desc: "Fast LLM inference with OpenAI-compatible API", url: "https://console.groq.com/keys" },
-  { id: "openai",     label: "OpenAI",        icon: "🧠", desc: "Powerful language models and vision capabilities", url: "https://platform.openai.com/api-keys" },
-  { id: "openrouter", label: "OpenRouter",    icon: "🌐", desc: "Unified API to access multiple LLMs", url: "https://openrouter.ai/keys" },
+  { id: "gemini",     label: "Google Gemini", icon: Sparkles, iconColor: "#6366f1", desc: "Google's most capable multimodal AI models", url: "https://aistudio.google.com/app/apikey" },
+  { id: "mistral",    label: "Mistral AI",    icon: Wind,     iconColor: "#f97316", desc: "High performance open models", url: "https://console.mistral.ai/api-keys/" },
+  { id: "groq",       label: "Groq",          icon: Zap,      iconColor: "#f59e0b", desc: "Fast LLM inference with OpenAI-compatible API", url: "https://console.groq.com/keys" },
+  { id: "openai",     label: "OpenAI",        icon: Cpu,      iconColor: "#10b981", desc: "Powerful language models and vision capabilities", url: "https://platform.openai.com/api-keys" },
+  { id: "openrouter", label: "OpenRouter",    icon: Network,  iconColor: "#3b82f6", desc: "Unified API to access multiple LLMs", url: "https://openrouter.ai/keys" },
 ];
 
 export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProviderChange }) {
@@ -140,6 +140,7 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
             {PROVIDERS.map(p => {
               const isViewed = viewedProvider === p.id;
               const isActive = activeProviders.includes(p.id);
+              const IconComponent = p.icon;
               
               return (
                 <div
@@ -152,14 +153,17 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
                     background: isViewed ? 'var(--primary-glow)' : 'transparent',
                     borderLeft: `3px solid ${isViewed ? 'var(--primary)' : 'transparent'}`,
                     cursor: 'pointer',
-                    transition: 'all 0.15s'
+                    transition: 'all 0.15s',
+                    opacity: isActive ? 1 : 0.45
                   }}
                   onClick={() => setViewedProvider(p.id)}
                   onMouseOver={(e) => {
                     if (!isViewed) e.currentTarget.style.background = 'var(--surface-3)';
+                    if (!isActive) e.currentTarget.style.opacity = '0.75';
                   }}
                   onMouseOut={(e) => {
                     if (!isViewed) e.currentTarget.style.background = 'transparent';
+                    if (!isActive) e.currentTarget.style.opacity = '0.45';
                   }}
                 >
                   <input
@@ -182,8 +186,8 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
                     }}
                     title="Enable this provider for metadata generation"
                   />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', opacity: isViewed ? 1 : 0.7 }}>
-                    <span style={{ fontSize: '1rem' }}>{p.icon}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <IconComponent style={{ width: '1rem', height: '1rem', color: p.iconColor, flexShrink: 0 }} />
                     <span style={{
                       color: isViewed ? 'var(--text-1)' : 'var(--text-2)',
                       fontWeight: isViewed ? 700 : 500,
@@ -195,9 +199,12 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
             })}
 
             <div style={{ marginTop: 'auto', padding: '1rem 1.25rem' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', color: 'var(--text-3)', fontSize: '0.7rem', lineHeight: 1.4 }}>
-                <Shield style={{ width: '0.9rem', height: '0.9rem', flexShrink: 0, marginTop: '0.1rem' }} />
-                <span>Keys are securely stored locally in your browser.</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', color: 'var(--text-3)', fontSize: '0.7rem', lineHeight: 1.45 }}>
+                <Shield style={{ width: '1.1rem', height: '1.1rem', color: '#10b981', flexShrink: 0, marginTop: '0.1rem' }} />
+                <div>
+                  <div style={{ fontWeight: 700, color: 'var(--text-2)', marginBottom: '0.2rem', fontSize: '0.75rem' }}>Key & Security</div>
+                  <span>Your API keys are stored securely in local browser storage. Requests are sent directly to AI providers, never through our servers.</span>
+                </div>
               </div>
             </div>
           </div>
@@ -210,15 +217,27 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
                 <h3 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0 }}>
                   {currentProvider?.label}
                 </h3>
-                <span style={{
-                  background: 'rgba(16,185,129,0.1)',
-                  color: 'var(--success)',
-                  padding: '0.2rem 0.6rem',
-                  borderRadius: '999px',
-                  fontSize: '0.7rem',
-                  fontWeight: 700,
-                  border: '1px solid rgba(16,185,129,0.2)'
-                }}>Active</span>
+                {activeProviders.includes(currentProvider?.id) ? (
+                  <span style={{
+                    background: 'rgba(16,185,129,0.1)',
+                    color: 'var(--success)',
+                    padding: '0.2rem 0.6rem',
+                    borderRadius: '999px',
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    border: '1px solid rgba(16,185,129,0.2)'
+                  }}>Active</span>
+                ) : (
+                  <span style={{
+                    background: 'rgba(107, 114, 128, 0.1)',
+                    color: 'var(--text-3)',
+                    padding: '0.2rem 0.6rem',
+                    borderRadius: '999px',
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    border: '1px solid rgba(107, 114, 128, 0.2)'
+                  }}>Inactive</span>
+                )}
               </div>
               
               <button

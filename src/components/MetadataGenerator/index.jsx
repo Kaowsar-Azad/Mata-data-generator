@@ -207,7 +207,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     };
   }, []);
 
-  const concurrentLimit = promptSettings?.concurrentLimit || 10;
+  const concurrentLimit = promptSettings?.concurrentLimit || 2;
   const setConcurrentLimit = (val) => {
     if (typeof setPromptSettings === "function") {
       setPromptSettings((prev) => ({ ...prev, concurrentLimit: val }));
@@ -701,7 +701,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             const activeScale = autoUpscale ? upscaleScale : (autoEmbed ? embedScale : 2);
             const activeEngine = autoUpscale ? upscaleEngine : (autoEmbed ? embedEngine : 'mata_ai');
             const targetPath = img.visualFile?.path || (!img.isEps && !img.isVideo ? img.file?.path : null);
-            const needsUpscale = ((autoUpscale || autoEmbed) && window.electronAPI && targetPath && !img.isVideo);
+            const needsUpscale = (autoUpscale && window.electronAPI && targetPath && !img.isVideo);
 
             setImages((prev) =>
               prev.map((item) =>
@@ -906,7 +906,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         await Promise.race(activePromises);
       }
       
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 800));
     }
 
     await Promise.all(activePromises);
@@ -1576,7 +1576,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             )}
 
 
-            <div className="flex gap-3 text-sm font-semibold items-center flex-wrap w-full">
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', width: '100%', flexWrap: 'nowrap', overflowX: 'auto' }} className="text-xs font-medium">
               <span style={{
                 color: '#06b6d4',
                 background: 'transparent',
@@ -1585,7 +1585,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 borderRadius: '99px',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '6px'
+                gap: '6px',
+                flexShrink: 0
               }} title="Waiting to process">
                 <UploadCloud style={{ width: '0.9rem', height: '0.9rem' }} /> {images.length} Upload file
               </span>
@@ -1597,7 +1598,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 borderRadius: '99px',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '6px'
+                gap: '6px',
+                flexShrink: 0
               }} title="Metadata Generated">
                 <FileCode2 style={{ width: '0.9rem', height: '0.9rem' }} /> {metadataDoneCount} Metadata done
               </span>
@@ -1610,7 +1612,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   borderRadius: '99px',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '6px'
+                  gap: '6px',
+                  flexShrink: 0
                 }} title="Successfully Upscaled">
                   <ImagePlus style={{ width: '0.9rem', height: '0.9rem' }} /> {upscaleDoneCount} Upscale done
                 </span>
@@ -1624,7 +1627,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   borderRadius: '99px',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '6px'
+                  gap: '6px',
+                  flexShrink: 0
                 }} title="Successfully uploaded to server">
                   <Server style={{ width: '0.9rem', height: '0.9rem' }} /> {embeddingSuccessCount} Server Synced
                 </span>
@@ -1638,74 +1642,112 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   borderRadius: '99px',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '6px'
+                  gap: '6px',
+                  flexShrink: 0
                 }} title="Successfully generated and upscaled">
                   <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem' }} /> {doneCount} All done
                 </span>
               )}
               {errorCount > 0 && (
-                <span style={{ color: '#f43f5e' }} className="flex items-center gap-1" title="Failed (Rate limit or error)">
+                <span style={{ color: '#f43f5e', flexShrink: 0 }} className="flex items-center gap-1" title="Failed (Rate limit or error)">
                   <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {errorCount}
                 </span>
               )}
               {embeddingErrorCount > 0 && (
-                <span style={{ color: '#f43f5e' }} className="flex items-center gap-1" title="Failed Upload/Embed">
+                <span style={{ color: '#f43f5e', flexShrink: 0 }} className="flex items-center gap-1" title="Failed Upload/Embed">
                   <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {embeddingErrorCount} Failed Upload
                 </span>
               )}
 
-              <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: 'transparent', border: '1px solid rgba(255, 255, 255, 0.3)' }}>
-                <button
-                  className="btn-icon"
-                  style={{ padding: '0.35rem', borderRadius: '0.4rem', background: viewMode === 'card' ? 'rgba(255, 255, 255, 0.4)' : 'transparent', color: viewMode === 'card' ? '#1f2937' : '#9ca3af', border: 'none', cursor: 'pointer' }}
-                  onClick={() => { setViewMode('card'); setSelectedRows(new Set()); }}
-                  title="Card View"
-                >
-                  <List className="w-4 h-4" />
-                </button>
-                <button
-                  className="btn-icon"
-                  style={{ padding: '0.35rem', borderRadius: '0.4rem', background: viewMode === 'grid' ? 'rgba(255, 255, 255, 0.4)' : 'transparent', color: viewMode === 'grid' ? '#1f2937' : '#9ca3af', border: 'none', cursor: 'pointer' }}
-                  onClick={() => setViewMode('grid')}
-                  title="Spreadsheet View (Bulk Edit)"
-                >
-                  <LayoutGrid className="w-4 h-4" />
-                </button>
-              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }} className="flex-shrink-0">
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  background: '#e4e7ec', 
+                  padding: '2px', 
+                  borderRadius: '0.55rem',
+                  border: '1px solid rgba(0, 0, 0, 0.04)',
+                  boxShadow: 'inset 0 1px 2px rgba(0, 0, 0, 0.06)',
+                  gap: '2px'
+                }}>
+                  <button
+                    className="btn-icon"
+                    style={{ 
+                      padding: '0.35rem', 
+                      borderRadius: '0.4rem', 
+                      background: viewMode === 'card' ? '#ffffff' : 'transparent', 
+                      color: viewMode === 'card' ? 'var(--text-1)' : '#71717a', 
+                      border: 'none', 
+                      cursor: 'pointer',
+                      boxShadow: viewMode === 'card' ? '0 2px 4px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)' : 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      outline: 'none'
+                    }}
+                    onClick={() => { setViewMode('card'); setSelectedRows(new Set()); }}
+                    title="Card View"
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                  <button
+                    className="btn-icon"
+                    style={{ 
+                      padding: '0.35rem', 
+                      borderRadius: '0.4rem', 
+                      background: viewMode === 'grid' ? '#ffffff' : 'transparent', 
+                      color: viewMode === 'grid' ? 'var(--text-1)' : '#71717a', 
+                      border: 'none', 
+                      cursor: 'pointer',
+                      boxShadow: viewMode === 'grid' ? '0 2px 4px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)' : 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      outline: 'none'
+                    }}
+                    onClick={() => setViewMode('grid')}
+                    title="Spreadsheet View (Bulk Edit)"
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                  </button>
+                </div>
 
-              {isProcessing ? (
-                <button style={{
-                  color: '#f43f5e',
-                  background: 'transparent',
-                  border: '1.5px solid rgba(244, 63, 94, 0.45)',
-                  borderRadius: '99px',
-                  fontSize: '0.8rem',
-                  fontWeight: 500,
-                  padding: '0.35rem 0.8rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  cursor: 'pointer'
-                }} onClick={stopProcessing}>
-                  <Square style={{ width: '0.85rem', height: '0.85rem', fill: 'currentColor' }} /> Stop
-                </button>
-              ) : (
-                <button style={{
-                  color: '#f43f5e',
-                  background: 'transparent',
-                  border: '1px solid rgba(244, 63, 94, 0.3)',
-                  borderRadius: '99px',
-                  fontSize: '0.8rem',
-                  fontWeight: 500,
-                  padding: '0.35rem 0.8rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  cursor: 'pointer'
-                }} onClick={clearAll}>
-                  <Trash2 style={{ width: '0.9rem', height: '0.9rem' }} /> Clear all
-                </button>
-              )}
+                {isProcessing ? (
+                  <button style={{
+                    color: '#f43f5e',
+                    background: 'transparent',
+                    border: '1.5px solid rgba(244, 63, 94, 0.45)',
+                    borderRadius: '99px',
+                    fontSize: '0.8rem',
+                    fontWeight: 500,
+                    padding: '0.35rem 0.8rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    cursor: 'pointer'
+                  }} onClick={stopProcessing}>
+                    <Square style={{ width: '0.85rem', height: '0.85rem', fill: 'currentColor' }} /> Stop
+                  </button>
+                ) : (
+                  <button style={{
+                    color: '#f43f5e',
+                    background: 'transparent',
+                    border: '1px solid rgba(244, 63, 94, 0.3)',
+                    borderRadius: '99px',
+                    fontSize: '0.8rem',
+                    fontWeight: 500,
+                    padding: '0.35rem 0.8rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    cursor: 'pointer'
+                  }} onClick={clearAll}>
+                    <Trash2 style={{ width: '0.9rem', height: '0.9rem' }} /> Clear all
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 

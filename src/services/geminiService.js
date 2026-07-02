@@ -1,291 +1,13 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { fetchGemini, buildGeminiPrompt } from "./apis/gemini.js";
+import { fetchMistral, buildMistralPrompt } from "./apis/mistral.js";
+import { fetchGroq, buildGroqPrompt } from "./apis/groq.js";
+import { fetchOpenAI, buildOpenAIPrompt } from "./apis/openai.js";
+import { fetchOpenRouter, buildOpenRouterPrompt } from "./apis/openrouter.js";
 import { recordApiUsage } from "./apiUsageTracker.js";
-import { fetchGroq } from "./apis/groq.js";
-import { fetchOpenAI } from "./apis/openai.js";
-import { fetchOpenRouter } from "./apis/openrouter.js";
-import { fetchMistral } from "./apis/mistral.js";
-
 /**
  * Super Robust Gemini Service with Multi-Version and Multi-Model fallbacks
  * Supports both raster images and EPS files (via extracted/placeholder previews)
  */
-
-const modelsToTry = [
-  "gemini-3.5-flash",
-  "gemini-2.5-pro",
-  "gemini-2.5-flash",
-  "gemini-2.0-flash"
-];
-
-// Fallback dynamic fetch
-async function getAvailableModels(apiKey) {
-  try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-    const data = await res.json();
-    if (data.models) {
-      // Filter for models that support generateContent and multimodal (vision)
-      return data.models
-        .filter(m => m.supportedGenerationMethods.includes("generateContent"))
-        .map(m => m.name.replace("models/", ""));
-    }
-    return [];
-  } catch (err) {
-    console.error("Failed to fetch models list:", err);
-    return [];
-  }
-}
-
-/**
- * Build the metadata prompt depending on file context.
- *
- * @param {object} options
- * @param {boolean} options.isEps         - Is the source an EPS vector file?
- * @param {boolean} options.isPlaceholder - Was the preview a generated placeholder (no embedded preview)?
- * @param {string}  options.fileName      - Original filename for extra context
- */
-function buildPrompt({ isEps, isPlaceholder, isVideo, fileName, extractedTextContext, promptSettings }) {
-  // Clean up filename (remove extension, replace dashes/underscores with spaces)
-  let cleanName = fileName.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
-  
-  // If the filename looks like a hash or random string (e.g. c35f75d7...), ignore it
-  const isHash = /^[a-f0-9]{20,}$/i.test(cleanName) || cleanName.length > 30 && !cleanName.includes(" ");
-  if (isHash) {
-    cleanName = isVideo ? "a professional stock video clip" : "a professional illustration";
-  }
-
-  // Default settings fallback
-  const s = promptSettings || {
-    titleMaxChars: 70,
-    descMaxChars: 150,
-    keywordCount: 48
-  };
-  const promptKeywordsCount = s.smartMode ? 49 : Math.min(100, s.keywordCount + 25);
-
-  // ── File-type context ──────────────────────────────────────────────────────
-  let fileContext = "";
-
-  if (isVideo) {
-    fileContext = `CRITICAL INSTRUCTION: The attached images are 3 representative FRAMES (sampled at 20%, 50%, and 80% duration) extracted from a stock VIDEO CLIP. The video file name is "${cleanName}".
-Do NOT treat this as a photo or illustration. You are writing metadata for a STOCK VIDEO, not a static image.
-Analyze these 3 frames carefully to understand the visual progression, motion, action, setting, mood, and subject of the video clip over time.
-Consider: what type of video motion is implied (e.g., pan, tilt, zoom, tracking shot, timelapse, slow-motion, handheld), what action is taking place, what story is told, and who would license it.
-The metadata will be used on stock video platforms: Adobe Stock, Shutterstock, Pond5, Getty Images, Storyblocks.`;
-  } else if (isEps) {
-    if (isPlaceholder) {
-      let deepContext = "";
-      if (extractedTextContext && extractedTextContext.trim().length > 0) {
-        deepContext = `\n\nI managed to extract the following hidden raw data from the EPS file's code (like layer names, colors, and embedded text):\n${extractedTextContext}\n\nPlease use these deeply extracted clues (especially colors, layers, and embedded text) to build highly accurate metadata!`;
-      }
-      fileContext = `CRITICAL INSTRUCTION: The attached image is a FAKE PLACEHOLDER. Do NOT describe the attached image. IGNORE the image completely.
-Instead, you must guess the content of this vector illustration purely based on its file name: "${cleanName}" and the hidden data below.${deepContext}
-
-Generate metadata as if you are looking at a vector illustration about "${cleanName}". Do NOT mention "file format", "EPS icon", or "placeholder".`;
-    } else {
-      fileContext = `This is a preview extracted from a stock vector illustration in EPS format. The file name is "${cleanName}". Please describe the actual illustration shown in the image.`;
-    }
-  } else {
-    fileContext = `The file name is "${cleanName}". Please describe the image.`;
-  }
-
-  // ── Negative-word instructions ─────────────────────────────────────────────
-  let negInstructions = "";
-  if (s.negTitleEnabled && s.negTitleWords && s.negTitleWords.trim()) {
-    negInstructions += `\n- The title MUST NOT contain any of these words: ${s.negTitleWords}.`;
-  }
-  if (s.negKeywordsEnabled && s.negKeywords && s.negKeywords.trim()) {
-    negInstructions += `\n- The keywords MUST NOT contain any of these words: ${s.negKeywords}.`;
-  }
-
-  // ── Platform-specific SEO signals ─────────────────────────────────────────
-  const targetPlatform = s.exportPlatform || "General";
-  let platformContext = "";
-
-  const PLATFORM_SEO = {
-    "Adobe Stock":    `Platform: Adobe Stock (up to 49 keywords). Algorithm weights title+description match. Buyers use conceptual+emotional+literal terms. Irrelevant keywords are AI-penalized.\nSEO: Lead with primary buyer-intent term. Include emotional concepts (success, freedom, teamwork). Mirror Adobe autocomplete phrases. Add "vector"/"flat design"/"icon" for illustrations; lighting cues for photos.`,
-    "Shutterstock":   `Platform: Shutterstock (up to 50 keywords). Title match = #1 ranking factor. Buyers use literal, specific terms.\nSEO: Put strongest keyword FIRST (extra ranking weight). Use exact colors/materials/quantities. Add occupation keywords for people shots. Include composition terms buyers filter by: "overhead view", "close up", "wide shot". Make description keyword-dense.`,
-    "Getty":          `Platform: Getty Images. Editorial+premium commercial buyers. Authentic, journalistic tone — no marketing language.\nSEO: Use editorial language. Emphasize real-life authenticity. Note location/event/social context if identifiable. Add conceptual storytelling terms. Zero superlatives.`,
-    "FreePik":        `Platform: FreePik. Designers seeking editable templates, vectors, design elements.\nSEO: Emphasize editability — "editable", "customizable", "layered", "template". Add design file style: "flat", "outline", "gradient", "minimal", "3D". Include style-descriptors designers search: "modern", "retro", "corporate". Pair element + use-case.`,
-    "Vecteezy":       `Platform: Vecteezy. Buyers want practical flat design assets and vectors.\nSEO: Lead title with design style — "flat", "outline", "doodle", "cartoon", "geometric". Pair subject + design application. Include utility terms: "scalable", "vector", "SVG".`,
-    "Dreamstime":     `Platform: Dreamstime. Broad audience of commercial buyers and bloggers. Both literal and thematic searches.\nSEO: Title must start with the most-searched literal subject. Add age/gender/ethnicity context for people shots (general terms only). Include seasonal and holiday modifiers when relevant. Add niche industry terms: "editorial", "stock", "royalty free concept" terms in description. Use both American and British spelling variants for key nouns.`,
-    "Pond5":          `Platform: Pond5. Media professionals: video editors, filmmakers, broadcast producers.\nSEO: Extremely literal terms. Include production context: "4K", "HD", "looping", "seamless", "footage". Add location, time of day, season. Pair subject with production style.`,
-    "Depositphotos":  `Platform: Depositphotos. Commercially focused. Balanced literal+conceptual.\nSEO: Equal mix of literal and conceptual terms. Commercial use-cases: "marketing", "advertising", "website", "presentation". Add demographic details for people.`,
-    "General":        `Platform: General (all major stock sites). Maximize cross-platform discovery.\nSEO: Balance conceptual and literal equally. Optimize title for the top buyer search query. Cover all intent layers in keywords: object → action → concept → use-case.`,
-  };
-
-  platformContext = PLATFORM_SEO[targetPlatform] || PLATFORM_SEO["General"];
-
-
-  let mediaHintStr = "";
-  if (s.mediaTypeHint && s.mediaTypeHint !== "None / Auto-detect") {
-    mediaHintStr = `\nNote: This file is a "${s.mediaTypeHint}".`;
-  }
-
-  let customInstStr = "";
-  if (s.customInstruction && s.customInstruction.trim()) {
-    customInstStr = `\n\nUSER INSTRUCTION (follow strictly):\n"${s.customInstruction.trim()}"`;
-  }
-
-  // ── Category list ──────────────────────────────────────────────────────────
-  let categoryList = "";
-  if (targetPlatform === "Adobe Stock") {
-    categoryList = `["Animals", "Buildings and Architecture", "Business", "Drinks", "The Environment", "States of Mind", "Food", "Graphic Resources", "Hobbies and Leisure", "Industry", "Landscapes", "Lifestyle", "People", "Plants and Flowers", "Culture and Religion", "Science", "Social Issues", "Sports", "Technology", "Transport", "Travel"]`;
-  } else if (targetPlatform === "Shutterstock") {
-    categoryList = `["Abstract", "Animals/Wildlife", "Backgrounds/Textures", "Beauty/Fashion", "Buildings/Landmarks", "Business/Finance", "Education", "Food and Drink", "Healthcare/Medical", "Holidays", "Illustrations/Clip-Art", "Industrial", "Interiors", "Miscellaneous", "Nature", "Objects", "Parks/Outdoor", "People", "Religion", "Science", "Signs/Symbols", "Sports/Recreation", "Technology", "Transportation", "Vintage"]`;
-  } else if (targetPlatform === "General") {
-    categoryList = `["Abstract & Textures", "Animals & Wildlife", "Architecture & Buildings", "Business & Finance", "Education & Science", "Food & Drink", "Healthcare & Medical", "Holidays & Celebrations", "Illustrations & Clipart", "Industry & Technology", "Landscapes & Nature", "Lifestyle & People", "Objects & Concepts", "Sports & Recreation", "Transportation & Travel"]`;
-  } else {
-    categoryList = `["Abstract", "Animals/Wildlife", "Backgrounds/Textures", "Beauty/Fashion", "Buildings/Landmarks", "Business/Finance", "Education", "Food and Drink", "Healthcare/Medical", "Holidays", "Illustrations/Clip-Art", "Industrial", "Interiors", "Miscellaneous", "Nature", "Objects", "Parks/Outdoor", "People", "Religion", "Science", "Signs/Symbols", "Sports/Recreation", "Technology", "Transportation", "Vintage"]`;
-  }
-
-  const singleWordRule = s.singleWordKeywords 
-    ? "- STRICT: Every keyword must be a valid, standalone dictionary word. Do NOT combine or squish multiple words together (e.g. do NOT write 'highcontrast' or 'userinterface'). No phrases."
-    : "- Single words preferred. Short 2-word phrases that buyers actually search (e.g., \"coffee cup\", \"social media\") are allowed. NEVER write 3+ word phrases as a keyword.";
-
-  // ── Keyword generation strategy ────────────────────────────────────────────
-  let keywordEmphasis = "";
-  if (s.smartMode) {
-    keywordEmphasis = `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-KEYWORD STRATEGY — SWEET SPOT MODE (ADOBE OPTIMIZED)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Adobe Stock recommends generating exactly 15 to 30 highly relevant keywords. You MUST ignore any other count requirements and ONLY generate the best 15 to 30 keywords. No padding, no generic filler.
-
-Use this framework to find the best 15-30 keywords:
-  TIER 1 — EXACT MATCH (highest priority): The precise literal terms a buyer types to find THIS specific image.
-  TIER 2 — LONG-TAIL PHRASES: 2-word combinations that capture specific buyer intent.
-  TIER 3 — SEMANTIC/CONCEPTUAL: Broader themes, moods, emotions, and contexts strongly implied by the image.
-  TIER 4 — COMMERCIAL APPLICATION: Real use-cases, industries, or contexts where buyers license this image.
-
-Do NOT generate generic terms like "image", "photo", "picture", "file", "design", "element" unless they appear as part of a specific compound like "flat design" or "vector element".
-Do NOT pad the list. Every keyword must pass this test: "Would a buyer searching ONLY this term want to find this specific image?"`;  
-  } else {
-    keywordEmphasis = `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-KEYWORD STRATEGY — MAXIMUM COVERAGE MODE (EXACTLY ${promptKeywordsCount} keywords required)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-You MUST generate EXACTLY ${promptKeywordsCount} keywords using this precise 6-tier framework:
-
-  TIER 1 — PRIMARY SUBJECTS: The literal nouns visible in the image. Most important tier — buyers search these first.
-    Examples: "laptop", "coffee", "woman", "mountain", "heart icon", "stethoscope"
-
-  TIER 2 — DESCRIPTIVE ATTRIBUTES: Specific colors, materials, quantities, styles, lighting, and conditions.
-    Examples: "red", "wooden", "three", "hand-drawn", "transparent background", "overhead view", "studio light"
-
-  TIER 3 — ACTIONS & STATES: What is happening, movement, poses, interactions.
-    Examples: "working", "smiling", "flying", "isolated", "growing", "connected", "holding"
-
-  TIER 4 — MOODS & CONCEPTS: High-value abstract ideas, emotions, and themes the image conveys.
-    Examples: "success", "freedom", "teamwork", "healthcare", "innovation", "sustainability", "leadership"
-
-  TIER 5 — COMMERCIAL USE-CASES: Specific industries or ways buyers will use this image.
-    Examples: "website banner", "social media", "presentation", "infographic", "logo", "packaging"
-
-  TIER 6 — HIGH-VALUE SYNONYMS & RELATED CONCEPTS (Fill exactly to reach ${promptKeywordsCount}): Use highly specific, related commercial terms, regional variants, and niche industry vocabulary. DO NOT USE GENERIC FILLER.
-
-COUNT ENFORCEMENT PROTOCOL:
-  Step 1: Generate all keywords across all 6 tiers using ONLY highly descriptive, valuable terms.
-  Step 2: Count your total. If below ${promptKeywordsCount}, expand Tier 6 with more high-value synonyms or related industry terms. 
-  CRITICAL RULE: NEVER invent random, "garbage" keywords, or hallucinate physical objects that are not in the image. To reach the exact count of ${promptKeywordsCount}, you MUST use broader commercial concepts, industry themes, and abstract meanings. You may include a maximum of 1 or 2 focal color names (e.g., "navy blue").
-  Step 3: If above ${promptKeywordsCount}, remove the weakest keywords.
-  Step 4: Final count MUST be EXACTLY ${promptKeywordsCount}. Not one more, not one less. This is an absolute requirement.
-
-ABSOLUTE MINIMUM STANDARD: Every single keyword must be a highly relevant, commercial search term a real buyer would type. No generic filler and NO hallucinated elements!`;
-  }
-
-  // ── Master prompt assembly (token-efficient) ──────────────────────────────
-  const kwMode = s.smartMode
-    ? `KEYWORDS — SWEET SPOT MODE: Generate EXACTLY 15 to 30 of the most relevant, high buyer-intent keywords. Do not exceed 30 keywords. Do not pad with generic or irrelevant words. Output only keywords that are directly relevant to this specific asset.`
-    : `KEYWORDS — COUNT MODE: Generate EXACTLY ${promptKeywordsCount} keywords using 6 tiers.
-  T1 Primary nouns, T2 Attributes, T3 Actions, T4 Concepts, T5 Use-cases, T6 Industry terms (fill to hit ${promptKeywordsCount} exactly).
-  Count before output. Adjust T6 up/down to hit exactly ${promptKeywordsCount}. Never submit fewer or more.`;
-
-  return `${fileContext}
-
-You are a stock media SEO expert (15 yrs, 100k+ assets optimized on Adobe Stock, Shutterstock, Getty). Your metadata consistently ranks top-3 and drives downloads.
-
-LANGUAGE: All input may be in any language. ALL output MUST be in English only.
-
-${platformContext}${mediaHintStr}${customInstStr}
-
-== TITLE (SEO Optimized Headline) ==
-Formula: [Primary Subject] + [Specific Action/Attribute] + [Setting/Context]
-Rules:
-- Write a complete, descriptive sentence answering Who, What, Where, and Why (the 5W structure Shutterstock's semantic engine relies on).
-- NEVER start with articles (A/An/The) or adjectives. Start with the most-searched noun.
-- Be hyper-specific: "Businesswoman typing on silver laptop in modern glass office" NOT "Woman working on laptop".
-- For vectors/illustrations: explicitly state the style ("flat vector illustration", "3D render", "seamless pattern", "glyph icon set").
-- Forbidden words: stunning, vibrant, captivating, breathtaking, mesmerizing, showcasing, beautifully, perfect, amazing.
-- Target Length: STRICTLY between ${s.titleMinChars || 10} and ${s.titleMaxChars || 80} characters. The title MUST be a complete grammatically correct sentence.${s.negTitleEnabled && s.negTitleWords ? `\n- Forbidden in title: ${s.negTitleWords}.` : ""}
-- CRITICAL FOR ADOBE STOCK: Every important noun, adjective and verb in your title MUST also appear in the keyword list, because Adobe Stock titles are NOT searchable — only keywords are indexed.
-
-== DESCRIPTION (SEO Optimized Detail) ==
-Formula: [Factual visual description + Style/Lighting] + [2-3 specific commercial use-cases]
-Rules:
-- Expand on the title with factual details. Do not just list keywords.
-- Sentence 1: Detail the style, colors, composition, and specific subjects.
-- Sentence 2: Name concrete commercial applications (e.g., "Ideal for corporate presentations, marketing materials, and web banners").
-- Keep it professional, objective, and active voice.
-- Forbidden words: stunning, breathtaking, meticulously, "This image shows", "Here we can see".
-- Target Length: STRICTLY between ${s.descMinChars || 50} and ${s.descMaxChars || 120} characters.
-
-== ${kwMode} ==
-
-Keyword rules (apply to all modes):
-
-SLOT ORDER & STRICT RANKING — You MUST order and rank keywords exactly by their relevance to the image. The most accurate, literal, and important words MUST come first:
-  TOP 10 KEYWORDS (Positions 1-10): THE CORE (CRITICAL FOR ADOBE STOCK) — These are the absolute most important, highest-ranking, literal, and descriptive search terms for this specific image. You MUST place them at the very front.
-  SLOT 2 (Positions 11-25): ATTRIBUTES & SECONDARY SUBJECTS — Colors, materials, lighting style, camera angle, composition, secondary background elements, and specific demographics.
-  SLOT 3 (Positions 26+): COMMERCIAL CONCEPTS & THEMES — To reach your exact total keyword count, fill these slots primarily with abstract themes, emotions, industry niches, and buyer use-cases. You may include a MAXIMUM of 1 or 2 specific focal colors. DO NOT hallucinate fake physical objects.
-
-GRAMMAR RULES (Adobe Stock NLP requirements):
-- Use SINGULAR nouns only. The algorithm auto-expands to plural. Write "dog" not "dogs", "camera" not "cameras".
-- Use INFINITIVE verb forms only. Write "run", "smile", "hold" — NOT "running", "smiled", "holding".
-
-QUALITY RULES:
-- NO generic filler: "thing", "item", "nice", "great", "image", "photo", "picture", "graphic", "element".
-- STRICT VISIBILITY RULE: ONLY describe what is PHYSICALLY VISIBLE. Never infer tech concepts not shown (e.g., a physical camera icon does NOT justify adding "software", "web", "data", "application", "wireless").
-- NO root duplicates: never use both "camera" and "cameras", or "color" and "colorful". Pick the most commercial singular form.
-- UNIVERSAL BRAND & TRADEMARK BAN: You must NEVER include ANY brand name, company name, corporate entity, trademarked term, product model name, or protected design name in keywords, titles, or descriptions. This ban applies universally to ALL brands and trademarks globally (not just famous ones like Nike, Apple, Adidas, etc.). You must use generic, non-branded alternatives instead (e.g., "smartwatch" instead of "Apple Watch", "athletic shoes" instead of "Nikes", "carbonated soft drink" instead of "Coca-Cola", "gaming console" instead of "PlayStation").
-- No banned words: "free", "download", "copyright", "watermark".
-- No hashtags. ${singleWordRule}${negInstructions}
-
-== IP & POLICY VIOLATION SCAN (UNIVERSAL TRADEMARK CHECK) ==
-Before generating metadata, carefully examine the image for elements that would cause REJECTION on Adobe Stock, Shutterstock, or Getty Images due to intellectual property (IP) laws. You must check for:
-- LOGOS & BRANDING: Any visible logo, wordmark, brand name, corporate identity, emblem, or trademarked symbol on clothing, products, vehicles, devices, signs, or in the background.
-- TRADEMARKED SPORTS DESIGNS: Distinctive designs or official match items associated with specific sports leagues, teams, tournaments, or sponsors.
-- COMMERCIAL PRODUCTS WITH PROTECTED DESIGN: Recognizable toys, specific consumer electronics, designer goods, or vehicles where the product's shape or design itself is protected.
-- COPYRIGHTED ARTWORK: Art, murals, sculptures, graffiti, or illustrations created by a known or unknown artist that are clearly visible and identifiable.
-- RESTRICTED ARCHITECTURE: Modern buildings, landmarks, or private properties with a distinctive trademarked design.
-- METADATA KEYWORD VIOLATIONS: Any brand name or trademarked word in the generated title, description, or keywords.
-
-CRITICAL MANDATE FOR WARNINGS: If you detect ANY brand name, trademark, company logo, or protected design in the image (regardless of whether it is a famous brand or not), you MUST set the "policyWarning" field in your JSON output to a brief (max 2 sentences), specific, actionable message explaining exactly what the trademark or brand issue is and what the user should do about it. If there is absolutely no trademark, brand, logo, or design copyright issue, set "policyWarning" to null.
-
-Example warning: "The soccer ball features a trademarked brand design, which may cause an IP refusal. Consider using a generic soccer ball without the pattern."
-
-== CATEGORY ==
-Choose 1-2 best-fit from: ${categoryList}
-
-== COMMERCIAL EVALUATION ==
-Evaluate this image's COMMERCIAL POTENTIAL for stock photo marketplaces (Adobe Stock, Shutterstock, Getty) across 4 dimensions:
-1. commercialConcept: Choose exactly one value: "evergreen" (universal evergreen appeal, teamwork, sunset, family), "popular" (highly searched but competitive, food, travel, tech), "niche" (limited audience, personal/artistic), or "none" (obscure, no clear commercial use).
-2. subjectClarity: Choose exactly one value: "perfect" (isolated, single clear subject, perfect composition), "clear" (clear subject, minor distractions), "cluttered" (visible but cluttered/busy/poor framing), or "confusing" (ambiguous/confusing content).
-3. technicalQuality: Choose exactly one value: "professional" (sharp, excellent lighting, clean finish), "good" (minor lighting/sharpness issues, usable), "acceptable" (noticeable noise, flat lighting), or "poor" (blurry, out of focus, heavily noisy).
-4. marketDemand: Choose exactly one value: "high" (currently trending high-demand, AI, tech, sustainability, wellness), "evergreen" (consistently popular evergreen topic), "low" (declining/oversaturated trend), or "none" (no identifiable demand).
-
-In "scoreReason": write exactly 1 sentence (max 15 words) naming the PRIMARY factor.
-
-== KEYWORD SCORES (ABSOLUTE CRITICAL MANDATE) ==
-You MUST evaluate EVERY SINGLE keyword you generate and assign it a "Commercial Relevance Score" from 1 to 100 based strictly on how accurately and importantly it describes THIS SPECIFIC image.
-CRITICAL RULE: The number of items in your "keywordScores" object MUST EXACTLY MATCH the number of keywords in your "keywords" string. Do NOT skip scoring ANY keyword. If you output 48 keywords, you MUST output 48 scores.
-We use this score to color-code keywords (Green/Yellow/Red):
-- 80-100 (Green): Highly relevant SEO terms. The keyword perfectly describes the primary subjects, main actions, or core themes physically visible in this specific image.
-- 40-79 (Yellow): Moderately relevant. The keyword describes background details, secondary elements, or broader related commercial concepts (this includes your Tier 6 conceptual keywords).
-- 1-39 (Red): Low relevance or generic. DO NOT GENERATE THESE. Every keyword must be a high-value SEO search term.
-Evaluate each keyword with brutal honesty based on the image content. Rank and score them exactly and accurately according to their true relevance to the image. Do not artificially inflate scores. A keyword must NEVER receive a high score if it is not physically visible or directly relevant.
-
-Output ONLY valid JSON, no markdown:
-{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":45},"categories":["Cat1"],"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"...","policyWarning":null}`;
-}
 
 
 const BRAND_REPLACEMENTS = {
@@ -363,6 +85,7 @@ function sanitizeText(text) {
 function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
   const s = promptSettings || {};
   let result = { ...metadata };
+  let remainingNeeds;
 
   // --- Deterministic Selling Score Calculation ---
   let sellingScore = 0;
@@ -535,8 +258,9 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
         );
         if (scoreKey !== undefined) {
           const exactScore = result.keywordScores[scoreKey];
-          if (exactScore !== undefined && typeof exactScore === 'number') {
-            return exactScore;
+          if (exactScore !== undefined) {
+            const numScore = Number(exactScore);
+            if (!isNaN(numScore)) return numScore;
           }
         }
       }
@@ -546,11 +270,7 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
         "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]);
       if (junk.has(kl) || kl.length < 3) return 10;
       
-      let score = 70; // Default to Yellow/Medium
-      const wordCount = kl.split(' ').length;
-      if (wordCount > 1) score += 5;
-      
-      return Math.min(99, score);
+      return 50; // Default to exact middle Medium (Yellow)
     };
 
     // Sort both arrays by score (descending)
@@ -564,7 +284,7 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
       // Ensure at least 20 keywords
       const minSmartCount = 20;
       if (highQualityKws.length < minSmartCount) {
-        let remainingNeeds = minSmartCount - highQualityKws.length;
+        remainingNeeds = minSmartCount - highQualityKws.length;
         if (remainingNeeds > 0) {
           const hqSafeFallback = safeFallbackKws.filter(w => getKeywordScore(w) >= 40 && !highQualityKws.includes(w));
           highQualityKws.push(...hqSafeFallback.slice(0, remainingNeeds));
@@ -610,13 +330,7 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
       let finalKws = kws.filter(k => getKeywordScore(k) >= 40);
       
       if (s.keywordCount) {
-        // Fallback 0: Use valid kws that have lower relevance score (< 40)
-        let remainingNeeds = s.keywordCount - finalKws.length;
-        if (remainingNeeds > 0) {
-          const lowerQualityKws = kws.filter(k => getKeywordScore(k) < 40 && !finalKws.includes(k));
-          finalKws.push(...lowerQualityKws.slice(0, remainingNeeds));
-        }
-
+        // Removed Fallback 0 to prevent low-score irrelevant keywords.
         // Fallback 1: If singleWordKeywords is active, split multi-word keywords into individual words
         remainingNeeds = s.keywordCount - finalKws.length;
         if (remainingNeeds > 0 && s.singleWordKeywords && multiWordKwsToSplit.length > 0) {
@@ -656,65 +370,7 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
           finalKws.push(...uniqueExtra.slice(0, remainingNeeds));
         }
 
-        // Fallback 4: Use safeFallbackKws with lower score (< 40)
-        remainingNeeds = s.keywordCount - finalKws.length;
-        if (remainingNeeds > 0) {
-          const lqSafeFallback = safeFallbackKws.filter(w => getKeywordScore(w) < 40 && !finalKws.includes(w));
-          finalKws.push(...lqSafeFallback.slice(0, remainingNeeds));
-        }
-
-        // Fallback 5: Extract remaining words from title and description (< 40)
-        remainingNeeds = s.keywordCount - finalKws.length;
-        if (remainingNeeds > 0) {
-          const titleDescWords = ((result.title || "") + " " + (result.description || ""))
-            .toLowerCase()
-            .replace(/[^a-z0-9\s]/g, '')
-            .split(/\s+/)
-            .filter(w => w.length >= 3 && !/^(the|and|for|with|this|that|from|have|has|are|was|were|you|your)$/.test(w));
-          
-          const uniqueExtra = [...new Set(titleDescWords)]
-            .filter(w => !finalKws.includes(w));
-          finalKws.push(...uniqueExtra.slice(0, remainingNeeds));
-        }
-
-        // Fallback 6: Extract words from cleanName/fileName
-        remainingNeeds = s.keywordCount - finalKws.length;
-        const fn = fileInfo.fileName || "";
-        if (remainingNeeds > 0 && fn) {
-          let cleanName = fn.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
-          const nameWords = cleanName.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !/^(the|and|for|with|this|that|from|have|has|are|was|were|you|your|eps|vector|illustration|file|placeholder)$/.test(w));
-          const uniqueNameWords = [...new Set(nameWords)].filter(w => !finalKws.includes(w));
-          finalKws.push(...uniqueNameWords.slice(0, remainingNeeds));
-        }
-
-        // Fallback 7: General high-quality stock keywords as a last resort to hit the exact count
-        remainingNeeds = s.keywordCount - finalKws.length;
-        if (remainingNeeds > 0) {
-          const isVector = fileInfo.isEps || (result.title + " " + result.description).toLowerCase().includes("vector") || (result.title + " " + result.description).toLowerCase().includes("illustration");
-          const isVid = fileInfo.isVideo;
-          
-          let generalPool = [];
-          if (isVector) {
-            generalPool = [
-              "vector", "illustration", "graphic", "design", "creative", "element", "isolated", "backdrop", 
-              "background", "artwork", "template", "clipart", "modern", "flat design", "art", "draw", "drawing", 
-              "concept", "decorative", "style", "layout", "symbol", "icon", "banner", "poster", "pattern"
-            ];
-          } else if (isVid) {
-            generalPool = [
-              "video", "footage", "clip", "motion", "cinematic", "real time", "action", "scene", "concept", 
-              "background", "creative", "isolated", "film", "production", "movement", "backdrop", "view", "atmosphere"
-            ];
-          } else {
-            generalPool = [
-              "photo", "photography", "image", "concept", "background", "isolated", "creative", "shot", "picture", 
-              "scene", "backdrop", "wallpaper", "modern", "studio", "view", "object", "detail", "clear", "professional"
-            ];
-          }
-          
-          const uniqueGeneral = generalPool.filter(w => !finalKws.includes(w));
-          finalKws.push(...uniqueGeneral.slice(0, remainingNeeds));
-        }
+        // Removed Fallbacks 4, 5, 6, and 7 to prevent injection of generic or low-quality terms.
 
         kws = finalKws.slice(0, s.keywordCount);
       } else {
@@ -733,18 +389,20 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
 let globalKeyIndex = 0;
 
 /**
- * Helper to run content generation with a strict timeout (default 15 seconds).
+ * Helper to run content generation with a strict timeout (default 45 seconds).
  */
-async function generateContentWithTimeout(model, contentParts, timeoutMs = 60000) {
+async function generateContentWithTimeout(model, contentParts, timeoutMs = 90000) {
   let timeoutId;
   const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error("Model request timed out (60s). Google API is taking too long.")), timeoutMs);
+    timeoutId = setTimeout(() => reject(new Error("Model request timed out (90s). Google API is taking too long.")), timeoutMs);
   });
 
   const executeRequest = async () => {
+    // NOTE: Do NOT pass {timeout} as a second argument – it is not supported by
+    // the @google/generative-ai SDK and causes the request to silently hang.
     const res = await model.generateContent(contentParts);
-    const resp = await res.response;
-    return resp;
+    // res.response is a plain property (not a Promise); access it directly.
+    return res.response;
   };
 
   try {
@@ -780,7 +438,6 @@ async function generateContentWithTimeout(model, contentParts, timeoutMs = 60000
  */
 export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvider = "gemini", fileInfo = {}) {
   const { isEps = false, isPlaceholder = false, isVideo = false, fileName = "file", extractedTextContext = null, promptSettings = {} } = fileInfo;
-  const prompt = buildPrompt({ isEps, isPlaceholder, isVideo, fileName, extractedTextContext, promptSettings });
 
   let lastError = null;
   
@@ -806,11 +463,21 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
       try {
         console.log(`[Attempt] Provider: ${currentProvider} using key index ${currentKeyIndex}`);
         let parsed;
-        if (currentProvider === "groq") parsed = await fetchGroq(apiKey, prompt, imageBuffer, mimeType, true, promptSettings);
-        else if (currentProvider === "openai") parsed = await fetchOpenAI(apiKey, prompt, imageBuffer, mimeType, true, promptSettings);
-        else if (currentProvider === "openrouter") parsed = await fetchOpenRouter(apiKey, prompt, imageBuffer, mimeType, true, promptSettings);
-        else if (currentProvider === "mistral") parsed = await fetchMistral(apiKey, prompt, imageBuffer, mimeType, true, promptSettings);
-        else throw new Error("Unknown provider: " + currentProvider);
+        if (currentProvider === "groq") {
+          const prompt = buildGroqPrompt(fileInfo);
+          parsed = await fetchGroq(apiKey, prompt, imageBuffer, mimeType, true, promptSettings);
+        } else if (currentProvider === "openai") {
+          const prompt = buildOpenAIPrompt(fileInfo);
+          parsed = await fetchOpenAI(apiKey, prompt, imageBuffer, mimeType, true, promptSettings);
+        } else if (currentProvider === "openrouter") {
+          const prompt = buildOpenRouterPrompt(fileInfo);
+          parsed = await fetchOpenRouter(apiKey, prompt, imageBuffer, mimeType, true, promptSettings);
+        } else if (currentProvider === "mistral") {
+          const prompt = buildMistralPrompt(fileInfo);
+          parsed = await fetchMistral(apiKey, prompt, imageBuffer, mimeType, true, promptSettings);
+        } else {
+          throw new Error("Unknown provider: " + currentProvider);
+        }
         
         console.log(`[Success] Metadata generated using ${currentProvider}!`);
         return postProcessMetadata(parsed, promptSettings, fileInfo);
@@ -825,244 +492,36 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
     }
 
     // Gemini branch
-    const genAI = new GoogleGenerativeAI(apiKey);
-    console.log(`[System] Initializing Gemini with key index ${currentKeyIndex} (${apiKey.substring(0, 8)})...`);
-
-    let modelsToAttempt = [];
-    const modelSelection = promptSettings?.modelName || (typeof apiProvider === 'string' ? apiProvider : '');
-    
-    // Parse Safety Settings from the dropdown (e.g., "Gemini 3.5 Flash (Medium)")
-    const msLower = modelSelection.toLowerCase();
-    let safetySettings = undefined;
-    if (msLower.includes("(low)")) {
-      safetySettings = [
-        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_LOW_AND_ABOVE" },
-        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_LOW_AND_ABOVE" },
-        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_LOW_AND_ABOVE" },
-        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_LOW_AND_ABOVE" }
-      ];
-    } else if (msLower.includes("(high)")) {
-      safetySettings = [
-        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
-        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
-        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
-        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" }
-      ];
-    } else if (msLower.includes("(none)")) {
-      safetySettings = [
-        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-      ];
-    }
-
-    // Clean and match model names based on UI selections
-    if (msLower.includes('2.5') || msLower.includes('pro')) {
-      modelsToAttempt = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-3.5-flash", "gemini-2.0-flash"];
-    } else if (msLower.includes('3.5') || msLower.includes('flash') || msLower.includes('gemini') || !msLower) {
-      modelsToAttempt = ["gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"];
-    } else {
-      // Direct string match fallback if a custom raw model is passed in
-      modelsToAttempt = [
-        modelSelection.split(' ')[0],
-        "gemini-3.5-flash",
-        "gemini-2.5-pro",
-        "gemini-2.5-flash",
-        "gemini-2.0-flash"
-      ];
-    }
-    
-    // Remove duplicates
-    modelsToAttempt = [...new Set(modelsToAttempt)];
-
-    let keyHitRateLimit = false;
-
-    // Try available models for this specific key
-    for (let i = 0; i < modelsToAttempt.length; i++) {
-      const modelName = modelsToAttempt[i];
-      try {
-        // Suppress exact model name logging to avoid confusion
-        // console.log(`[Attempt] Model: ${modelName} on key ${currentKeyIndex}`);
-        const modelArgs = { 
-          model: modelName,
-          generationConfig: { responseMimeType: "application/json" }
-        };
-        if (safetySettings) modelArgs.safetySettings = safetySettings;
-        const model = genAI.getGenerativeModel(modelArgs);
-
-        const contentParts = [];
-        if (Array.isArray(imageBuffer)) {
-          imageBuffer.forEach(buf => {
-            contentParts.push({
-              inlineData: {
-                data: buf,
-                mimeType: mimeType,
-              },
-            });
-          });
-        } else {
-          contentParts.push({
-            inlineData: {
-              data: imageBuffer,
-              mimeType: mimeType,
-            },
-          });
-        }
-        contentParts.push({ text: prompt });
-
-        const response = await generateContentWithTimeout(model, contentParts);
-        const text = response.text();
-
-        let totalTokens = 0;
-        try {
-          const um = response.usageMetadata;
-          if (um && typeof um.totalTokenCount === "number") totalTokens = um.totalTokenCount;
-        } catch {
-          /* ignore */
-        }
-        recordApiUsage("gemini", apiKey, { totalTokens, requests: 1 });
-
-        // console.log(`[Success] Metadata generated using ${modelName} on key index ${currentKeyIndex}!`);
-
-        const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
-        let parsed;
-        try {
-          parsed = JSON.parse(cleaned);
-        } catch (e) {
-          const match = cleaned.match(/\{[\s\S]*\}/);
-          if (match) parsed = JSON.parse(match[0]);
-          else throw new Error("JSON parse error");
-        }
-
-        return postProcessMetadata(parsed, promptSettings, fileInfo);
-
-      } catch (error) {
-        // console.warn(`[Fail] ${modelName} on key ${currentKeyIndex}: ${error.message}`);
-        if (lastError && lastError.message && lastError.message.includes("Combined Errors:")) {
-          lastError = new Error(`${lastError.message}\n- [${modelName}]: ${error.message}`);
-        } else {
-          lastError = error;
-        }
-
-        // Key is definitively invalid → skip this key entirely
-        const isKeyInvalid =
-          error.message.includes("API_KEY_INVALID") ||
-          error.message.toLowerCase().includes("key not valid") ||
-          error.message.toLowerCase().includes("invalid key") ||
-          error.message.includes("401") ||
-          error.message.includes("403");
-
-        if (isKeyInvalid) {
-          console.warn(`[Key Invalid] Key index ${currentKeyIndex} is invalid. Proceeding to next key.`);
-          keyHitRateLimit = true;
-          break; // Break inner model loop → try next key
-        }
-
-        // Rate limit / quota on THIS MODEL → try next model on same key first
-        const isRateLimit =
-          error.message.includes("429") ||
-          error.message.toLowerCase().includes("quota") ||
-          error.message.toLowerCase().includes("rate limit") ||
-          error.message.toLowerCase().includes("resource_exhausted");
-
-        if (isRateLimit) {
-          console.warn(`[Rate Limit] Model ${modelName} rate limited on key ${currentKeyIndex}. Trying next model...`);
-          if (!lastError.message.includes("Combined Errors:")) {
-            lastError = new Error(`Combined Errors:\n- [${modelName}]: ${error.message}`);
-          }
-          // Only break to next key if this is the LAST model to try
-          if (i === modelsToAttempt.length - 1) {
-            console.warn(`[Key Exhausted] All models rate limited on key ${currentKeyIndex}. Proceeding to next key.`);
-            keyHitRateLimit = true;
-            break;
-          }
-          continue; // Try next model on same key
-        }
-
-        // 503 Service Unavailable (high demand) → retry same model with backoff
-        const isHighDemand =
-          error.message.includes("503") ||
-          error.message.toLowerCase().includes("high demand") ||
-          error.message.toLowerCase().includes("service unavailable") ||
-          error.message.toLowerCase().includes("overloaded");
-
-        if (isHighDemand) {
-          // Retry current model up to 3 times with exponential backoff
-          let retried = false;
-          for (let retry = 0; retry < 3; retry++) {
-            const waitMs = (retry + 1) * 3000; // 3s, 6s, 9s
-            console.warn(`[503 High Demand] Waiting ${waitMs / 1000}s before retry ${retry + 1}/3 for ${modelName}...`);
-            await new Promise(r => setTimeout(r, waitMs));
-            try {
-              const modelArgs2 = {
-                model: modelName,
-                generationConfig: { responseMimeType: "application/json" }
-              };
-              if (safetySettings) modelArgs2.safetySettings = safetySettings;
-              const model2 = genAI.getGenerativeModel(modelArgs2);
-              const contentParts2 = [];
-              if (Array.isArray(imageBuffer)) {
-                imageBuffer.forEach(buf => contentParts2.push({ inlineData: { data: buf, mimeType } }));
-              } else {
-                contentParts2.push({ inlineData: { data: imageBuffer, mimeType } });
-              }
-              contentParts2.push({ text: prompt });
-              const response2 = await generateContentWithTimeout(model2, contentParts2);
-              const text2 = response2.text();
-              try {
-                const um2 = response2.usageMetadata;
-                if (um2 && typeof um2.totalTokenCount === "number") recordApiUsage("gemini", apiKey, { totalTokens: um2.totalTokenCount, requests: 1 });
-              } catch { /* ignore */ }
-              const cleaned2 = text2.replace(/```json/g, "").replace(/```/g, "").trim();
-              let parsed2;
-              try { parsed2 = JSON.parse(cleaned2); }
-              catch (e2) {
-                const match2 = cleaned2.match(/\{[\s\S]*\}/);
-                if (match2) parsed2 = JSON.parse(match2[0]);
-                else throw new Error("JSON parse error after 503 retry");
-              }
-              retried = true;
-              return postProcessMetadata(parsed2, promptSettings, fileInfo);
-            } catch (retryErr) {
-              lastError = retryErr;
-              // If still 503, continue retry loop; otherwise break
-              if (!retryErr.message.includes("503") && !retryErr.message.toLowerCase().includes("high demand") && !retryErr.message.toLowerCase().includes("overloaded")) {
-                break;
-              }
-            }
-          }
-          if (!retried) continue; // Give up on this model, try next
-          break;
-        }
-
-        if (error.message.includes("400")) {
-          console.error(`[400 Error] Model ${modelName} on key ${currentKeyIndex} failed with 400:`, error.message);
-          throw new Error(`Invalid Image or Prompt (400 Bad Request): ${error.message}`);
-        }
-
-        if (error.message.includes("404")) {
-          continue; // Try next model
-        }
-
-        if (error.message.toLowerCase().includes("timed out")) {
-          throw new Error(`Google API Timeout: ${error.message}`);
-        }
+    try {
+      const prompt = buildGeminiPrompt(fileInfo);
+      const parsed = await fetchGemini(apiKey, currentKeyIndex, prompt, imageBuffer, mimeType, true, promptSettings);
+      return postProcessMetadata(parsed, promptSettings, fileInfo);
+    } catch (error) {
+      lastError = error;
+      const keyHitRateLimit = error.keyHitRateLimit || false;
+      if (keyHitRateLimit) {
+        continue; // Switch key
       }
+      if (error.message.includes("API_KEY_INVALID") || error.message.includes("401") || error.message.includes("403")) {
+        continue; // Switch key
+      }
+      throw error;
     }
-
-    // Outer loop naturally proceeds to test the next API key if inner loop broke
   }
 
   if (lastError && (lastError.message.includes("429") || lastError.message.includes("quota"))) {
-    // If the last error was indeed a rate limit, and we're out of keys, append extra info
-    throw new Error(`API Rate Limit Reached on all ${apiKeys.length} keys. Please wait 30 seconds before generating again. Last Error: ${lastError.message}`);
+    throw new Error(`API Rate Limit Reached on all ${apiKeys.length} keys. Please wait 30 seconds before generating again.`);
   }
 
-  throw (
-    lastError ||
-    new Error("Critical: Could not connect to any Gemini model. Please check your API keys.")
-  );
+  if (lastError) {
+    let msg = lastError.message || String(lastError);
+    if (msg.length > 250) {
+      msg = msg.substring(0, 250) + "... (truncated)";
+    }
+    throw new Error(`Critical API Error: ${msg}`);
+  }
+
+  throw new Error("Critical: Could not connect to any Gemini model. Please check your API keys.");
 }
 
 /**
@@ -1146,7 +605,12 @@ Be specific, vivid, and commercially viable. Avoid watermarks, brand names, and 
       }
     }
     if (lastError && (lastError.message.includes("429") || lastError.message.includes("quota"))) throw new Error(`API Rate Limit Reached on all ${apiKeys.length} keys.`);
-    throw (lastError || new Error(`Could not connect to any ${apiProvider} model.`));
+    if (lastError) {
+      let msg = lastError.message || String(lastError);
+      if (msg.length > 250) msg = msg.substring(0, 250) + "... (truncated)";
+      throw new Error(`API Error: ${msg}`);
+    }
+    throw new Error(`Could not connect to any ${apiProvider} model.`);
   }
 
   const exactMatchPrompt = `Act as a professional photographer and AI art director. Analyze the provided image in extreme detail and write a comprehensive, technical image generation prompt that will recreate this exact image in a text-to-image AI model (like Midjourney or DALL-E).
@@ -1410,14 +874,63 @@ Return ONLY a valid JSON object matching this schema:
       } catch (error) {
         console.warn(`[Fail] ${modelName} on key ${currentKeyIndex} (SecurityScan): ${error.message}`);
         lastError = error;
+        const isQuotaExceeded =
+          error.message.toLowerCase().includes("quota") ||
+          error.message.toLowerCase().includes("exceeded") ||
+          error.message.toLowerCase().includes("billing");
+
+        if (isQuotaExceeded) {
+          console.warn(`[Quota Exceeded] Key index ${currentKeyIndex} has no remaining daily quota for security scan. Proceeding to next key.`);
+          break; // Break inner model loop → try next key immediately
+        }
+
+        const isRateLimit = error.message.includes("429") || error.message.toLowerCase().includes("limit");
+        const isHighDemand = error.message.includes("503") || error.message.toLowerCase().includes("high demand");
+        
+        if (isRateLimit || isHighDemand) {
+          // Retry current model up to 3 times with exponential backoff
+          let retried = false;
+          for (let retry = 0; retry < 3; retry++) {
+            const waitMs = isRateLimit ? (retry + 1) * 10000 : (retry + 1) * 3000;
+            const errorType = isRateLimit ? "429 Rate Limit" : "503 High Demand";
+            console.warn(`[SecurityScan ${errorType}] Waiting ${waitMs / 1000}s before retry ${retry + 1}/3...`);
+            await new Promise(r => setTimeout(r, waitMs));
+            try {
+              const model2 = genAI.getGenerativeModel({ model: modelName });
+              const response2 = await generateContentWithTimeout(model2, [
+                { inlineData: { data: imageBuffer, mimeType: mimeType } },
+                { text: prompt },
+              ]);
+              const text2 = response2.text();
+              const cleaned2 = text2.replace(/```json/g, "").replace(/```/g, "").trim();
+              let parsed2;
+              try { parsed2 = JSON.parse(cleaned2); }
+              catch (e2) {
+                const match2 = cleaned2.match(/\{[\s\S]*\}/);
+                if (match2) parsed2 = JSON.parse(match2[0]);
+                else throw new Error("JSON parse error");
+              }
+              retried = true;
+              return parsed2;
+            } catch (retryErr) {
+              lastError = retryErr;
+              const isStillRateLimit = retryErr.message.includes("429") || retryErr.message.toLowerCase().includes("quota");
+              const isStillHighDemand = retryErr.message.includes("503") || retryErr.message.toLowerCase().includes("high demand");
+              if ((isRateLimit && !isStillRateLimit) || (isHighDemand && !isStillHighDemand)) break;
+            }
+          }
+          if (!retried) {
+            if (isRateLimit) break; // If still rate limited after 3 retries, skip key
+            continue; // Try next model
+          }
+          break;
+        }
+
         if (
           error.message.includes("API_KEY_INVALID") ||
           error.message.toLowerCase().includes("key not valid") ||
           error.message.toLowerCase().includes("invalid key") ||
-          error.message.includes("403") ||
-          error.message.includes("429") ||
-          error.message.toLowerCase().includes("quota") ||
-          error.message.toLowerCase().includes("limit")
+          error.message.includes("403")
         ) {
           console.warn(`[Key Exhausted] Key index ${currentKeyIndex} is invalid or exhausted. Proceeding to next key.`);
           break; // Break inner loop, go to next key
@@ -1434,6 +947,12 @@ Return ONLY a valid JSON object matching this schema:
     throw new Error(`API Rate Limit Reached. Please wait 30 seconds.`);
   }
 
-  throw (lastError || new Error(`Could not connect to any model for security scan.`));
+  if (lastError) {
+    let msg = lastError.message || String(lastError);
+    if (msg.length > 250) msg = msg.substring(0, 250) + "... (truncated)";
+    throw new Error(`API Error: ${msg}`);
+  }
+
+  throw new Error(`Could not connect to any model for security scan.`);
 }
 

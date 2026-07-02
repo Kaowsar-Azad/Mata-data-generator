@@ -655,15 +655,21 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
         .ps-body {
           padding: 0.6rem 0.85rem 0.85rem;
           border-top: 1px solid var(--glass-border);
-          max-height: calc(100vh - 22rem);
+          max-height: calc(100vh - 33rem);
           overflow-y: auto;
           scrollbar-width: thin;
           scrollbar-color: var(--glass-border) transparent;
         }
-        .ps-body::-webkit-scrollbar { width: 3px; }
+        .ps-body::-webkit-scrollbar { width: 5px; }
+        .ps-body::-webkit-scrollbar-track {
+          background: transparent;
+        }
         .ps-body::-webkit-scrollbar-thumb {
           background: var(--glass-border);
-          border-radius: 3px;
+          border-radius: 5px;
+        }
+        .ps-body::-webkit-scrollbar-thumb:hover {
+          background: var(--text-3);
         }
 
         /* Section Labels */

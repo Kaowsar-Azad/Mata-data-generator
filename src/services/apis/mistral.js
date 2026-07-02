@@ -175,7 +175,7 @@ Rules:
 - Be hyper-specific: "Businesswoman typing on silver laptop in modern glass office" NOT "Woman working on laptop".
 - For vectors/illustrations: explicitly state the style ("flat vector illustration", "3D render", "seamless pattern", "glyph icon set").
 - Forbidden words: stunning, vibrant, captivating, breathtaking, mesmerizing, showcasing, beautifully, perfect, amazing.
-- Target Length: STRICTLY between ${s.titleMinChars || 10} and ${s.titleMaxChars || 80} characters. The title MUST be a complete grammatically correct sentence.${s.negTitleEnabled && s.negTitleWords ? `\n- Forbidden in title: ${s.negTitleWords}.` : ""}
+- Target Length: STRICTLY between ${s.titleMinChars || 25} and ${s.titleMaxChars || 70} characters. The title MUST be a complete grammatically correct sentence.${s.negTitleEnabled && s.negTitleWords ? `\n- Forbidden in title: ${s.negTitleWords}.` : ""}
 - CRITICAL FOR ADOBE STOCK: Every important noun, adjective and verb in your title MUST also appear in the keyword list, because Adobe Stock titles are NOT searchable — only keywords are indexed.
 
 == DESCRIPTION (SEO Optimized Detail) ==
@@ -186,7 +186,7 @@ Rules:
 - Sentence 2: Name concrete commercial applications (e.g., "Ideal for corporate presentations, marketing materials, and web banners").
 - Keep it professional, objective, and active voice.
 - Forbidden words: stunning, breathtaking, meticulously, "This image shows", "Here we can see".
-- Target Length: STRICTLY between ${s.descMinChars || 50} and ${s.descMaxChars || 120} characters.
+- Target Length: STRICTLY between ${s.descMinChars || 50} and ${s.descMaxChars || 100} characters.
 
 == ${kwMode} ==
 
@@ -206,7 +206,9 @@ QUALITY RULES:
 - STRICT VISIBILITY RULE: ONLY describe what is PHYSICALLY VISIBLE. Never infer tech concepts not shown (e.g., a physical camera icon does NOT justify adding "software", "web", "data", "application", "wireless").
 - NO root duplicates: never use both "camera" and "cameras", or "color" and "colorful". Pick the most commercial singular form.
 - UNIVERSAL BRAND & TRADEMARK BAN: You must NEVER include ANY brand name, company name, corporate entity, trademarked term, product model name, or protected design name in keywords, titles, or descriptions. This ban applies universally to ALL brands and trademarks globally (not just famous ones like Nike, Apple, Adidas, etc.). You must use generic, non-branded alternatives instead (e.g., "smartwatch" instead of "Apple Watch", "athletic shoes" instead of "Nikes", "carbonated soft drink" instead of "Coca-Cola", "gaming console" instead of "PlayStation").
+- NO OBSCURE OR JARGON WORDS: Avoid overly complex, scientific, academic, or rare dictionary words (e.g., do NOT use words like "artisanal", "geological", "conceptualization", "mineralogy", "geology" unless it is a specific scientific diagram). Use only simple, common, high-frequency commercial search terms that stock media buyers actually type (e.g. "marble", "texture", "stone", "pattern", "ink", "splatter", "minimalist"). Keep the vocabulary simple, natural, and highly commercial. If a typical middle-school student wouldn't know the word, or if a stock buyer wouldn't type it to find a simple commercial image, it is FORBIDDEN.
 - No banned words: "free", "download", "copyright", "watermark".
+
 
 Evaluate this image's COMMERCIAL POTENTIAL for stock photo marketplaces (Adobe Stock, Shutterstock, Getty) across 4 dimensions:
 1. commercialConcept: Choose exactly one value: "evergreen" (universal evergreen appeal, teamwork, sunset, family), "popular" (highly searched but competitive, food, travel, tech), "niche" (limited audience, personal/artistic), or "none" (obscure, no clear commercial use).
@@ -217,20 +219,20 @@ Evaluate this image's COMMERCIAL POTENTIAL for stock photo marketplaces (Adobe S
 In "scoreReason": write exactly 1 sentence (max 15 words) naming the PRIMARY factor.
 
 == KEYWORD SCORES (ABSOLUTE CRITICAL MANDATE) ==
-You MUST evaluate EVERY SINGLE keyword you generate and assign it a "Commercial Relevance Score" from 1 to 100 based strictly on how accurately and importantly it describes THIS SPECIFIC image.
-CRITICAL RULE: The number of items in your "keywordScores" object MUST EXACTLY MATCH the number of keywords in your "keywords" string. Do NOT skip scoring ANY keyword. If you output 48 keywords, you MUST output 48 scores.
-We use this score to color-code keywords (Green/Yellow/Red):
-- 80-100 (Green): Highly relevant SEO terms. The keyword perfectly describes the primary subjects, main actions, or core themes physically visible in this specific image.
-- 40-79 (Yellow): Moderately relevant. The keyword describes background details, secondary elements, or broader related commercial concepts (this includes your Tier 6 conceptual keywords).
-- 1-39 (Red): Low relevance or generic. DO NOT GENERATE THESE. Every keyword must be a high-value SEO search term.
-Evaluate each keyword with brutal honesty based on the image content. Rank and score them exactly and accurately according to their true relevance to the image. Do not artificially inflate scores. A keyword must NEVER receive a high score if it is not physically visible or directly relevant.
+You MUST evaluate EVERY SINGLE keyword you generate and assign it a "Commercial Relevance Score" from 1 to 100.
+CRITICAL RULE: The number of items in your "keywordScores" object MUST EXACTLY MATCH the number of keywords in your "keywords" string. Do NOT skip scoring ANY keyword.
+We use this score to color-code keywords. You MUST follow these strict scoring brackets:
+- 90-100 (Green): Primary subjects, highly relevant literal nouns visible in the image.
+- 75-89 (Green/Yellow): Secondary subjects, colors, materials, background details, and specific styles.
+- 50-74 (Yellow): Conceptual themes, industry niches, and commercial use-cases.
+- NEVER SCORE BELOW 50: Do not generate any keyword that would score below 50. If a keyword is irrelevant, do not include it. ALL keywords you generate MUST be highly relevant, therefore NO score should be lower than 50.
 
-Output ONLY valid JSON, no markdown:
-{"title":"...","description":"...","keywords":"apple, technology, screen, ... (\${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":45},"categories":\${categoryList},"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"...","policyWarning":null}`;
+Output ONLY valid JSON, no markdown, no conversational text:
+{"title":"...","description":"...","keywords":"apple, technology, screen, ... (\${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":65},"categories":\${categoryList},"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"...","policyWarning":null}`;
 }
 
 export async function fetchMistral(apiKey, prompt, base64Data, mimeType, forceJson = true, promptSettings = {}) {
   const endpoint = "https://api.mistral.ai/v1/chat/completions";
-  const models = ["pixtral-12b-2409"];
+  const models = ["pixtral-large-latest", "pixtral-12b-2409"];
   return fetchOpenAICompatible("mistral", endpoint, models, apiKey, prompt, base64Data, mimeType, forceJson, promptSettings);
 }

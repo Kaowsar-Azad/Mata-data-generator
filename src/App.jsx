@@ -108,8 +108,8 @@ function App() {
   const [promptSettings, setPromptSettings] = useState({
     smartMode: false,
     exportPlatform: 'General',
-    titleMaxChars: 80,
-    descMaxChars: 120,
+    titleMaxChars: 70,
+    descMaxChars: 100,
     keywordCount: 48,
     singleWordKeywords: true,
     concurrentLimit: 2,
@@ -123,8 +123,8 @@ function App() {
     negKeywordsEnabled: false,
     negKeywords: '',
     customInstruction: '',
-    titleMinChars: 70, // New minimum title length
-    descMinChars: 110, // New minimum description length
+    titleMinChars: 25, 
+    descMinChars: 50, 
     securityScanEnabled: false,
     promptSimilarityMode: 'Exact Match',
   })

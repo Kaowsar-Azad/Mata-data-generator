@@ -1,0 +1,158 @@
+﻿[
+  {
+    "id": "poolside/laguna-xs-2.1:free",
+    "name": "Poolside: Laguna XS 2.1 (free)",
+    "context_length": 262144,
+    "description": "Laguna XS 2.1 is the latest coding agent model in the 33B-A3B category from [Poolside](https://pools"
+  },
+  {
+    "id": "cohere/north-mini-code:free",
+    "name": "Cohere: North Mini Code (free)",
+    "context_length": 256000,
+    "description": "North Mini Code is Cohere's first agentic coding model and the debut of its North family. A sparse m"
+  },
+  {
+    "id": "nvidia/nemotron-3.5-content-safety:free",
+    "name": "NVIDIA: Nemotron 3.5 Content Safety (free)",
+    "context_length": 128000,
+    "description": "NVIDIA Nemotron 3.5 Content Safety is a compact 4B-parameter multimodal guardrail model from NVIDIA,"
+  },
+  {
+    "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "name": "NVIDIA: Nemotron 3 Ultra (free)",
+    "context_length": 1000000,
+    "description": "NVIDIA Nemotron 3 Ultra is an open frontier-reasoning and orchestration model from NVIDIA, with 55B "
+  },
+  {
+    "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "name": "NVIDIA: Nemotron 3 Nano Omni (free)",
+    "context_length": 256000,
+    "description": "NVIDIA NemotronΓäó 3 Nano Omni is a 30B-A3B open multimodal model designed to function as a perception"
+  },
+  {
+    "id": "poolside/laguna-xs.2:free",
+    "name": "Poolside: Laguna XS.2 (free)",
+    "context_length": 262144,
+    "description": "Laguna XS.2 is the second-generation model in the XS size class from [Poolside](https://poolside.ai/"
+  },
+  {
+    "id": "poolside/laguna-m.1:free",
+    "name": "Poolside: Laguna M.1 (free)",
+    "context_length": 262144,
+    "description": "Laguna M.1 is the flagship coding agent model from [Poolside](https://poolside.ai/), optimized for c"
+  },
+  {
+    "id": "google/gemma-4-26b-a4b-it:free",
+    "name": "Google: Gemma 4 26B A4B  (free)",
+    "context_length": 262144,
+    "description": "Gemma 4 26B A4B IT is an instruction-tuned Mixture-of-Experts (MoE) model from Google DeepMind. Desp"
+  },
+  {
+    "id": "google/gemma-4-31b-it:free",
+    "name": "Google: Gemma 4 31B (free)",
+    "context_length": 262144,
+    "description": "Gemma 4 31B Instruct is Google DeepMind's 30.7B dense multimodal model supporting text and image inp"
+  },
+  {
+    "id": "google/lyria-3-pro-preview",
+    "name": "Google: Lyria 3 Pro Preview",
+    "context_length": 1048576,
+    "description": "Full-length songs are priced at $0.08 per song. Lyria 3 is Google's family of music generation model"
+  },
+  {
+    "id": "google/lyria-3-clip-preview",
+    "name": "Google: Lyria 3 Clip Preview",
+    "context_length": 1048576,
+    "description": "30 second duration clips are priced at $0.04 per clip. Lyria 3 is Google's family of music generatio"
+  },
+  {
+    "id": "nvidia/nemotron-3-super-120b-a12b:free",
+    "name": "NVIDIA: Nemotron 3 Super (free)",
+    "context_length": 1000000,
+    "description": "NVIDIA Nemotron 3 Super is a 120B-parameter open hybrid MoE model, activating just 12B parameters fo"
+  },
+  {
+    "id": "openrouter/free",
+    "name": "Free Models Router",
+    "context_length": 200000,
+    "description": "The simplest way to get free inference. openrouter/free is a router that selects free models at rand"
+  },
+  {
+    "id": "liquid/lfm-2.5-1.2b-thinking:free",
+    "name": "LiquidAI: LFM2.5-1.2B-Thinking (free)",
+    "context_length": 32768,
+    "description": "LFM2.5-1.2B-Thinking is a lightweight reasoning-focused model optimized for agentic tasks, data extr"
+  },
+  {
+    "id": "liquid/lfm-2.5-1.2b-instruct:free",
+    "name": "LiquidAI: LFM2.5-1.2B-Instruct (free)",
+    "context_length": 32768,
+    "description": "LFM2.5-1.2B-Instruct is a compact, high-performance instruction-tuned model built for fast on-device"
+  },
+  {
+    "id": "nvidia/nemotron-3-nano-30b-a3b:free",
+    "name": "NVIDIA: Nemotron 3 Nano 30B A3B (free)",
+    "context_length": 256000,
+    "description": "NVIDIA Nemotron 3 Nano 30B A3B is a small language MoE model with highest compute efficiency and acc"
+  },
+  {
+    "id": "nvidia/nemotron-nano-12b-v2-vl:free",
+    "name": "NVIDIA: Nemotron Nano 12B 2 VL (free)",
+    "context_length": 128000,
+    "description": "NVIDIA Nemotron Nano 2 VL is a 12-billion-parameter open multimodal reasoning model designed for vid"
+  },
+  {
+    "id": "qwen/qwen3-next-80b-a3b-instruct:free",
+    "name": "Qwen: Qwen3 Next 80B A3B Instruct (free)",
+    "context_length": 262144,
+    "description": "Qwen3-Next-80B-A3B-Instruct is an instruction-tuned chat model in the Qwen3-Next series optimized fo"
+  },
+  {
+    "id": "nvidia/nemotron-nano-9b-v2:free",
+    "name": "NVIDIA: Nemotron Nano 9B V2 (free)",
+    "context_length": 128000,
+    "description": "NVIDIA-Nemotron-Nano-9B-v2 is a large language model (LLM) trained from scratch by NVIDIA, and desig"
+  },
+  {
+    "id": "openai/gpt-oss-120b:free",
+    "name": "OpenAI: gpt-oss-120b (free)",
+    "context_length": 131072,
+    "description": "gpt-oss-120b is an open-weight, 117B-parameter Mixture-of-Experts (MoE) language model from OpenAI d"
+  },
+  {
+    "id": "openai/gpt-oss-20b:free",
+    "name": "OpenAI: gpt-oss-20b (free)",
+    "context_length": 131072,
+    "description": "gpt-oss-20b is an open-weight 21B parameter model released by OpenAI under the Apache 2.0 license. I"
+  },
+  {
+    "id": "qwen/qwen3-coder:free",
+    "name": "Qwen: Qwen3 Coder 480B A35B (free)",
+    "context_length": 1048576,
+    "description": "Qwen3-Coder-480B-A35B-Instruct is a Mixture-of-Experts (MoE) code generation model developed by the "
+  },
+  {
+    "id": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+    "name": "Venice: Uncensored (free)",
+    "context_length": 32768,
+    "description": "Venice Uncensored Dolphin Mistral 24B Venice Edition is a fine-tuned variant of Mistral-Small-24B-In"
+  },
+  {
+    "id": "meta-llama/llama-3.3-70b-instruct:free",
+    "name": "Meta: Llama 3.3 70B Instruct (free)",
+    "context_length": 131072,
+    "description": "The Meta Llama 3.3 multilingual large language model (LLM) is a pretrained and instruction tuned gen"
+  },
+  {
+    "id": "meta-llama/llama-3.2-3b-instruct:free",
+    "name": "Meta: Llama 3.2 3B Instruct (free)",
+    "context_length": 131072,
+    "description": "Llama 3.2 3B is a 3-billion-parameter multilingual large language model, optimized for advanced natu"
+  },
+  {
+    "id": "nousresearch/hermes-3-llama-3.1-405b:free",
+    "name": "Nous: Hermes 3 405B Instruct (free)",
+    "context_length": 131072,
+    "description": "Hermes 3 is a generalist language model with many improvements over Hermes 2, including advanced age"
+  }
+]

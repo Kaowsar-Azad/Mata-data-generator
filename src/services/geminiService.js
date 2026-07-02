@@ -162,7 +162,7 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
 
   // Enforce description max chars
   if (!s.smartMode && s.descMaxChars && result.description && result.description.length > s.descMaxChars) {
-    result.description = result.description.substring(0, s.descMaxChars).replace(/[\s.,;:!]+$/, "") + ".";
+    result.description = result.description.substring(0, s.descMaxChars).replace(/\s+\S*$/, "").replace(/[\s.,;:!]+$/, "") + ".";
   }
   // Enforce minimum description length
   if (!s.smartMode && s.descMinChars && result.description && result.description.length < s.descMinChars) {
@@ -189,8 +189,9 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
     for (const kw of rawKws) {
       const kl = kw.toLowerCase().trim();
 
-      // 1. Hard rejection: empty, length < 2, or banned
-      if (kl.length < 2 || banned.includes(kl) || /^(a|an|the|and|or|of|in|on|at|to|for|with|by)$/i.test(kl)) {
+      // 1. Hard rejection: empty, length < 2, banned, or generic junk words
+      const hardJunk = new Set(["image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]);
+      if (kl.length < 2 || banned.includes(kl) || hardJunk.has(kl) || /^(a|an|the|and|or|of|in|on|at|to|for|with|by)$/i.test(kl)) {
         continue;
       }
 
@@ -334,12 +335,13 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
         // Fallback 1: If singleWordKeywords is active, split multi-word keywords into individual words
         remainingNeeds = s.keywordCount - finalKws.length;
         if (remainingNeeds > 0 && s.singleWordKeywords && multiWordKwsToSplit.length > 0) {
+          const hardJunk = new Set(["image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]);
           let splitWords = [];
           for (const phrase of multiWordKwsToSplit) {
             const words = phrase.split(/\s+/);
             for (const w of words) {
               const wl = w.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
-              if (wl.length >= 2 && !banned.includes(wl) && !/^(the|and|for|with|this|that|from|have|has|are|was|were|you|your)$/.test(wl)) {
+              if (wl.length >= 2 && !banned.includes(wl) && !hardJunk.has(wl) && !/^(the|and|for|with|this|that|from|have|has|are|was|were|you|your)$/.test(wl)) {
                 splitWords.push(w);
               }
             }

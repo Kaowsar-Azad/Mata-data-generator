@@ -175,7 +175,7 @@ Rules:
 - Be hyper-specific: "Businesswoman typing on silver laptop in modern glass office" NOT "Woman working on laptop".
 - For vectors/illustrations: explicitly state the style ("flat vector illustration", "3D render", "seamless pattern", "glyph icon set").
 - Forbidden words: stunning, vibrant, captivating, breathtaking, mesmerizing, showcasing, beautifully, perfect, amazing.
-- Target Length: STRICTLY between ${s.titleMinChars || 10} and ${s.titleMaxChars || 80} characters. The title MUST be a complete grammatically correct sentence.${s.negTitleEnabled && s.negTitleWords ? `\n- Forbidden in title: ${s.negTitleWords}.` : ""}
+- Target Length: STRICTLY between ${s.titleMinChars || 25} and ${s.titleMaxChars || 70} characters. The title MUST be a complete grammatically correct sentence.${s.negTitleEnabled && s.negTitleWords ? `\n- Forbidden in title: ${s.negTitleWords}.` : ""}
 - CRITICAL FOR ADOBE STOCK: Every important noun, adjective and verb in your title MUST also appear in the keyword list, because Adobe Stock titles are NOT searchable — only keywords are indexed.
 
 == DESCRIPTION (SEO Optimized Detail) ==
@@ -186,7 +186,7 @@ Rules:
 - Sentence 2: Name concrete commercial applications (e.g., "Ideal for corporate presentations, marketing materials, and web banners").
 - Keep it professional, objective, and active voice.
 - Forbidden words: stunning, breathtaking, meticulously, "This image shows", "Here we can see".
-- Target Length: STRICTLY between ${s.descMinChars || 50} and ${s.descMaxChars || 120} characters.
+- Target Length: STRICTLY between ${s.descMinChars || 50} and ${s.descMaxChars || 100} characters.
 
 == ${kwMode} ==
 

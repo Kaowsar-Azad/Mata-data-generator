@@ -125,7 +125,7 @@ function App() {
     customInstruction: '',
     titleMinChars: 25, 
     descMinChars: 50, 
-    securityScanEnabled: false,
+    securityScanEnabled: true,
     promptSimilarityMode: 'Exact Match',
   })
   const [activeTab, setActiveTab] = useState('metadata')

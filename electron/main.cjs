@@ -1045,6 +1045,26 @@ ipcMain.handle('write-metadata', async (event, filePath, title, description, key
           fileLog('[write-metadata] Primary not found, using alternate extension:', altPath);
           filePath = altPath;
         } else {
+          // Third fallback: scan parent directory for an already-renamed file using the title
+          // This handles the case where the file was successfully renamed in a previous session
+          try {
+            const dir = path.dirname(filePath);
+            const sanitizedTitle = (title || '').replace(/[^\w\s-]/gi, '').replace(/\s+/g, '_').trim().substring(0, 120);
+            if (sanitizedTitle) {
+              const candidates = (fs.readdirSync(dir) || []).filter(f => {
+                const base = path.basename(f, path.extname(f));
+                return base.toLowerCase() === sanitizedTitle.toLowerCase();
+              });
+              if (candidates.length === 1) {
+                const alreadyRenamedPath = path.join(dir, candidates[0]);
+                fileLog('[write-metadata] File was already renamed in previous session to:', alreadyRenamedPath);
+                // File already processed — return success with already-renamed path without re-writing
+                return { success: true, newPath: alreadyRenamedPath, newFileName: candidates[0], alreadyProcessed: true };
+              }
+            }
+          } catch (scanErr) {
+            fileLog('[write-metadata] Error scanning directory for renamed file:', scanErr);
+          }
           fileLog('[write-metadata] File does not exist:', filePath);
           throw new Error(`File not found: ${filePath}`);
         }

@@ -291,10 +291,14 @@ export async function fetchGemini(apiKey, currentKeyIndex, prompt, imageBuffer, 
     ];
   }
 
-  if (msLower.includes('2.5') && msLower.includes('pro')) {
-    modelsToAttempt = ["gemini-2.5-pro", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.0-flash"];
+  // Always start with modern 2026 models (gemini-3.5-flash and gemini-2.5-flash)
+  // because older models like 1.5-flash and 2.0-flash are deprecated/disabled for free tier in 2026
+  if (msLower.includes('pro') || msLower.includes('high')) {
+    modelsToAttempt = ["gemini-2.5-pro", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+  } else if (msLower.includes('flash') || msLower.includes('fast')) {
+    modelsToAttempt = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
   } else {
-    modelsToAttempt = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-pro"];
+    modelsToAttempt = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash"];
   }
   modelsToAttempt = [...new Set(modelsToAttempt)];
 
@@ -355,19 +359,22 @@ export async function fetchGemini(apiKey, currentKeyIndex, prompt, imageBuffer, 
       }
 
       const isQuotaExceeded =
-        error.message.toLowerCase().includes("quota") ||
-        error.message.toLowerCase().includes("exceeded") ||
-        error.message.toLowerCase().includes("billing");
+        (error.message.toLowerCase().includes("quota") ||
+         error.message.toLowerCase().includes("exceeded") ||
+         error.message.toLowerCase().includes("billing")) &&
+        !error.message.toLowerCase().includes("perminute") &&
+        !error.message.toLowerCase().includes("rate limit");
 
       if (isQuotaExceeded) {
-        console.warn(`[Quota Exceeded] Key index ${currentKeyIndex} has no remaining daily quota. Skipping key.`);
+        console.warn(`[Quota Exceeded] Key index ${currentKeyIndex}: Model ${modelName} has no daily quota left. Falling back to next model...`);
         keyHitRateLimit = true;
-        break; 
+        continue; 
       }
 
       const isRateLimit =
         error.message.includes("429") ||
         error.message.toLowerCase().includes("rate limit") ||
+        error.message.toLowerCase().includes("perminute") ||
         error.message.toLowerCase().includes("resource_exhausted");
 
       const isHighDemand =
@@ -378,10 +385,12 @@ export async function fetchGemini(apiKey, currentKeyIndex, prompt, imageBuffer, 
 
       if (isRateLimit || isHighDemand) {
         let retried = false;
-        for (let retry = 0; retry < 3; retry++) {
-          const waitMs = isRateLimit ? (retry + 1) * 10000 : (retry + 1) * 3000;
-          const errorType = isRateLimit ? "429 Rate Limit" : "503 High Demand";
-          console.warn(`[${errorType}] Waiting ${waitMs / 1000}s before retry ${retry + 1}/3 for ${modelName}...`);
+        const maxRetries = isRateLimit ? 0 : 2;
+        
+        for (let retry = 0; retry < maxRetries; retry++) {
+          const waitMs = (retry + 1) * 2000;
+          const errorType = "503 High Demand";
+          console.warn(`[${errorType}] Waiting ${waitMs / 1000}s before retry ${retry + 1}/${maxRetries} for ${modelName}...`);
           await new Promise(r => setTimeout(r, waitMs));
           
           try {
@@ -409,9 +418,8 @@ export async function fetchGemini(apiKey, currentKeyIndex, prompt, imageBuffer, 
             break;
           } catch (retryErr) {
             lastError = retryErr;
-            const isStillRateLimit = retryErr.message.includes("429") || retryErr.message.toLowerCase().includes("quota");
             const isStillHighDemand = retryErr.message.includes("503") || retryErr.message.toLowerCase().includes("high demand");
-            if ((isRateLimit && !isStillRateLimit) || (isHighDemand && !isStillHighDemand)) {
+            if (!isStillHighDemand) {
               break;
             }
           }
@@ -420,7 +428,7 @@ export async function fetchGemini(apiKey, currentKeyIndex, prompt, imageBuffer, 
         if (retried) {
           break;
         } else {
-          console.warn(`[Fail] ${modelName} on key ${currentKeyIndex}: Exhausted retries.`);
+          console.warn(`[Fail] ${modelName} on key ${currentKeyIndex}: Exhausted retries or Rate Limited.`);
           if (isRateLimit) keyHitRateLimit = true;
           continue; 
         }
@@ -454,14 +462,55 @@ export async function fetchGemini(apiKey, currentKeyIndex, prompt, imageBuffer, 
     return lastResponseText.trim();
   }
 
+function extractJson(str) {
+  const firstBrace = str.indexOf('{');
+  if (firstBrace === -1) return null;
+  
+  let braceCount = 0;
+  let inString = false;
+  let escape = false;
+  
+  for (let i = firstBrace; i < str.length; i++) {
+    const char = str[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (char === '{') {
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          return str.substring(firstBrace, i + 1);
+        }
+      }
+    }
+  }
+  return null;
+}
+
   const cleaned = lastResponseText.replace(/```json/g, "").replace(/```/g, "").trim();
   let parsed;
   try {
     parsed = JSON.parse(cleaned);
   } catch (e) {
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) parsed = JSON.parse(match[0]);
-    else throw new Error("JSON parse error");
+    const extracted = extractJson(cleaned);
+    if (extracted) {
+      parsed = JSON.parse(extracted);
+    } else {
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (match) parsed = JSON.parse(match[0]);
+      else throw new Error("JSON parse error: " + e.message);
+    }
   }
   return parsed;
 }

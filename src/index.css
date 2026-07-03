@@ -1211,7 +1211,7 @@ input[type="checkbox"].ios-toggle:disabled {
   text-decoration: none;
   background: transparent;
   color: #15803D; /* Softer Active Green Text */
-  border: 1.5px solid rgba(22, 163, 74, 0.45); /* Softened glass border */
+  border: 1px solid rgba(22, 163, 74, 0.45); /* Softened glass border */
   backdrop-filter: blur(8px);
 }
 .btn-glass-green-custom:hover:not(:disabled) {
@@ -1238,7 +1238,7 @@ input[type="checkbox"].ios-toggle:disabled {
   text-decoration: none;
   background: transparent;
   color: #d97706; /* Softer Active Amber Text */
-  border: 1.5px solid rgba(245, 158, 11, 0.45); /* Softened glass border */
+  border: 1px solid rgba(245, 158, 11, 0.45); /* Softened glass border */
   backdrop-filter: blur(8px);
 }
 .btn-glass-amber-custom:hover:not(:disabled) {
@@ -1265,7 +1265,7 @@ input[type="checkbox"].ios-toggle:disabled {
   text-decoration: none;
   background: transparent;
   color: #dc2626; /* Softer Active Red Text */
-  border: 1.5px solid rgba(239, 68, 68, 0.45); /* Softened glass border */
+  border: 1px solid rgba(239, 68, 68, 0.45); /* Softened glass border */
   backdrop-filter: blur(8px);
 }
 .btn-glass-red-custom:hover:not(:disabled) {

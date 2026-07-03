@@ -420,8 +420,39 @@ ipcMain.handle('write-metadata', async (event, filePath, title, description, key
   fileLog('[write-metadata] Called with:', { filePath, title, description, keywords, categories });
   try {
     if (!fs.existsSync(filePath)) {
-      fileLog('[write-metadata] File does not exist:', filePath);
-      throw new Error(`File not found: ${filePath}`);
+      // Try swapping .jpeg <-> .jpg extension
+      const ext = path.extname(filePath).toLowerCase();
+      let resolved = false;
+      if (ext === '.jpg' || ext === '.jpeg') {
+        const altExt = ext === '.jpg' ? '.jpeg' : '.jpg';
+        const altPath = path.join(path.dirname(filePath), path.basename(filePath, ext) + altExt);
+        if (fs.existsSync(altPath)) {
+          filePath = altPath;
+          resolved = true;
+        }
+      }
+      if (!resolved) {
+        // Third fallback: scan directory for a file already renamed to match the title
+        try {
+          const dir = path.dirname(filePath);
+          const sanitizedTitle = (title || '').replace(/[^\w\s-]/gi, '').replace(/\s+/g, '_').trim().substring(0, 120);
+          if (sanitizedTitle) {
+            const candidates = (fs.readdirSync(dir) || []).filter(f => {
+              const base = path.basename(f, path.extname(f));
+              return base.toLowerCase() === sanitizedTitle.toLowerCase();
+            });
+            if (candidates.length === 1) {
+              const alreadyRenamedPath = path.join(dir, candidates[0]);
+              fileLog('[write-metadata] File was already renamed in previous session to:', alreadyRenamedPath);
+              return { success: true, newPath: alreadyRenamedPath, newFileName: candidates[0], alreadyProcessed: true };
+            }
+          }
+        } catch (scanErr) {
+          fileLog('[write-metadata] Error scanning directory:', scanErr);
+        }
+        fileLog('[write-metadata] File does not exist:', filePath);
+        throw new Error(`File not found: ${filePath}`);
+      }
     }
     fileLog('[write-metadata] File exists, resolving exiftool...');
     

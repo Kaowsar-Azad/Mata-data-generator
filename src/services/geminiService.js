@@ -3,6 +3,7 @@ import { fetchMistral, buildMistralPrompt } from "./apis/mistral.js";
 import { fetchGroq, buildGroqPrompt } from "./apis/groq.js";
 import { fetchOpenAI, buildOpenAIPrompt } from "./apis/openai.js";
 import { fetchOpenRouter, buildOpenRouterPrompt } from "./apis/openrouter.js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { recordApiUsage } from "./apiUsageTracker.js";
 /**
  * Super Robust Gemini Service with Multi-Version and Multi-Model fallbacks
@@ -10,73 +11,180 @@ import { recordApiUsage } from "./apiUsageTracker.js";
  */
 
 
-const BRAND_REPLACEMENTS = {
-  "iphone": "smartphone",
-  "ipad": "tablet",
-  "macbook": "laptop",
-  "imac": "desktop computer",
-  "apple watch": "smartwatch",
-  "airpods": "wireless earbuds",
-  "android": "smartphone",
-  "pixel": "smartphone",
-  "chromebook": "laptop",
-  "windows": "operating system",
-  "xbox": "gaming console",
-  "playstation": "gaming console",
-  "nintendo switch": "gaming console",
-  "wii": "gaming console",
-  "facebook": "social media",
-  "instagram": "social media",
-  "twitter": "social media",
-  "tiktok": "social media",
-  "whatsapp": "messaging app",
-  "snapchat": "social media",
-  "youtube": "video platform",
-  "linkedin": "social network",
-  "netflix": "streaming service",
-  "coca-cola": "cola",
-  "pepsi": "cola",
-  "red bull": "energy drink",
-  "starbucks": "coffee shop",
-  "mcdonalds": "fast food",
-  "mcdonald's": "fast food",
-  "nike": "sports brand",
-  "adidas": "sports brand",
-  "tesla": "electric car",
-  "lego": "building blocks",
-  "dji": "drone",
-  "gopro": "action camera",
-  "canon": "camera",
-  "nikon": "camera",
-  "rolex": "luxury watch"
-};
+import trademarkData from "./trademarks.json";
 
-const FORBIDDEN_BRANDS = [
-  "apple", "google", "microsoft", "meta", "amazon", "disney", "marvel", 
-  "toyota", "honda", "ford", "bmw", "mercedes", "audi", "porsche", 
-  "ferrari", "lamborghini", "sony", "samsung", "lg", "panasonic",
-  "gucci", "louis vuitton", "prada", "chanel", "dior", "hermes"
-];
+const BRAND_REPLACEMENTS = trademarkData.brandReplacements;
+const FORBIDDEN_BRANDS = trademarkData.forbiddenBrands;
+
+const COMMON_SPELLING_CORRECTIONS = {
+  "autum": "autumn",
+  "beautifull": "beautiful",
+  "bussiness": "business",
+  "busines": "business",
+  "comming": "coming",
+  "exoticue": "exotic",
+  "flawles": "flawless",
+  "happines": "happiness",
+  "traveling": "travelling",
+  "restuarant": "restaurant",
+  "restrant": "restaurant",
+  "accomodation": "accommodation",
+  "calender": "calendar",
+  "goverment": "government",
+  "enviornment": "environment",
+  "photograpy": "photography",
+  "photograper": "photographer",
+  "vecter": "vector",
+  "ilustration": "illustration",
+  "backgrounds": "background"
+};
 
 function sanitizeText(text) {
   if (!text) return text;
   let sanitized = text;
   
-  // Replace specific product names with generic terms
+  // Replace specific product names with generic terms (handles singular and plural)
   for (const [brand, replacement] of Object.entries(BRAND_REPLACEMENTS)) {
-    const regex = new RegExp(`\\b${brand}\\b`, 'gi');
+    // Replace singular
+    let regex = new RegExp(`\\b${brand}\\b`, 'gi');
     sanitized = sanitized.replace(regex, replacement);
+    
+    // Replace plural (e.g. iphones, nikes, etc.)
+    let pluralBrand = brand;
+    let pluralReplacement = replacement;
+    
+    if (brand.endsWith('y')) {
+      pluralBrand = brand.slice(0, -1) + 'ies';
+    } else if (brand.endsWith('s') || brand.endsWith('x') || brand.endsWith('ch') || brand.endsWith('sh')) {
+      pluralBrand = brand + 'es';
+    } else {
+      pluralBrand = brand + 's';
+    }
+    
+    if (replacement.endsWith('y')) {
+      pluralReplacement = replacement.slice(0, -1) + 'ies';
+    } else if (replacement.endsWith('s') || replacement.endsWith('x') || replacement.endsWith('ch') || replacement.endsWith('sh')) {
+      pluralReplacement = replacement + 'es';
+    } else {
+      pluralReplacement = replacement + 's';
+    }
+    
+    regex = new RegExp(`\\b${pluralBrand}\\b`, 'gi');
+    sanitized = sanitized.replace(regex, pluralReplacement);
   }
 
-  // Remove other forbidden brands entirely
+  // Remove other forbidden brands entirely (handles singular and plural)
   for (const brand of FORBIDDEN_BRANDS) {
-    const regex = new RegExp(`\\b${brand}\\b`, 'gi');
+    // Remove singular
+    let regex = new RegExp(`\\b${brand}\\b`, 'gi');
+    sanitized = sanitized.replace(regex, '');
+    
+    // Remove plural
+    let pluralBrand = brand;
+    if (brand.endsWith('y')) {
+      pluralBrand = brand.slice(0, -1) + 'ies';
+    } else if (brand.endsWith('s') || brand.endsWith('x') || brand.endsWith('ch') || brand.endsWith('sh')) {
+      pluralBrand = brand + 'es';
+    } else {
+      pluralBrand = brand + 's';
+    }
+    regex = new RegExp(`\\b${pluralBrand}\\b`, 'gi');
     sanitized = sanitized.replace(regex, '');
   }
 
   // Clean up double spaces and isolated punctuation
   sanitized = sanitized.replace(/\s{2,}/g, ' ').replace(/\s+([.,;:!])/g, '$1').trim();
   return sanitized;
+}
+
+function cleanAndCorrectKeywords(keywordsStr, title, description) {
+  if (!keywordsStr) return keywordsStr;
+  
+  const textContext = ((title || "") + " " + (description || "")).toLowerCase();
+  
+  // Detect singular vs plural context for humans
+  const isSingularHuman = /\b(a|an|one|single|individual)\s+(person|man|woman|child|kid|boy|girl|model|worker|businessman|businesswoman|photographer|artist|teacher|student|doctor|nurse|player|gamer)\b/i.test(textContext) 
+    || /\b(portrait of a|photo of a|close up of a)\b/i.test(textContext);
+    
+  const isPluralHuman = /\b(people|women|men|children|kids|boys|girls|group|couple|family|friends|team|workers|businessmen|businesswomen|students|doctors|nurses|players|gamers)\b/i.test(textContext)
+    || /\b(two|three|four|five|several|many|group of|crowd of)\b/i.test(textContext);
+
+  let kws = keywordsStr.split(',').map(k => k.trim()).filter(Boolean);
+  let cleanedKws = [];
+
+  for (let kw of kws) {
+    let kwLower = kw.toLowerCase();
+    
+    // 1. Spell Correction
+    if (COMMON_SPELLING_CORRECTIONS[kwLower]) {
+      kw = COMMON_SPELLING_CORRECTIONS[kwLower];
+      kwLower = kw.toLowerCase();
+    }
+    
+    // 2. Singular/Plural human correction
+    if (isSingularHuman && !isPluralHuman) {
+      if (kwLower === "women") kw = "woman";
+      else if (kwLower === "men") kw = "man";
+      else if (kwLower === "children" || kwLower === "kids") kw = "child";
+      else if (kwLower === "people") kw = "person";
+    } else if (isPluralHuman && !isSingularHuman) {
+      if (kwLower === "woman") kw = "women";
+      else if (kwLower === "man") kw = "men";
+      else if (kwLower === "child") kw = "children";
+      else if (kwLower === "person") kw = "people";
+    }
+    
+    cleanedKws.push(kw);
+  }
+
+  // Deduplicate case-insensitively
+  const seen = new Set();
+  const deduped = [];
+  for (const kw of cleanedKws) {
+    const key = kw.toLowerCase().trim();
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(kw);
+    }
+  }
+
+  return deduped.join(', ');
+}
+
+function extractJson(str) {
+  const firstBrace = str.indexOf('{');
+  if (firstBrace === -1) return null;
+  
+  let braceCount = 0;
+  let inString = false;
+  let escape = false;
+  
+  for (let i = firstBrace; i < str.length; i++) {
+    const char = str[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (char === '{') {
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          return str.substring(firstBrace, i + 1);
+        }
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -124,10 +232,13 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
     } else {
       rawKws = String(result.keywords);
     }
-    result.keywords = rawKws.split(',')
+    let sanitizedKws = rawKws.split(',')
       .map(k => sanitizeText(k.trim()))
       .filter(k => k.length > 0)
       .join(', ');
+      
+    // Apply spelling correction and singular-plural corrections
+    result.keywords = cleanAndCorrectKeywords(sanitizedKws, result.title, result.description);
   }
   // ----------------------------------------
 
@@ -389,6 +500,7 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
 }
 
 let globalKeyIndex = 0;
+const modelsToTry = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
 
 /**
  * Helper to run content generation with a strict timeout (default 45 seconds).
@@ -442,6 +554,7 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
   const { isEps = false, isPlaceholder = false, isVideo = false, fileName = "file", extractedTextContext = null, promptSettings = {} } = fileInfo;
 
   let lastError = null;
+  let globalKeyHitRateLimit = false;
   
   // Atomically claim the current key index and immediately advance globalKeyIndex
   // so concurrent calls receive distinct API keys!
@@ -487,6 +600,7 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
         console.warn(`[Fail] ${currentProvider} (key ${currentKeyIndex}): ${error.message}`);
         lastError = error;
         if (error.message.includes("401") || error.message.includes("403") || error.message.includes("429")) {
+          if (error.message.includes("429")) globalKeyHitRateLimit = true;
           continue; // Try next key gracefully
         }
         throw error; // Other errors abort immediately
@@ -499,19 +613,21 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
       const parsed = await fetchGemini(apiKey, currentKeyIndex, prompt, imageBuffer, mimeType, true, promptSettings);
       return postProcessMetadata(parsed, promptSettings, fileInfo);
     } catch (error) {
+      console.warn(`[Key Fail] Key index ${currentKeyIndex} failed: ${error.message} (keyHitRateLimit: ${error.keyHitRateLimit || false})`);
       lastError = error;
       const keyHitRateLimit = error.keyHitRateLimit || false;
       if (keyHitRateLimit) {
+        globalKeyHitRateLimit = true;
         continue; // Switch key
       }
-      if (error.message.includes("API_KEY_INVALID") || error.message.includes("401") || error.message.includes("403")) {
+      if (error.message.includes("API_KEY_INVALID") || error.message.includes("401") || error.message.includes("403") || error.message.includes("404")) {
         continue; // Switch key
       }
       throw error;
     }
   }
 
-  if (lastError && (lastError.message.includes("429") || lastError.message.includes("quota"))) {
+  if (globalKeyHitRateLimit || (lastError && (lastError.message.includes("429") || lastError.message.includes("quota")))) {
     throw new Error(`API Rate Limit Reached on all ${apiKeys.length} keys. Please wait 30 seconds before generating again.`);
   }
 
@@ -791,11 +907,12 @@ export async function analyzeImageSecurity(imageBuffer, mimeType, apiKeys, apiPr
   const prompt = `Analyze this image strictly for stock photography marketplace policy violations.
 Check for the following issues:
 1. Watermarks, signatures, or dates indicating ownership by a specific photographer/agency (e.g., "© 2024 John Doe", "Shutterstock", "Getty Images"). Note: General typography, event titles, or template text (like "2026 Soccer Tournament") are perfectly FINE and should NOT be flagged.
-2. Copyrighted brand logos, trademarks, or highly recognizable intellectual property (e.g., Apple logo, Nike swoosh, Disney characters, Marvel characters).
+2. Explicit, visible brand logos, trademarks, or copyrighted icons (e.g., Apple logo, Nike swoosh, corporate brand names). 
+   CRITICAL: ONLY flag it if the actual brand logo, icon, or trademark name is directly visible and printed on the image/object. Do NOT flag objects that merely resemble branded products but have NO visible logo or text (e.g., do NOT flag a generic cylindrical smart speaker just because it looks like an Amazon Echo, and do NOT flag a smartphone if there is no Apple/Samsung logo visible).
 3. Explicit, offensive, excessively violent, or NSFW content.
 
 If ANY of these policy violations are found, mark it as unsafe and provide a short, specific reason.
-If the image is clean (even if it contains event posters, template text, or typography), mark it as safe.
+If the image is clean (even if it contains event posters, template text, generic unbranded products resembling branded items, or typography), mark it as safe.
 
 Return ONLY a valid JSON object matching this schema:
 {
@@ -860,9 +977,14 @@ Return ONLY a valid JSON object matching this schema:
         try {
           parsed = JSON.parse(cleaned);
         } catch (e) {
-          const match = cleaned.match(/\{[\s\S]*\}/);
-          if (match) parsed = JSON.parse(match[0]);
-          else throw new Error("JSON parse error");
+          const extracted = extractJson(cleaned);
+          if (extracted) {
+            parsed = JSON.parse(extracted);
+          } else {
+            const match = cleaned.match(/\{[\s\S]*\}/);
+            if (match) parsed = JSON.parse(match[0]);
+            else throw new Error("JSON parse error: " + e.message);
+          }
         }
 
         let totalTokens = 0;
@@ -877,25 +999,31 @@ Return ONLY a valid JSON object matching this schema:
         console.warn(`[Fail] ${modelName} on key ${currentKeyIndex} (SecurityScan): ${error.message}`);
         lastError = error;
         const isQuotaExceeded =
-          error.message.toLowerCase().includes("quota") ||
-          error.message.toLowerCase().includes("exceeded") ||
-          error.message.toLowerCase().includes("billing");
+          (error.message.toLowerCase().includes("quota") ||
+           error.message.toLowerCase().includes("exceeded") ||
+           error.message.toLowerCase().includes("billing")) &&
+          !error.message.toLowerCase().includes("perminute") &&
+          !error.message.toLowerCase().includes("rate limit");
 
         if (isQuotaExceeded) {
-          console.warn(`[Quota Exceeded] Key index ${currentKeyIndex} has no remaining daily quota for security scan. Proceeding to next key.`);
-          break; // Break inner model loop → try next key immediately
+          console.warn(`[Quota Exceeded] Key index ${currentKeyIndex}: Model ${modelName} has no daily quota left for security scan. Falling back to next model...`);
+          continue; 
         }
 
-        const isRateLimit = error.message.includes("429") || error.message.toLowerCase().includes("limit");
+        const isRateLimit =
+          error.message.includes("429") ||
+          error.message.toLowerCase().includes("limit") ||
+          error.message.toLowerCase().includes("perminute");
         const isHighDemand = error.message.includes("503") || error.message.toLowerCase().includes("high demand");
         
         if (isRateLimit || isHighDemand) {
-          // Retry current model up to 3 times with exponential backoff
+          // Retry current model up to 2 times for 503, 0 times for 429
           let retried = false;
-          for (let retry = 0; retry < 3; retry++) {
-            const waitMs = isRateLimit ? (retry + 1) * 10000 : (retry + 1) * 3000;
-            const errorType = isRateLimit ? "429 Rate Limit" : "503 High Demand";
-            console.warn(`[SecurityScan ${errorType}] Waiting ${waitMs / 1000}s before retry ${retry + 1}/3...`);
+          const maxRetries = isRateLimit ? 0 : 2;
+          for (let retry = 0; retry < maxRetries; retry++) {
+            const waitMs = (retry + 1) * 2000;
+            const errorType = "503 High Demand";
+            console.warn(`[SecurityScan ${errorType}] Waiting ${waitMs / 1000}s before retry ${retry + 1}/${maxRetries}...`);
             await new Promise(r => setTimeout(r, waitMs));
             try {
               const model2 = genAI.getGenerativeModel({ model: modelName });
@@ -908,21 +1036,25 @@ Return ONLY a valid JSON object matching this schema:
               let parsed2;
               try { parsed2 = JSON.parse(cleaned2); }
               catch (e2) {
-                const match2 = cleaned2.match(/\{[\s\S]*\}/);
-                if (match2) parsed2 = JSON.parse(match2[0]);
-                else throw new Error("JSON parse error");
+                const extracted2 = extractJson(cleaned2);
+                if (extracted2) {
+                  parsed2 = JSON.parse(extracted2);
+                } else {
+                  const match2 = cleaned2.match(/\{[\s\S]*\}/);
+                  if (match2) parsed2 = JSON.parse(match2[0]);
+                  else throw new Error("JSON parse error: " + e2.message);
+                }
               }
               retried = true;
               return parsed2;
             } catch (retryErr) {
               lastError = retryErr;
-              const isStillRateLimit = retryErr.message.includes("429") || retryErr.message.toLowerCase().includes("quota");
               const isStillHighDemand = retryErr.message.includes("503") || retryErr.message.toLowerCase().includes("high demand");
-              if ((isRateLimit && !isStillRateLimit) || (isHighDemand && !isStillHighDemand)) break;
+              if (!isStillHighDemand) break;
             }
           }
           if (!retried) {
-            if (isRateLimit) break; // If still rate limited after 3 retries, skip key
+            if (isRateLimit) break; // If still rate limited after retries (or 0 retries), break to next key
             continue; // Try next model
           }
           break;

@@ -1,7 +1,6 @@
 import React, { memo } from "react";
 import { Video, Loader2, FileCode2, Image as ImageIcon, AlertTriangle, CheckCircle2, X, Upload, ShieldAlert } from "lucide-react";
 import { MdCloudUpload } from "react-icons/md";
-import checkIcon from "../../assets/icons/check.png";
 import { StatusBadge, getScoreMeta } from "./workflowHelpers";
 import { MetaField } from "./MetaField";
 
@@ -206,7 +205,7 @@ const MetadataCard = memo(({
                 </div>
               );
             })()}
-            {img.embeddingStatus === 'success' && <><img src={checkIcon} alt="Success" style={{ width: '1.2rem', height: '1.2rem', objectFit: 'contain' }} /><span>Metadata embedded & processed!</span></>}
+            {img.embeddingStatus === 'success' && <><CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" /><span>Metadata embedded & processed!</span></>}
             {img.embeddingStatus === 'error' && <><X style={{ width: '0.8rem', height: '0.8rem', stroke: '#ef4444' }} /><span>Failed: {img.embeddingError}</span></>}
           </div>
         )}

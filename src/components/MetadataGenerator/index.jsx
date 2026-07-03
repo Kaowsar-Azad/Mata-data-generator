@@ -33,8 +33,6 @@ import { generateMetadata, analyzeImageSecurity } from "../../services/geminiSer
 
 import uploadIcon from "../../assets/icons/upload.png";
 import downloadIcon from "../../assets/icons/download.png";
-import trashIcon from "../../assets/icons/trash.png";
-import checkIcon from "../../assets/icons/check.png";
 import { processEpsFile, isEpsFile } from "../../services/epsService";
 
 import { computeHashForEntry, detectDuplicates } from "./duplicateDetector";
@@ -2082,7 +2080,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               <FileSpreadsheet style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Export CSV ({doneCount})
             </button>
 
-            {doneCount > 0 && (
+            {doneCount > 0 && !(autoEmbed && autoRemoveYellow) && (
               <button
                 className="btn-glass-inactive"
                 style={{
@@ -2120,7 +2118,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               </button>
             )}
 
-            {doneCount > 0 && (
+            {doneCount > 0 && !(autoEmbed && autoRemoveRed) && (
               <button
                 className="btn-glass-inactive"
                 style={{

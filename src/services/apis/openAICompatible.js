@@ -133,14 +133,55 @@ REQUIRED JSON FORMAT:
     return text.trim();
   }
 
+function extractJson(str) {
+  const firstBrace = str.indexOf('{');
+  if (firstBrace === -1) return null;
+  
+  let braceCount = 0;
+  let inString = false;
+  let escape = false;
+  
+  for (let i = firstBrace; i < str.length; i++) {
+    const char = str[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (char === '{') {
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          return str.substring(firstBrace, i + 1);
+        }
+      }
+    }
+  }
+  return null;
+}
+
   const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
   let parsed;
   try {
     parsed = JSON.parse(cleaned);
   } catch (e) {
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) parsed = JSON.parse(match[0]);
-    else throw new Error("JSON parse error");
+    const extracted = extractJson(cleaned);
+    if (extracted) {
+      parsed = JSON.parse(extracted);
+    } else {
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (match) parsed = JSON.parse(match[0]);
+      else throw new Error("JSON parse error: " + e.message);
+    }
   }
   return parsed;
 }

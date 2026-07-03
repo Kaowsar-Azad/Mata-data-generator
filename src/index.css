@@ -523,7 +523,16 @@ input[type="checkbox"].ios-toggle:checked {
 input[type="checkbox"].ios-toggle-green-custom:checked {
   background: #22C55E; /* ON Track Green */
 }
-input[type="checkbox"].ios-toggle:checked::after, input[type="checkbox"].ios-toggle-green-custom:checked::after {
+input[type="checkbox"].ios-toggle-amber-custom:checked {
+  background: #f59e0b; /* ON Track Amber */
+}
+input[type="checkbox"].ios-toggle-red-custom:checked {
+  background: #ef4444; /* ON Track Red */
+}
+input[type="checkbox"].ios-toggle:checked::after, 
+input[type="checkbox"].ios-toggle-green-custom:checked::after,
+input[type="checkbox"].ios-toggle-amber-custom:checked::after,
+input[type="checkbox"].ios-toggle-red-custom:checked::after {
   transform: translateX(18px);
 }
 input[type="checkbox"].ios-toggle:disabled {
@@ -1214,6 +1223,60 @@ input[type="checkbox"].ios-toggle:disabled {
   background: rgba(22, 163, 74, 0.15);
   border-color: #15803D; /* Pressed Green */
   color: #15803D;
+}
+
+.btn-glass-amber-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.35rem 0.8rem;
+  border-radius: 0.55rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  background: transparent;
+  color: #d97706; /* Softer Active Amber Text */
+  border: 1.5px solid rgba(245, 158, 11, 0.45); /* Softened glass border */
+  backdrop-filter: blur(8px);
+}
+.btn-glass-amber-custom:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: #d97706;
+  color: #d97706;
+}
+.btn-glass-amber-custom:active:not(:disabled) {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: #d97706;
+  color: #d97706;
+}
+
+.btn-glass-red-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.35rem 0.8rem;
+  border-radius: 0.55rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  background: transparent;
+  color: #dc2626; /* Softer Active Red Text */
+  border: 1.5px solid rgba(239, 68, 68, 0.45); /* Softened glass border */
+  backdrop-filter: blur(8px);
+}
+.btn-glass-red-custom:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: #dc2626;
+  color: #dc2626;
+}
+.btn-glass-red-custom:active:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #dc2626;
+  color: #dc2626;
 }
 
 .btn-csv-grad {

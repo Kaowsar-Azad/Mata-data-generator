@@ -6,6 +6,7 @@ import {
   UploadCloud,
   Download,
   CheckCircle2,
+  AlertCircle,
   Loader2,
   Trash2,
   X,
@@ -106,6 +107,55 @@ const PolicyViolationThumbnail = ({ img }) => {
   );
 };
 
+const filterMetadataKeywords = (metadata, removeYellow, removeRed) => {
+  if (!metadata || !metadata.keywords) return metadata;
+
+  const getKeywordScore = (keyword, scoreObj) => {
+    const kl = keyword.toLowerCase().trim();
+    if (scoreObj) {
+      const scoreKey = Object.keys(scoreObj).find(
+        k => k.toLowerCase().trim() === kl
+      );
+      if (scoreKey !== undefined) {
+        const exactScore = scoreObj[scoreKey];
+        if (exactScore !== undefined) {
+          const numScore = Number(exactScore);
+          if (!isNaN(numScore)) {
+            return Math.min(100, Math.max(1, numScore));
+          }
+        }
+      }
+    }
+    const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]);
+    if (junk.has(kl) || kl.length < 3) return 10;
+    return 50;
+  };
+
+  const kws = metadata.keywords.split(',').map(k => k.trim()).filter(Boolean);
+  const newKws = [];
+  const newScores = { ...metadata.keywordScores };
+
+  kws.forEach(kw => {
+    const score = getKeywordScore(kw, newScores);
+    const isYellow = score >= 40 && score < 75;
+    const isRed = score < 40;
+
+    if (removeYellow && isYellow) {
+      delete newScores[kw];
+    } else if (removeRed && isRed) {
+      delete newScores[kw];
+    } else {
+      newKws.push(kw);
+    }
+  });
+
+  return {
+    ...metadata,
+    keywords: newKws.join(', '),
+    keywordScores: newScores
+  };
+};
+
 export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptSettings, ftpConfigs = [] }) {
   const [images, setImages] = useState([]);
   const imagesRef = useRef([]);
@@ -115,6 +165,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const cancelRef = useRef(false);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [autoEmbed, setAutoEmbed] = useState(() => localStorage.getItem("autoEmbed") === "true");
+  const [autoRemoveYellow, setAutoRemoveYellow] = useState(() => localStorage.getItem("autoRemoveYellow") === "true");
+  const [autoRemoveRed, setAutoRemoveRed] = useState(() => localStorage.getItem("autoRemoveRed") === "true");
   const [embedScale, setEmbedScale] = useState(() => parseInt(localStorage.getItem("embedScale")) || 2);
   const [embedEngine, setEmbedEngine] = useState(() => localStorage.getItem("embedEngine") || "mata_ai");
   const [embeddingCount, setEmbeddingCount] = useState(0);
@@ -223,7 +275,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4000);
+    }, 8000);
   };
 
   useEffect(() => {
@@ -691,13 +743,17 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             };
 
             if (cancelRef.current) return;
-            const metadata = await generateMetadata(
+            let metadata = await generateMetadata(
               base64,
               mimeType,
               apiKeys,
               apiProvider || "gemini",
               fileInfo
             );
+
+            if (autoEmbed) {
+              metadata = filterMetadataKeywords(metadata, autoRemoveYellow, autoRemoveRed);
+            }
 
             const activeScale = autoUpscale ? upscaleScale : (autoEmbed ? embedScale : 2);
             const activeEngine = autoUpscale ? upscaleEngine : (autoEmbed ? embedEngine : 'mata_ai');
@@ -963,7 +1019,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         return;
       }
       
-      setUploadBatchIds(currentImages.map(img => img.id));
+      if (activeFtpConfigs.length > 0) {
+        setUploadBatchIds(currentImages.map(img => img.id));
+      } else {
+        setUploadBatchIds([]);
+      }
       
       setImages(prev => prev.map(img => {
         const shouldEmbed = currentImages.some(ci => ci.id === img.id);
@@ -1172,11 +1232,20 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         } finally {
           setActiveJobId(null);
         }
-      } else if (embeddedImages.length > 0 && (!skipAdobeUpload || uploadConfigs.length > 0)) {
-        if (embeddedImages.length === 1) {
-          showToast(`"${embeddedImages[0].renamedName || embeddedImages[0].file.name}" ফাইলে মেটাডাটা সফলভাবে এম্বেড করা হয়েছে!`, "success");
-        } else if (embeddedImages.length > 1) {
-          showToast(`${embeddedImages.length}টি ফাইলে মেটাডাটা সফলভাবে এম্বেড করা হয়েছে!`, "success");
+      } else if (embeddedImages.length > 0) {
+        const isAutoEmbedWithNoFtp = autoEmbed && activeFtpConfigs.length === 0;
+        if (isAutoEmbedWithNoFtp) {
+          if (embeddedImages.length === 1) {
+            showToast(`Metadata successfully embedded in "${embeddedImages[0].renamedName || embeddedImages[0].file.name}", but FTP upload was skipped because no active servers are selected.`, "warning");
+          } else {
+            showToast(`Metadata successfully embedded in ${embeddedImages.length} files, but FTP upload was skipped because no active servers are selected.`, "warning");
+          }
+        } else {
+          if (embeddedImages.length === 1) {
+            showToast(`"${embeddedImages[0].renamedName || embeddedImages[0].file.name}" ফাইলে মেটাডাটা সফলভাবে এম্বেড করা হয়েছে!`, "success");
+          } else if (embeddedImages.length > 1) {
+            showToast(`${embeddedImages.length}টি ফাইলে মেটাডাটা সফলভাবে এম্বেড করা হয়েছে!`, "success");
+          }
         }
       }
     } finally {
@@ -1195,6 +1264,24 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     const checked = e.target.checked;
     setAutoEmbed(checked);
     localStorage.setItem("autoEmbed", checked ? "true" : "false");
+    if (checked) {
+      const activeConfigs = ftpConfigs.filter(c => c.enabled);
+      if (activeConfigs.length === 0) {
+        showToast("No active FTP servers connected or selected! Metadata will be embedded locally, but FTP upload will be skipped.", "warning");
+      }
+    }
+  };
+
+  const handleAutoRemoveYellowChange = (e) => {
+    const checked = e.target.checked;
+    setAutoRemoveYellow(checked);
+    localStorage.setItem("autoRemoveYellow", checked ? "true" : "false");
+  };
+
+  const handleAutoRemoveRedChange = (e) => {
+    const checked = e.target.checked;
+    setAutoRemoveRed(checked);
+    localStorage.setItem("autoRemoveRed", checked ? "true" : "false");
   };
 
   const handleCSVImport = (e) => {
@@ -1819,6 +1906,50 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                       <span style={{ fontWeight: 500 }}>Auto embed and upload</span>
                     </label>
                   </div>
+
+                  {autoEmbed && (
+                    <>
+                      <div 
+                        className={`${autoRemoveYellow ? 'btn-glass-amber-custom' : 'btn-glass-inactive'} flex items-center gap-2 select-none`}
+                        title="Automatically remove Yellow (Medium relevance) keywords before embedding"
+                        style={{
+                          background: autoRemoveYellow ? 'rgba(245, 158, 11, 0.08)' : 'var(--surface-2)',
+                          borderColor: autoRemoveYellow ? 'rgba(245, 158, 11, 0.3)' : 'var(--glass-border)',
+                          color: autoRemoveYellow ? '#d97706' : 'var(--text-2)'
+                        }}
+                      >
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            className="ios-toggle ios-toggle-amber-custom"
+                            checked={autoRemoveYellow} 
+                            onChange={handleAutoRemoveYellowChange}
+                          />
+                          <span style={{ fontWeight: 500 }}>Auto Clean Yellow Kws</span>
+                        </label>
+                      </div>
+
+                      <div 
+                        className={`${autoRemoveRed ? 'btn-glass-red-custom' : 'btn-glass-inactive'} flex items-center gap-2 select-none`}
+                        title="Automatically remove Red (Low relevance) keywords before embedding"
+                        style={{
+                          background: autoRemoveRed ? 'rgba(239, 68, 68, 0.08)' : 'var(--surface-2)',
+                          borderColor: autoRemoveRed ? 'rgba(239, 68, 68, 0.3)' : 'var(--glass-border)',
+                          color: autoRemoveRed ? '#dc2626' : 'var(--text-2)'
+                        }}
+                      >
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            className="ios-toggle ios-toggle-red-custom"
+                            checked={autoRemoveRed} 
+                            onChange={handleAutoRemoveRedChange}
+                          />
+                          <span style={{ fontWeight: 500 }}>Auto Clean Red Kws</span>
+                        </label>
+                      </div>
+                    </>
+                  )}
                   
                   <div 
                     className={`${autoUpscale ? 'btn-glass-green-custom' : 'btn-glass-inactive'} flex items-center gap-2 select-none`}
@@ -2417,7 +2548,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       {/* Toast Notifications */}
       <div style={{
         position: 'fixed',
-        bottom: '2rem',
+        top: '2rem',
         right: '2rem',
         zIndex: 9999,
         display: 'flex',
@@ -2425,53 +2556,88 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         gap: '0.75rem',
         pointerEvents: 'none'
       }}>
-        {toasts.map((t) => (
-          <div 
-            key={t.id}
-            style={{
-              pointerEvents: 'auto',
-              background: t.type === 'success' ? 'rgba(16,185,129,0.95)' : 'rgba(239,68,68,0.95)',
-              color: '#fff',
-              padding: '1rem 1.5rem',
-              borderRadius: '0.75rem',
-              boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-              backdropFilter: 'blur(10px)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.75rem',
-              animation: 'slideIn 0.3s ease-out',
-              border: '1px solid rgba(255,255,255,0.1)',
-              width: '320px',
-              boxSizing: 'border-box'
-            }}
-          >
-            {t.type === 'success' ? (
-              <CheckCircle2 style={{ width: '1.25rem', height: '1.25rem', flexShrink: 0 }} />
-            ) : (
-              <X style={{ width: '1.25rem', height: '1.25rem', flexShrink: 0 }} />
-            )}
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, flexGrow: 1, wordBreak: 'break-word', lineHeight: '1.3' }}>{t.message}</span>
-            <button 
-              onClick={() => setToasts(prev => prev.filter(item => item.id !== t.id))}
+        {toasts.map((t) => {
+          const isSuccess = t.type === 'success';
+          const isWarning = t.type === 'warning';
+          
+          let bgColor = 'rgba(255, 255, 255, 0.88)';
+          let borderColor = 'rgba(0, 0, 0, 0.08)';
+          let textColor = 'var(--text-1)';
+          let iconColor = 'var(--primary)';
+          let IconComponent = AlertCircle;
+
+          if (isSuccess) {
+            bgColor = 'rgba(240, 253, 244, 0.85)';
+            borderColor = 'rgba(34, 197, 94, 0.35)';
+            textColor = '#14532d';
+            iconColor = '#15803d';
+            IconComponent = CheckCircle2;
+          } else if (isWarning) {
+            bgColor = 'rgba(254, 235, 235, 0.88)'; // Soft red/peach tint warning
+            borderColor = 'rgba(239, 68, 68, 0.35)';
+            textColor = '#7f1d1d';
+            iconColor = '#dc2626';
+            IconComponent = AlertTriangle;
+          } else { // error
+            bgColor = 'rgba(254, 226, 226, 0.9)'; // Deeper red glass
+            borderColor = 'rgba(239, 68, 68, 0.35)';
+            textColor = '#7f1d1d';
+            iconColor = '#b91c1c';
+            IconComponent = AlertCircle;
+          }
+
+          return (
+            <div 
+              key={t.id}
               style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'rgba(255,255,255,0.7)',
-                cursor: 'pointer',
-                marginLeft: '0.5rem',
+                pointerEvents: 'auto',
+                background: bgColor,
+                color: textColor,
+                padding: '0.85rem 1.1rem',
+                borderRadius: '0.75rem',
+                boxShadow: '0 10px 25px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.02)',
+                backdropFilter: 'blur(16px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(16px) saturate(180%)',
                 display: 'flex',
-                flexShrink: 0
+                alignItems: 'flex-start',
+                gap: '0.65rem',
+                animation: 'slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                border: `1.5px solid ${borderColor}`,
+                width: '340px',
+                boxSizing: 'border-box'
               }}
             >
-              <X style={{ width: '0.9rem', height: '0.9rem' }} />
-            </button>
-          </div>
-        ))}
+              <IconComponent style={{ width: '1.2rem', height: '1.2rem', color: iconColor, flexShrink: 0, marginTop: '1px' }} />
+              <span style={{ fontSize: '0.8rem', fontWeight: 600, flexGrow: 1, wordBreak: 'break-word', lineHeight: '1.4' }}>
+                {t.message}
+              </span>
+              <button 
+                onClick={() => setToasts(prev => prev.filter(item => item.id !== t.id))}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'rgba(0, 0, 0, 0.3)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '2px',
+                  borderRadius: '4px',
+                  flexShrink: 0,
+                  transition: 'background 0.2s, color 0.2s',
+                  marginTop: '1px'
+                }}
+              >
+                <X style={{ width: '0.85rem', height: '0.85rem' }} />
+              </button>
+            </div>
+          );
+        })}
       </div>
       <style>{`
         @keyframes slideIn {
-          from { transform: translateY(100%) scale(0.9); opacity: 0; }
-          to { transform: translateY(0) scale(1); opacity: 1; }
+          from { transform: translateX(100%) scale(0.95); opacity: 0; }
+          to { transform: translateX(0) scale(1); opacity: 1; }
         }
       `}</style>
     </div>

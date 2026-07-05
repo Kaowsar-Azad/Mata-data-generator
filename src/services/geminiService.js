@@ -755,7 +755,6 @@ Output ONLY the final prompt text. Do not output conversational text or explanat
     throw new Error(`Could not connect to any ${apiProvider} model.`);
   }
 
-  const targetModel = promptSettings.targetModel || 'ChatGPT';
   console.log(`[geminiService.js] targetModel passed to prompt generator: "${targetModel}"`);
   const dynamicInstruction = `[CRITICAL INSTRUCTION: I am generating an image using ${targetModel}. Please format your final output strictly for ${targetModel}. DO NOT output conversational text, greetings, bullet points, or explanations.]\n\n`;
 

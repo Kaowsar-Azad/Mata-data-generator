@@ -127,6 +127,7 @@ function App() {
     descMinChars: 50, 
     securityScanEnabled: true,
     promptSimilarityMode: 'Exact Match',
+    targetModel: 'ChatGPT',
   })
   const [activeTab, setActiveTab] = useState('metadata')
   const [sidebarOpen, setSidebarOpen] = useState(true)

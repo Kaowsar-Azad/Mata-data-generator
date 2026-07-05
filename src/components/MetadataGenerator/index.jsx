@@ -691,7 +691,21 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 )
               );
             } else if (img.visualFile) {
-              const dataUrl = await resizeImageToBase64(img.visualFile, 1024);
+              const hasGroqInProvider = Array.isArray(apiProvider) ? apiProvider.includes("groq") : apiProvider === "groq";
+              const hasGroqInKeys = apiKeys && apiKeys.some(k => (typeof k === 'object' && k.provider === 'groq') || k === 'groq');
+              const targetSize = (hasGroqInProvider || hasGroqInKeys) ? 512 : 1024;
+              fetch("http://127.0.0.1:3002/api/debug-log", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  fileName: img.file?.name,
+                  apiProvider,
+                  hasGroqInProvider,
+                  hasGroqInKeys,
+                  targetSize
+                })
+              }).catch(() => {});
+              const dataUrl = await resizeImageToBase64(img.visualFile, targetSize);
               base64 = dataUrl.split(",")[1];
               mimeType = "image/jpeg";
             } else if (img.isEps) {
@@ -2320,44 +2334,61 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       )}
 
       {/* View Container */}
-      {images.length > 0 && (
-        <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'stretch' }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {viewMode === 'grid' ? (
-              <MetadataThumbnailGrid 
-                images={getGridImages()}
-                selectedRows={selectedRows}
-                setSelectedRows={setSelectedRows}
-                activeCell={activeCell}
-                setActiveCell={setActiveCell}
-                removeImage={removeImage}
-              />
-            ) : (
-              <MetadataCardList 
-                images={getGridImages()}
-                duplicatePairs={duplicatePairs}
-                removeImage={removeImage}
-                handleMetaChange={handleMetaChange}
-                activeProviderName={activeProviderName}
-                upscaleScale={upscaleScale}
-                ftpConfigs={ftpConfigs}
-              />
+      {images.length > 0 && (() => {
+        const activeEditImage = (() => {
+          if (activeCell?.id && selectedRows.has(activeCell.id)) {
+            return images.find(img => img.id === activeCell.id);
+          }
+          if (selectedRows.size > 0) {
+            const checkedIds = Array.from(selectedRows);
+            const lastCheckedId = checkedIds[checkedIds.length - 1];
+            return images.find(img => img.id === lastCheckedId);
+          }
+          return null;
+        })();
+
+        return (
+          <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'stretch' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {viewMode === 'grid' ? (
+                <MetadataThumbnailGrid 
+                  images={getGridImages()}
+                  selectedRows={selectedRows}
+                  setSelectedRows={setSelectedRows}
+                  activeCell={activeCell}
+                  setActiveCell={setActiveCell}
+                  removeImage={removeImage}
+                  editingImageId={activeEditImage?.id}
+                />
+              ) : (
+                <MetadataCardList 
+                  images={getGridImages()}
+                  duplicatePairs={duplicatePairs}
+                  removeImage={removeImage}
+                  handleMetaChange={handleMetaChange}
+                  activeProviderName={activeProviderName}
+                  upscaleScale={upscaleScale}
+                  ftpConfigs={ftpConfigs}
+                />
+              )}
+            </div>
+
+            {/* Right-hand side panel editor shown in grid mode */}
+            {viewMode === 'grid' && activeEditImage && (
+              <div style={{ width: '360px', flexShrink: 0 }}>
+                <MetadataEditorPanel
+                  img={activeEditImage}
+                  handleMetaChange={handleMetaChange}
+                  activeCell={activeCell}
+                  setActiveCell={setActiveCell}
+                  selectedCount={selectedRows.size}
+                  applyToSelected={applyToSelected}
+                />
+              </div>
             )}
           </div>
-
-          {/* Right-hand side panel editor shown in grid mode */}
-          {viewMode === 'grid' && (
-            <div style={{ width: '360px', flexShrink: 0 }}>
-              <MetadataEditorPanel
-                img={images.find(img => img.id === activeCell?.id)}
-                handleMetaChange={handleMetaChange}
-                activeCell={activeCell}
-                setActiveCell={setActiveCell}
-              />
-            </div>
-          )}
-        </div>
-      )}
+        );
+      })()}
       
       {/* Embedding Permission Modal */}
       {showPermissionModal && (

@@ -6,6 +6,7 @@ const ThumbnailCard = memo(({
   img,
   isSelected,
   isActive,
+  isEditing,
   onSelectToggle,
   onActiveToggle,
   removeImage,
@@ -22,8 +23,16 @@ const ThumbnailCard = memo(({
         cursor: 'pointer',
         transition: 'all 0.3s ease',
         background: 'var(--surface-2)', 
-        border: isSelected ? '1.5px solid #06b6d4' : '1.5px solid rgba(255, 255, 255, 0.1)', // Cyan border when selected to match the demo
-        boxShadow: isSelected ? '0 0 15px rgba(6, 182, 212, 0.3)' : 'none',
+        border: isEditing
+          ? '1.5px solid #3b82f6'
+          : isSelected
+            ? '1.5px solid #06b6d4'
+            : '1.5px solid rgba(255, 255, 255, 0.1)',
+        boxShadow: isEditing
+          ? '0 0 15px rgba(59, 130, 246, 0.5)'
+          : isSelected
+            ? '0 0 15px rgba(6, 182, 212, 0.3)'
+            : 'none',
       }}
       onClick={() => {
         onActiveToggle(img.id);
@@ -217,6 +226,7 @@ export function MetadataThumbnailGrid({
   activeCell,
   setActiveCell,
   removeImage,
+  editingImageId,
 }) {
   const handleSelectToggle = (id) => {
     const next = new Set(selectedRows);
@@ -230,6 +240,11 @@ export function MetadataThumbnailGrid({
 
   const handleActiveToggle = (id) => {
     setActiveCell({ id, field: 'title' });
+    if (!selectedRows.has(id)) {
+      const next = new Set(selectedRows);
+      next.add(id);
+      setSelectedRows(next);
+    }
   };
 
   return (
@@ -240,6 +255,7 @@ export function MetadataThumbnailGrid({
           img={img}
           isSelected={selectedRows.has(img.id)}
           isActive={activeCell?.id === img.id}
+          isEditing={editingImageId === img.id}
           onSelectToggle={handleSelectToggle}
           onActiveToggle={handleActiveToggle}
           removeImage={removeImage}

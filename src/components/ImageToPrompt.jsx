@@ -9,6 +9,7 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const fileInputRef = useRef(null);
+  const abortRef = useRef(false);
 
   const mode = promptSettings?.promptSimilarityMode || 'Exact Match';
 
@@ -47,8 +48,24 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
     addImages(Array.from(e.dataTransfer.files));
   };
 
-  const removeImage = (id) => setImages((prev) => prev.filter((img) => img.id !== id));
-  const clearAll = () => setImages([]);
+  const removeImage = (id) => {
+    setImages((prev) => {
+      const filtered = prev.filter((img) => img.id !== id);
+      if (filtered.length === 0) {
+        abortRef.current = true;
+        setIsProcessing(false);
+        setProgress(0);
+      }
+      return filtered;
+    });
+  };
+
+  const clearAll = () => {
+    abortRef.current = true;
+    setImages([]);
+    setIsProcessing(false);
+    setProgress(0);
+  };
 
   const resizeImageToBase64 = (file, maxSize = 800) =>
     new Promise((resolve, reject) => {
@@ -92,6 +109,7 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
       return;
     }
 
+    abortRef.current = false;
     setIsProcessing(true);
     setProgress(0);
 
@@ -105,6 +123,7 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
     let processed = 0;
 
     for (let i = 0; i < toProcess.length; i += limit) {
+      if (abortRef.current) break;
       const chunk = toProcess.slice(i, i + limit);
 
       // Set status to processing for all in this chunk
@@ -117,8 +136,12 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
       // Process chunk concurrently
       await Promise.all(
         chunk.map(async (img) => {
+          if (abortRef.current) return;
           try {
-            const dataUrl = await resizeImageToBase64(img.file, 800);
+            const hasGroqInProvider = Array.isArray(apiProvider) ? apiProvider.includes("groq") : apiProvider === "groq";
+            const hasGroqInKeys = apiKeys && apiKeys.some(k => (typeof k === 'object' && k.provider === 'groq') || k === 'groq');
+            const targetSize = (hasGroqInProvider || hasGroqInKeys) ? 512 : 800;
+            const dataUrl = await resizeImageToBase64(img.file, targetSize);
             const base64 = dataUrl.split(",")[1];
             const mimeType = "image/jpeg";
 
@@ -137,9 +160,13 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
             );
           }
           processed++;
-          setProgress(Math.round((processed / toProcess.length) * 100));
+          if (!abortRef.current) {
+            setProgress(Math.round((processed / toProcess.length) * 100));
+          }
         })
       );
+
+      if (abortRef.current) break;
 
       // Add delay between chunks
       if (i + limit < toProcess.length) {
@@ -194,79 +221,121 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
         </div>
       </div>
 
-      {/* Similarity Mode Selector Card */}
-      <div className="glass card animate-fade-in" style={{ padding: '1.25rem', border: '1px solid var(--glass-border)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', background: 'var(--glass)' }}>
-        <div style={{ flex: '1 1 300px' }}>
-          <h3 style={{ fontSize: '1rem', margin: 0, fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Target className="w-4 h-4 text-primary" style={{ color: 'var(--primary)' }} />
-            AI Prompt Similarity Mode
-          </h3>
-          <p className="text-muted" style={{ fontSize: '0.8rem', marginTop: '0.3rem', lineHeight: '1.4' }}>
-            {mode === 'Unique Variation' 
-              ? '💡 AI will introduce creative variations to avoid similarity/duplication flags on stock platforms.' 
-              : '🎯 AI will describe the image as accurately as possible to recreate it.'}
-          </p>
+      {/* Similarity Mode & Target Model Selector Cards */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div className="glass card animate-fade-in" style={{ padding: '1.25rem', border: '1px solid var(--glass-border)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', background: 'var(--glass)' }}>
+          <div style={{ flex: '1 1 300px' }}>
+            <h3 style={{ fontSize: '1rem', margin: 0, fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Target className="w-4 h-4 text-primary" style={{ color: 'var(--primary)' }} />
+              AI Prompt Similarity Mode
+            </h3>
+            <p className="text-muted" style={{ fontSize: '0.8rem', marginTop: '0.3rem', lineHeight: '1.4' }}>
+              {mode === 'Unique Variation' 
+                ? '💡 AI will introduce creative variations to avoid similarity/duplication flags on stock platforms.' 
+                : '🎯 AI will describe the image as accurately as possible to recreate it.'}
+            </p>
+          </div>
+          
+          <div style={{
+            display: 'flex',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--glass-border)',
+            borderRadius: '0.5rem',
+            padding: '2px',
+            gap: '2px',
+            width: '100%',
+            maxWidth: '320px',
+            alignSelf: 'center'
+          }}>
+            <button
+              type="button"
+              onClick={() => handleModeChange('Exact Match')}
+              style={{
+                flex: 1,
+                background: mode === 'Exact Match' ? 'var(--primary)' : 'transparent',
+                color: mode === 'Exact Match' ? '#fff' : 'var(--text-2)',
+                border: 'none',
+                padding: '0.5rem 0.75rem',
+                borderRadius: '0.4rem',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                transition: 'all 0.2s',
+                boxShadow: mode === 'Exact Match' ? '0 2px 6px rgba(37,99,235,0.2)' : 'none'
+              }}
+            >
+              <Target className="w-3.5 h-3.5" />
+              Exact Match
+            </button>
+            <button
+              type="button"
+              onClick={() => handleModeChange('Unique Variation')}
+              style={{
+                flex: 1,
+                background: mode === 'Unique Variation' ? 'var(--primary)' : 'transparent',
+                color: mode === 'Unique Variation' ? '#fff' : 'var(--text-2)',
+                border: 'none',
+                padding: '0.5rem 0.75rem',
+                borderRadius: '0.4rem',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                transition: 'all 0.2s',
+                boxShadow: mode === 'Unique Variation' ? '0 2px 6px rgba(37,99,235,0.2)' : 'none'
+              }}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Variation
+            </button>
+          </div>
         </div>
-        
-        <div style={{
-          display: 'flex',
-          background: 'var(--surface-2)',
-          border: '1px solid var(--glass-border)',
-          borderRadius: '0.5rem',
-          padding: '2px',
-          gap: '2px',
-          width: '100%',
-          maxWidth: '320px',
-          alignSelf: 'center'
-        }}>
-          <button
-            type="button"
-            onClick={() => handleModeChange('Exact Match')}
-            style={{
-              flex: 1,
-              background: mode === 'Exact Match' ? 'var(--primary)' : 'transparent',
-              color: mode === 'Exact Match' ? '#fff' : 'var(--text-2)',
-              border: 'none',
-              padding: '0.5rem 0.75rem',
-              borderRadius: '0.4rem',
-              cursor: 'pointer',
-              fontSize: '0.75rem',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              transition: 'all 0.2s',
-              boxShadow: mode === 'Exact Match' ? '0 2px 6px rgba(37,99,235,0.2)' : 'none'
-            }}
-          >
-            <Target className="w-3.5 h-3.5" />
-            Exact Match
-          </button>
-          <button
-            type="button"
-            onClick={() => handleModeChange('Unique Variation')}
-            style={{
-              flex: 1,
-              background: mode === 'Unique Variation' ? 'var(--primary)' : 'transparent',
-              color: mode === 'Unique Variation' ? '#fff' : 'var(--text-2)',
-              border: 'none',
-              padding: '0.5rem 0.75rem',
-              borderRadius: '0.4rem',
-              cursor: 'pointer',
-              fontSize: '0.75rem',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              transition: 'all 0.2s',
-              boxShadow: mode === 'Unique Variation' ? '0 2px 6px rgba(37,99,235,0.2)' : 'none'
-            }}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Variation
-          </button>
+
+        <div className="glass card animate-fade-in" style={{ padding: '1.25rem', border: '1px solid var(--glass-border)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', background: 'var(--glass)' }}>
+          <div style={{ flex: '1 1 300px' }}>
+            <h3 style={{ fontSize: '1rem', margin: 0, fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <ImageIcon className="w-4 h-4 text-primary" style={{ color: 'var(--primary)' }} />
+              Target AI Model
+            </h3>
+            <p className="text-muted" style={{ fontSize: '0.8rem', marginTop: '0.3rem', lineHeight: '1.4' }}>
+              Choose which Image AI you plan to use this prompt with. The format will be optimized automatically.
+            </p>
+          </div>
+          
+          <div style={{ flex: '1 1 320px', display: 'flex', justifyContent: 'flex-end' }}>
+            <select
+              value={promptSettings?.targetModel || 'ChatGPT'}
+              onChange={(e) => setPromptSettings && setPromptSettings(prev => ({ ...prev, targetModel: e.target.value }))}
+              style={{
+                width: '100%',
+                maxWidth: '320px',
+                padding: '0.5rem 1rem',
+                borderRadius: '0.5rem',
+                border: '1px solid var(--glass-border)',
+                background: 'var(--surface-2)',
+                color: 'var(--text-1)',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="ChatGPT">ChatGPT / DALL-E 3</option>
+              <option value="Midjourney">Midjourney</option>
+              <option value="Flux">Flux 1.1 Pro</option>
+              <option value="Nano Banana">Nano Banana</option>
+              <option value="Recraft">Recraft</option>
+              <option value="Ideogram">Ideogram</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
         </div>
       </div>
 

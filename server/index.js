@@ -23,6 +23,28 @@ async function getSegmentator() {
 const app = express();
 const port = 3002;
 
+app.post('/api/debug-log', express.json(), (req, res) => {
+  console.log('\x1b[36m[CLIENT DEBUG]\x1b[0m', req.body);
+  try {
+    const logPath = 'C:\\Users\\user\\.gemini\\antigravity-ide\\brain\\c4d092ca-5db6-4e68-aafa-5144d6715277\\debug_resize.json';
+    let logs = [];
+    if (fs.existsSync(logPath)) {
+      try {
+        const content = fs.readFileSync(logPath, 'utf8');
+        logs = JSON.parse(content);
+        if (!Array.isArray(logs)) logs = [];
+      } catch (e) {
+        logs = [];
+      }
+    }
+    logs.push({ ...req.body, timestamp: new Date().toISOString() });
+    fs.writeFileSync(logPath, JSON.stringify(logs, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Failed to write debug file:', err);
+  }
+  res.sendStatus(200);
+});
+
 // Enable CORS for Vite frontend
 app.use(cors());
 

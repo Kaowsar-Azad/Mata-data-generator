@@ -3,7 +3,14 @@ import { StatusBadge, getScoreMeta } from "./workflowHelpers";
 import { MetaField } from "./MetaField";
 import { Video, Loader2, Image as ImageIcon } from "lucide-react";
 
-export function MetadataEditorPanel({ img, handleMetaChange, activeCell, setActiveCell }) {
+export function MetadataEditorPanel({
+  img,
+  handleMetaChange,
+  activeCell,
+  setActiveCell,
+  selectedCount = 0,
+  applyToSelected,
+}) {
   if (!img) {
     return (
       <div className="metadata-editor-panel empty" style={{
@@ -20,7 +27,7 @@ export function MetadataEditorPanel({ img, handleMetaChange, activeCell, setActi
         borderRadius: '0.75rem',
       }}>
         <ImageIcon className="w-10 h-10 mb-2 opacity-40" />
-        <p style={{ fontSize: '0.85rem' }}>সম্পাদনা করার জন্য যেকোনো একটি ফাইল নির্বাচন করুন।</p>
+        <p style={{ fontSize: '0.85rem' }}>Select a file to edit.</p>
       </div>
     );
   }
@@ -63,9 +70,22 @@ export function MetadataEditorPanel({ img, handleMetaChange, activeCell, setActi
           <h4 className="font-mono text-sm text-muted truncate" style={{ margin: 0 }} title={img.file?.name || img.renamedName}>
             {img.file?.name || img.renamedName}
           </h4>
-          <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.25rem', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.25rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <StatusBadge status={img.status} progress={img.upscaleProgress} />
             {img.isEps && <span className="eps-badge" style={{ fontSize: '0.55rem', padding: '1px 4px' }}>EPS</span>}
+            {selectedCount > 1 && (
+              <span style={{
+                fontSize: '0.55rem',
+                fontWeight: 700,
+                color: '#22c55e',
+                background: 'rgba(34, 197, 94, 0.12)',
+                border: '1px solid rgba(34, 197, 94, 0.3)',
+                padding: '1.5px 5px',
+                borderRadius: '99px'
+              }}>
+                Editing 1 of {selectedCount}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -76,12 +96,14 @@ export function MetadataEditorPanel({ img, handleMetaChange, activeCell, setActi
             label="Title" 
             value={img.result.title} 
             onChange={(val) => handleMetaChange(img.id, "title", val)}
+            onApplyToSelected={selectedCount > 1 && typeof applyToSelected === 'function' ? () => applyToSelected(img.id, "title", img.result.title) : null}
           />
           <MetaField 
             label="Description" 
             value={img.result.description} 
             onChange={(val) => handleMetaChange(img.id, "description", val)}
             isTextArea
+            onApplyToSelected={selectedCount > 1 && typeof applyToSelected === 'function' ? () => applyToSelected(img.id, "description", img.result.description) : null}
           />
           <MetaField
             label="Keywords"
@@ -90,6 +112,7 @@ export function MetadataEditorPanel({ img, handleMetaChange, activeCell, setActi
             isTextArea
             isKeywords
             img={img}
+            onApplyToSelected={selectedCount > 1 && typeof applyToSelected === 'function' ? () => applyToSelected(img.id, "keywords", img.result.keywords) : null}
           />
 
           {img.result.categories && img.result.categories.length > 0 && (

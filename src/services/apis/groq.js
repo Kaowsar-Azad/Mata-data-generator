@@ -161,8 +161,8 @@ Output ONLY valid JSON, no markdown formatting:
 export async function fetchGroq(apiKey, prompt, base64Data, mimeType, forceJson = true, promptSettings = {}) {
   const endpoint = "https://api.groq.com/openai/v1/chat/completions";
   const models = [
-    "llama-3.2-90b-vision-preview",
-    "meta-llama/llama-4-scout-17b-16e-instruct"
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "qwen/qwen3.6-27b"
   ];
   return fetchOpenAICompatible("groq", endpoint, models, apiKey, prompt, base64Data, mimeType, forceJson, promptSettings);
 }

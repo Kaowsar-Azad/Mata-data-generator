@@ -647,19 +647,49 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
  */
 export async function generatePromptFromImage(imageBuffer, mimeType, apiKeys, apiProvider = "gemini", promptSettings = {}) {
   const mode = promptSettings.promptSimilarityMode || 'Exact Match';
+  const targetModel = promptSettings.targetModel || 'ChatGPT';
   
+  // Model-specific formatting instructions
+  let modelFormattingRule = "";
+  switch (targetModel) {
+    case 'ChatGPT':
+      modelFormattingRule = `\n\nCRITICAL CHATGPT/DALL-E 3 FORMAT: Write the prompt as a highly descriptive, natural language paragraph. Focus on rich details, sensory descriptions, and cohesive composition. Do not use bullet points or parameters.`;
+      break;
+    case 'Midjourney':
+      modelFormattingRule = `\n\nCRITICAL MIDJOURNEY FORMAT: Write the prompt as a comma-separated list of descriptive keywords and phrases. Start with the main subject, followed by visual medium, stylistic details, lighting, camera settings, and append '--ar 16:9 --style raw --v 6.0' at the end. DO NOT write full conversational sentences.`;
+      break;
+    case 'Flux':
+      modelFormattingRule = `\n\nCRITICAL FLUX FORMAT: Write a highly detailed natural language description, focusing heavily on realistic textures, lighting details, camera lens info, and crisp composition without using generic buzzwords.`;
+      break;
+    case 'Nano Banana':
+      modelFormattingRule = `\n\nCRITICAL NANO BANANA FORMAT: You MUST output the ENTIRE PROMPT as a SINGLE, CONTINUOUS BLOCK OF TEXT. DO NOT use bullet points (- or *). DO NOT use bold headings (e.g., **Subject:**). DO NOT use line breaks or new paragraphs. Just one massively detailed, flowing paragraph.`;
+      break;
+    case 'Ideogram':
+      modelFormattingRule = `\n\nCRITICAL IDEOGRAM FORMAT: Describe text placement precisely if there is typography. Focus on graphic layouts, bold flat illustrations, or photographic rendering with text integration constraints.`;
+      break;
+    case 'Recraft':
+      modelFormattingRule = `\n\nCRITICAL RECRAFT FORMAT: Describe vector icons, modern UI assets, clean line art weight, flat color palette, and minimal asset layouts. Focus on graphic design terminology.`;
+      break;
+    default:
+      modelFormattingRule = `\n\nFormat the prompt as a clean, highly descriptive block of text optimized for image generation.`;
+  }
+
   if (mode === "Unique Variation") {
     // Variation mode: creative narrative paragraph
-    const variationPrompt = `You are a creative AI art prompt engineer specializing in Midjourney v6, Stable Diffusion XL, DALL-E 3, and Flux.
+    console.log(`[geminiService.js - Unique Variation] targetModel passed to prompt generator: "${targetModel}"`);
+    const dynamicInstruction = `[CRITICAL INSTRUCTION: I am generating an image using ${targetModel}. Please format your final output strictly for ${targetModel}. DO NOT output conversational text, greetings, bullet points, or explanations.]\n\n`;
 
-UNIQUE VARIATION MODE: Do NOT recreate this image. Instead, analyze its theme, mood, and subject, then invent a visually distinct but thematically related variation. Change the subject's pose, camera angle, lighting, or environment significantly to ensure the result is entirely unique and avoids duplicate stock content.
+    const variationPrompt = dynamicInstruction + `UNIQUE VARIATION MODE: Your goal is to create a visually distinct but thematically related variation of this image. Retain only the core concept or action (about 40-50% conceptual similarity), but COMPLETELY CHANGE the visual presentation to avoid duplicate stock content flags.
 
-Output ONLY the raw prompt text as ONE single continuous paragraph (80–130 words). No bullets, no line breaks, no intro phrases like "This image shows".
+CRITICAL CHANGES TO MAKE:
+1. Subject(s): STRICTLY MAINTAIN the exact demographics, gender, age, and number of people from the original image. ONLY change their clothing colors, minor pose adjustments, and positioning.
+2. Environment/Setting: Change the background, time of day, or specific location while keeping the same general vibe (e.g., from daytime to golden hour).
+3. Lighting & Mood: Alter the lighting setup and camera angle to make the image visually distinct from the original.
 
 Use this structure blended into a flowing description:
-[Artistic Medium] + [Subject + appearance + action] + [New environment/setting] + [New lighting & color palette] + [Camera angle & composition]
+[Artistic Medium] + [Subjects with Retained Demographics but New Clothing/Colors] + [New Environment/Setting] + [New Lighting & Camera Angle]
 
-Be specific, vivid, and commercially viable. Avoid watermarks, brand names, and explicit content.`;
+Output ONLY the final prompt text. Do not output conversational text or explanations.` + modelFormattingRule;
 
     // Store variation prompt and fall through to the API call logic
     const promptToUse = variationPrompt;
@@ -722,30 +752,36 @@ Be specific, vivid, and commercially viable. Avoid watermarks, brand names, and 
         }
       }
     }
-    if (lastError && (lastError.message.includes("429") || lastError.message.includes("quota"))) throw new Error(`API Rate Limit Reached on all ${apiKeys.length} keys.`);
-    if (lastError) {
-      let msg = lastError.message || String(lastError);
-      if (msg.length > 250) msg = msg.substring(0, 250) + "... (truncated)";
-      throw new Error(`API Error: ${msg}`);
-    }
     throw new Error(`Could not connect to any ${apiProvider} model.`);
   }
 
-  const exactMatchPrompt = `Act as a professional photographer and AI art director. Analyze the provided image in extreme detail and write a comprehensive, technical image generation prompt that will recreate this exact image in a text-to-image AI model (like Midjourney or DALL-E).
+  const targetModel = promptSettings.targetModel || 'ChatGPT';
+  console.log(`[geminiService.js] targetModel passed to prompt generator: "${targetModel}"`);
+  const dynamicInstruction = `[CRITICAL INSTRUCTION: I am generating an image using ${targetModel}. Please format your final output strictly for ${targetModel}. DO NOT output conversational text, greetings, bullet points, or explanations.]\n\n`;
 
-Focus on capturing these specific dimensions in your description:
-1. Primary subject(s) and their exact physical appearance, attire, and pose.
-2. Camera details and framing (e.g., 85mm lens, macro, wide shot, depth of field, f/1.8). If it's an illustration, specify the art style and medium (e.g., digital painting, vector art, 3D render).
-3. Lighting setup (e.g., cinematic, softbox, harsh sunlight, neon glow, rim lighting).
-4. Color palette, color grading, and overall mood/atmosphere.
-5. Background and environmental details.
+  const exactMatchPrompt = dynamicInstruction + `You are an elite AI Visual Analyst and Reverse Prompt Engineer. Your only objective is to analyze the provided image with microscopic precision and reverse-engineer a highly detailed text-to-image prompt. The ultimate goal is to generate a new image that is a flawless, exact visual replica of the provided image using advanced AI image generators (such as Midjourney v8, Flux 1.1 Pro, or Stable Diffusion).
 
-CRITICAL RULES:
-- Output ONLY the final raw prompt text.
-- Do NOT include any introductory sentences, explanations, or tips.
-- Do NOT use markdown, bold text, or bullet points.
-- Output the result as a single, continuous paragraph.
-- SAFETY RULE: Ensure the vocabulary is completely safe. Avoid any overly sensitive, violent, or explicit terminology that could trigger strict AI safety filters.`;
+You must analyze the image across the following dimensions and combine them into a single, cohesive prompt:
+
+Subject & Action: Identify the main subject, exact physical characteristics, clothing, age, micro-details, and precise interactions.
+
+Style & Medium: Determine the exact visual medium (e.g., 35mm macro photograph, hyper-realistic 3D render, oil painting) and specific artistic movements.
+
+Lighting & Mood: Analyze the light sources (e.g., volumetric god rays, Rembrandt lighting, softbox, neon reflection) and the emotional atmosphere.
+
+Composition & Camera Angle: Identify the framing (e.g., extreme close-up, wide shot), focal length, depth of field, and camera positioning.
+
+Color Palette: Extract the exact color grading, dominant hues, and contrasting tones.
+
+UI/Iconography & Layout (If Applicable): If the image is an icon set, UI design, or grid layout, describe the exact grid structure (e.g., 3x8 grid). You MUST list EVERY single visible icon or element specifically. Describe the line weight (e.g., 2px uniform stroke), exact colors used for strokes vs fills, corner roundness, and spacing.
+
+Quality Modifiers: Append high-end professional modifiers to ensure maximum fidelity (e.g., 8k resolution, cinematic, masterpiece, ultra-detailed).
+
+CRITICAL CONSTRAINTS:
+Compose the final prompt as a single flowing description without using bullet points or lists.
+Do NOT output conversational text, greetings, or explanations.
+Your output must ONLY be the final prompt text ready to be copy-pasted into an image generator.
+` + modelFormattingRule;
 
 
 

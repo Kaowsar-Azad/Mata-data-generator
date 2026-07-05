@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { CheckCircle2, Copy } from "lucide-react";
 
-export function MetaField({ label, value, onChange, isTextArea, isKeywords, img }) {
+export function MetaField({ label, value, onChange, isTextArea, isKeywords, img, onApplyToSelected }) {
   const [copied, setCopied] = useState(false);
   const [isTextMode, setIsTextMode] = useState(false);
   const [newKeyword, setNewKeyword] = useState("");
@@ -74,6 +74,27 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img 
         </div>
         
         <div className="flex items-center gap-2">
+          {onApplyToSelected && (
+            <button 
+              onClick={onApplyToSelected}
+              title={`Apply this ${label} to all selected files`}
+              style={{
+                background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.35)', padding: '0.2rem 0.5rem', borderRadius: '4px',
+                color: '#22c55e', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '2px',
+                transition: 'all 0.15s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)';
+                e.currentTarget.style.borderColor = '#22c55e';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(34, 197, 94, 0.12)';
+                e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.35)';
+              }}
+            >
+              ✓ Apply to All
+            </button>
+          )}
           {isKeywords && (
             <button 
               onClick={() => setIsTextMode(!isTextMode)}

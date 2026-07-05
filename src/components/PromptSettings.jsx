@@ -269,6 +269,12 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
     }
   }, [settings.smartMode]);
 
+  useEffect(() => {
+    if (settings.concurrentLimit > 3) {
+      update('concurrentLimit', 3);
+    }
+  }, [settings.concurrentLimit]);
+
   return (
     <div className="ps-wrapper">
       {/* Header Toggle */}
@@ -393,7 +399,7 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
               icon={Sparkles}
               value={settings.concurrentLimit || 2}
               min={1}
-              max={4}
+              max={3}
               step={1}
               unit="images"
               color="var(--primary)"

@@ -67,7 +67,7 @@ REQUIRED JSON FORMAT:
           content: messageContent
         }
       ],
-      max_tokens: 4096,
+      max_tokens: provider === "groq" ? 2048 : 4096,
       temperature: 0.4
     };
 
@@ -75,51 +75,73 @@ REQUIRED JSON FORMAT:
       payload.response_format = { type: "json_object" };
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90000);
+    let retries = 0;
+    const maxRetries = 3;
+    while (retries <= maxRetries) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 90000);
 
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          ...(provider === "openrouter" ? { "HTTP-Referer": "http://localhost:5173", "X-Title": "Metadata Pro" } : {})
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            ...(provider === "openrouter" ? { "HTTP-Referer": "http://localhost:5173", "X-Title": "Metadata Pro" } : {})
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errMsg = errorData.error?.message || response.statusText;
-        throw new Error(`${provider.toUpperCase()} API Error: ${response.status} ${errMsg}`);
-      }
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          const errMsg = errorData.error?.message || response.statusText;
+          const isRateLimit = response.status === 429 || errMsg.toLowerCase().includes("rate limit") || errMsg.toLowerCase().includes("limit") || errMsg.toLowerCase().includes("quota");
+          
+          if (isRateLimit && retries < maxRetries) {
+            retries++;
+            const backoffMs = retries * 5000;
+            console.warn(`[${provider.toUpperCase()} Rate Limit] 429/quota received. Retrying in ${backoffMs/1000}s (Retry ${retries}/${maxRetries})...`);
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+            continue;
+          }
+          
+          throw new Error(`${provider.toUpperCase()} API Error: ${response.status} ${errMsg}`);
+        }
 
-      const data = await response.json();
-      lastResponseText = data.choices[0].message.content;
-      const tok = data.usage?.total_tokens;
-      recordApiUsage(provider, apiKey, {
-        totalTokens: typeof tok === "number" ? tok : 0,
-        requests: 1,
-      });
-      console.log(`[Success] Successfully generated using model string: ${currentModel}`);
-      break; // Successfully got response!
-    } catch (err) {
-      clearTimeout(timeoutId);
-      let errorToThrow = err;
-      if (err.name === 'AbortError') {
-        errorToThrow = new Error(`Request timed out (90s). ${provider.toUpperCase()} API is taking too long.`);
+        const data = await response.json();
+        lastResponseText = data.choices[0].message.content;
+        const tok = data.usage?.total_tokens;
+        recordApiUsage(provider, apiKey, {
+          totalTokens: typeof tok === "number" ? tok : 0,
+          requests: 1,
+        });
+        console.log(`[Success] Successfully generated using model string: ${currentModel}`);
+        break; // Success, break models loop
+      } catch (err) {
+        clearTimeout(timeoutId);
+        let errorToThrow = err;
+        if (err.name === 'AbortError') {
+          errorToThrow = new Error(`Request timed out (90s). ${provider.toUpperCase()} API is taking too long.`);
+        }
+        
+        const isRateLimitErr = errorToThrow.message.includes("429") || errorToThrow.message.toLowerCase().includes("rate limit") || errorToThrow.message.toLowerCase().includes("limit") || errorToThrow.message.toLowerCase().includes("quota");
+        if (isRateLimitErr && retries < maxRetries && !errorToThrow.message.includes("timed out")) {
+          retries++;
+          const backoffMs = retries * 5000;
+          console.warn(`[${provider.toUpperCase()} Rate Limit Catch] Rate limit caught. Retrying in ${backoffMs/1000}s (Retry ${retries}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+          continue;
+        }
+
+        lastError = errorToThrow;
+        if (errorToThrow.message.includes("400") || errorToThrow.message.includes("decommissioned") || errorToThrow.message.includes("not found") || errorToThrow.message.includes("404")) {
+          console.warn(`[Fallback] Model ${currentModel} failed on ${provider}: ${errorToThrow.message}. Trying next candidate...`);
+          break; // Break retries loop, proceed to next model
+        }
+        throw errorToThrow;
       }
-      lastError = errorToThrow;
-      // If model is decommissioned, deprecated, or not found (usually 400 or 404), try next model candidate smoothly!
-      if (errorToThrow.message.includes("400") || errorToThrow.message.includes("decommissioned") || errorToThrow.message.includes("not found") || errorToThrow.message.includes("404")) {
-        console.warn(`[Fallback] Model ${currentModel} failed on ${provider}: ${errorToThrow.message}. Trying next candidate...`);
-        continue;
-      }
-      // Otherwise break/rethrow immediately (e.g. 401 Unauthorized, 429 Rate Limit)
-      throw errorToThrow;
     }
   }
 

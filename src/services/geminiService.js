@@ -930,6 +930,9 @@ function parseExactMatchOutput(raw) {
       clean = clean.substring(0, index).trim();
     }
   }
+
+  // Remove markdown bold asterisks (e.g., **word** -> word)
+  clean = clean.replace(/\*\*/g, '');
   
   return clean;
 }

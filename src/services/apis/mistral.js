@@ -234,5 +234,26 @@ Output ONLY valid JSON, no markdown, no conversational text:
 export async function fetchMistral(apiKey, prompt, base64Data, mimeType, forceJson = true, promptSettings = {}) {
   const endpoint = "https://api.mistral.ai/v1/chat/completions";
   const models = ["pixtral-large-latest", "pixtral-12b-2409"];
-  return fetchOpenAICompatible("mistral", endpoint, models, apiKey, prompt, base64Data, mimeType, forceJson, promptSettings);
+
+  let processedPrompt = prompt;
+  if (!forceJson) {
+    // Override Gemini's problematic instructions strictly for Mistral
+    processedPrompt = processedPrompt.replace(
+      "You MUST list EVERY single visible icon or element specifically.",
+      "If there are many icons, list only the first 4-5 representative ones to keep the prompt clean and prevent duplication."
+    );
+    processedPrompt = processedPrompt.replace(
+      "Describe the line weight (e.g., 2px uniform stroke), exact colors used for strokes vs fills, corner roundness, and spacing.",
+      "ACCURATELY analyze the actual line weight based on the image (e.g., ultra-fine hairline vector strokes, delicate wireframe). Avoid guessing '2px' or 'pixel art'. Describe exact colors, corner styles, and spacing."
+    );
+
+    processedPrompt = processedPrompt + `\n\nADDITIONAL INSTRUCTION FOR MISTRAL:
+1. Do NOT repeat quality buzzwords or spam modifiers (keep quality modifiers to a maximum of 3 at the very end).
+2. Colors & Background: Pay extreme attention to the background and stroke colors. If the image features black lines on a white background, explicitly specify "black outlines on a solid white background". Do NOT describe it as transparent or white outlines unless the source image actually has a dark or transparent background.
+3. Grid Count: Count the grid rows and columns accurately. If the image is a grid, specify the exact layout (e.g., "4x8 grid layout featuring 32 icons") and describe the general layout style.
+4. If there are many icons, list only the first 4-5 representative ones to keep the prompt clean, but ensure the overall grid dimensions and styling are perfectly described.
+5. Keep the output extremely clean, natural, and cohesive.`;
+  }
+
+  return fetchOpenAICompatible("mistral", endpoint, models, apiKey, processedPrompt, base64Data, mimeType, forceJson, promptSettings);
 }

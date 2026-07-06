@@ -679,17 +679,22 @@ export async function generatePromptFromImage(imageBuffer, mimeType, apiKeys, ap
     console.log(`[geminiService.js - Unique Variation] targetModel passed to prompt generator: "${targetModel}"`);
     const dynamicInstruction = `[CRITICAL INSTRUCTION: I am generating an image using ${targetModel}. Please format your final output strictly for ${targetModel}. DO NOT output conversational text, greetings, bullet points, or explanations.]\n\n`;
 
-    const variationPrompt = dynamicInstruction + `UNIQUE VARIATION MODE: Your goal is to create a visually distinct but thematically related variation of this image. Retain only the core concept or action (about 40-50% conceptual similarity), but COMPLETELY CHANGE the visual presentation to avoid duplicate stock content flags.
+    const variationPrompt = dynamicInstruction + `UNIQUE VARIATION MODE: Your goal is to create a visually distinct but thematically related variation of this image. Retain only the core concept (about 40-50% conceptual similarity), but COMPLETELY CHANGE the visual presentation to avoid duplicate stock content flags.
 
-CRITICAL CHANGES TO MAKE:
-1. Subject(s): STRICTLY MAINTAIN the exact demographics, gender, age, and number of people from the original image. ONLY change their clothing colors, minor pose adjustments, and positioning.
-2. Environment/Setting: Change the background, time of day, or specific location while keeping the same general vibe (e.g., from daytime to golden hour).
-3. Lighting & Mood: Alter the lighting setup and camera angle to make the image visually distinct from the original.
+CRITICAL CHANGES TO MAKE BASED ON IMAGE TYPE:
 
-Use this structure blended into a flowing description:
-[Artistic Medium] + [Subjects with Retained Demographics but New Clothing/Colors] + [New Environment/Setting] + [New Lighting & Camera Angle]
+IF THE IMAGE IS A PHOTOGRAPH OR FEATURES PEOPLE:
+1. Subject(s): STRICTLY MAINTAIN the exact demographics, gender, age, and number of people. ONLY change their clothing colors, minor pose adjustments, and positioning.
+2. Environment/Setting: Change the background, time of day, or specific location while keeping the same general vibe.
+3. Lighting & Mood: Alter the lighting setup and camera angle.
 
-Output ONLY the final prompt text. Do not output conversational text or explanations.` + modelFormattingRule;
+IF THE IMAGE IS AN ICON SET, UI GRAPHIC, OR VECTOR ART:
+1. Grid Layout: Count the exact number of horizontal rows and vertical columns (e.g., "A 4x8 grid layout"). STRICTLY MAINTAIN this exact grid structure. Analyze the original image's background (e.g., solid color, white, transparent, or gradient) and retain the exact same background type. Do not hallucinate a gradient if the original is solid.
+2. Limit Descriptions to Prevent Duplicates: DO NOT list every single icon. For large grids, ONLY describe the first 4-5 representative icons to keep the prompt concise. Do not hallucinate or repeat icons.
+3. Intelligent Icon Variation: Keep 70-80% of the icons exactly the same. For the remaining 20-30%, replace them with different symbols that belong to the EXACT SAME CATEGORY (e.g., swap a 'gear' for a 'wrench').
+4. Exact Icon Type & Stylistic Variation: Analyze the specific type of icons in the original image (e.g., 3D, isometric, hand-drawn, flat UI, line-art) and STRICTLY MAINTAIN this exact icon type. Do not force them to become "UI icons" if they are not. You may change the color palette or specific rendering technique to create a distinct variation, but the overall type and vibe MUST perfectly match the original image. DO NOT turn abstract icons into realistic scenes or photographs.
+
+Use a flowing description blending these elements. Output ONLY the final prompt text. Do not output conversational text or explanations.` + modelFormattingRule;
 
     // Store variation prompt and fall through to the API call logic
     const promptToUse = variationPrompt;
@@ -772,7 +777,7 @@ Composition & Camera Angle: Identify the framing (e.g., extreme close-up, wide s
 
 Color Palette: Extract the exact color grading, dominant hues, and contrasting tones.
 
-UI/Iconography & Layout (If Applicable): If the image is an icon set, UI design, or grid layout, describe the exact grid structure (e.g., 3x8 grid). You MUST list EVERY single visible icon or element specifically. Describe the line weight (e.g., 2px uniform stroke), exact colors used for strokes vs fills, corner roundness, and spacing.
+UI/Iconography & Layout (If Applicable): If the image is an icon set, UI design, or grid layout, describe the exact grid structure (e.g., "A 5x5 grid"). You MUST describe EVERY single visible icon specifically to ensure exact replication. CRITICAL ANTI-DUPLICATION RULE: You must describe the icons sequentially (e.g., from top-left to bottom-right, row by row) to avoid losing track. DO NOT repeat the exact same description twice. Ensure every icon described is unique and distinct as they appear in the original image. Describe the line weight (e.g., 2px uniform stroke), exact colors used for strokes vs fills, corner roundness, and spacing.
 
 Quality Modifiers: Append high-end professional modifiers to ensure maximum fidelity (e.g., 8k resolution, cinematic, masterpiece, ultra-detailed).
 

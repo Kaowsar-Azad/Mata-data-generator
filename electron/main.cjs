@@ -37,6 +37,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: false,
+      sandbox: true,
     },
     autoHideMenuBar: true,
   });
@@ -102,9 +103,9 @@ async function findGhostscript() {
     function tryNext() {
       if (attempt >= allCommandsToTry.length) return resolve(null);
       const cmd = allCommandsToTry[attempt];
-      const spawnCmd = cmd.includes('\\') ? `"${cmd}"` : cmd;
+      const spawnCmd = cmd;
       
-      const proc = spawn(spawnCmd, ['-v'], { shell: true });
+      const proc = spawn(spawnCmd, ['-v']);
       proc.on('error', () => { attempt++; tryNext(); });
       proc.on('close', (code) => {
         if (code === 0) resolve(spawnCmd);
@@ -129,11 +130,11 @@ ipcMain.handle('process-eps', async (event, inputPath) => {
     const args = [
       '-dSAFER', '-dBATCH', '-dNOPAUSE', '-dNOPROMPT', '-dEPSCrop',
       '-sDEVICE=png16m', '-r100', '-dTextAlphaBits=4', '-dGraphicsAlphaBits=4',
-      `-sOutputFile=${outputPath}`, `"${inputPath}"`
+      `-sOutputFile=${outputPath}`, inputPath
     ];
 
     return new Promise((resolve, reject) => {
-      const gsProc = spawn(gsCmd, args, { shell: true });
+      const gsProc = spawn(gsCmd, args);
       
       // Safety timeout of 30 seconds
       const timeoutId = setTimeout(() => {
@@ -339,11 +340,11 @@ ipcMain.handle('generate-eps-jpg', async (event, inputPath, addWhiteBgToPng = tr
     const args = [
       '-dSAFER', '-dBATCH', '-dNOPAUSE', '-dNOPROMPT', '-dEPSCrop',
       '-sDEVICE=pngalpha', '-r400', '-dTextAlphaBits=4', '-dGraphicsAlphaBits=4',
-      `-sOutputFile="${tempPngPath}"`, `"${inputPath}"`
+      `-sOutputFile=${tempPngPath}`, inputPath
     ];
 
     return new Promise((resolve, reject) => {
-      const gsProc = spawn(gsCmd, args, { shell: true });
+      const gsProc = spawn(gsCmd, args);
       
       // Safety timeout of 45 seconds
       const timeoutId = setTimeout(() => {

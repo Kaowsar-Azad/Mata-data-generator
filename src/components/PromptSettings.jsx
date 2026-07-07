@@ -281,7 +281,7 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
       <button className="ps-header" onClick={() => setIsOpen((o) => !o)}>
         <div className="ps-header-left">
           <SlidersHorizontal style={{ width: "0.95rem", height: "0.95rem" }} />
-          <span>Metadata Settings</span>
+          <span>{activeTab === 'prompt' ? 'AI Prompt Settings' : 'Metadata Settings'}</span>
         </div>
         {isOpen ? <ChevronUp style={{ width: "0.85rem", height: "0.85rem" }} /> : <ChevronDown style={{ width: "0.85rem", height: "0.85rem" }} />}
       </button>
@@ -563,6 +563,8 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
             </>
           )}
 
+          {/* Spacer to prevent elements from sitting flush at the bottom */}
+          <div style={{ height: '1.5rem', flexShrink: 0 }} />
         </div>
       )}
 
@@ -573,6 +575,7 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
           background: var(--surface-1);
           border: 1px solid var(--glass-border);
           box-shadow: var(--glass-shadow);
+          flex-shrink: 0;
         }
 
         /* Header */
@@ -599,7 +602,7 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
 
         /* Body */
         .ps-body {
-          padding: 0.6rem 0.85rem 0.85rem;
+          padding: 0.6rem 0.85rem 2rem;
           border-top: 1px solid var(--glass-border);
           max-height: calc(100vh - 14rem);
           overflow-y: auto;

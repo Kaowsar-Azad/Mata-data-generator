@@ -55,7 +55,7 @@ export function MetadataEditorPanel({
       <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
         <div className="thumb-wrap" style={{ width: '64px', height: '64px', flexShrink: 0, position: 'relative' }}>
           {img.preview ? (
-            <img src={img.preview} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '0.4rem' }} alt="preview" />
+            <img src={img.preview} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '0.4rem' }} alt={img.file?.name || "Uploaded media preview"} />
           ) : img.isVideo ? (
             <div className="thumb-loading" style={{ width: '100%', height: '100%', borderRadius: '0.4rem', background: 'linear-gradient(135deg, rgba(124,58,237,0.15), rgba(168,85,247,0.08))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Video className="w-6 h-6 text-purple-500" />

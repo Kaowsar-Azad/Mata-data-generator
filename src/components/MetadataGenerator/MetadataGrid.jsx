@@ -34,7 +34,7 @@ const MetadataGridRow = memo(({
       <td className="grid-td-preview">
         <div className="grid-thumb-wrap">
           {img.preview ? (
-            <img src={img.preview} alt="preview" />
+            <img src={img.preview} alt={img.file?.name || "Uploaded media preview"} />
           ) : img.isVideo ? (
             <Video className="w-6 h-6 text-purple-500" />
           ) : (

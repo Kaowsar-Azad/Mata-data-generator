@@ -1,15 +1,37 @@
-import { useState, useRef } from "react";
-import { Upload, Loader2, Trash2, X, RefreshCw, Copy, CheckCircle2, Image as ImageIcon, Target, Sparkles } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Upload, Loader2, Trash2, X, RefreshCw, Copy, CheckCircle2, Image as ImageIcon, Target, Sparkles, ChevronDown } from "lucide-react";
 import { generatePromptFromImage } from "../services/geminiService";
 
 const ACCEPTED_TYPES = "image/jpeg,image/png,image/webp,image/gif";
+
+const MODEL_OPTIONS = [
+  { value: 'ChatGPT', label: 'ChatGPT / DALL-E 3' },
+  { value: 'Midjourney', label: 'Midjourney' },
+  { value: 'Flux', label: 'Flux 1.1 Pro' },
+  { value: 'Nano Banana', label: 'Nano Banana' },
+  { value: 'Recraft', label: 'Recraft' },
+  { value: 'Ideogram', label: 'Ideogram' },
+  { value: 'Other', label: 'Other' },
+];
 
 export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptSettings }) {
   const [images, setImages] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const fileInputRef = useRef(null);
   const abortRef = useRef(false);
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, []);
 
   const mode = promptSettings?.promptSimilarityMode || 'Exact Match';
 
@@ -222,119 +244,101 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
       </div>
 
       {/* Similarity Mode & Target Model Selector Cards */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <div className="glass card animate-fade-in" style={{ padding: '1.25rem', border: '1px solid var(--glass-border)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', background: 'var(--glass)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', position: 'relative', zIndex: 30 }}>
+        <div className="glass card animate-fade-in" style={{ padding: '0.85rem 1.25rem', border: '1px solid var(--glass-border)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', background: 'var(--glass)' }}>
           <div style={{ flex: '1 1 300px' }}>
-            <h3 style={{ fontSize: '1rem', margin: 0, fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Target className="w-4 h-4 text-primary" style={{ color: 'var(--primary)' }} />
-              AI Prompt Similarity Mode
-            </h3>
-            <p className="text-muted" style={{ fontSize: '0.8rem', marginTop: '0.3rem', lineHeight: '1.4' }}>
-              {mode === 'Unique Variation' 
-                ? '💡 AI will introduce creative variations to avoid similarity/duplication flags on stock platforms.' 
-                : '🎯 AI will describe the image as accurately as possible to recreate it.'}
-            </p>
-          </div>
-          
-          <div style={{
-            display: 'flex',
-            background: 'var(--surface-2)',
-            border: '1px solid var(--glass-border)',
-            borderRadius: '0.5rem',
-            padding: '2px',
-            gap: '2px',
-            width: '100%',
-            maxWidth: '320px',
-            alignSelf: 'center'
-          }}>
-            <button
-              type="button"
-              onClick={() => handleModeChange('Exact Match')}
-              style={{
-                flex: 1,
-                background: mode === 'Exact Match' ? 'var(--primary)' : 'transparent',
-                color: mode === 'Exact Match' ? '#fff' : 'var(--text-2)',
-                border: 'none',
-                padding: '0.5rem 0.75rem',
-                borderRadius: '0.4rem',
-                cursor: 'pointer',
-                fontSize: '0.75rem',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                transition: 'all 0.2s',
-                boxShadow: mode === 'Exact Match' ? '0 2px 6px rgba(37,99,235,0.2)' : 'none'
-              }}
-            >
-              <Target className="w-3.5 h-3.5" />
-              Exact Match
-            </button>
-            <button
-              type="button"
-              onClick={() => handleModeChange('Unique Variation')}
-              style={{
-                flex: 1,
-                background: mode === 'Unique Variation' ? 'var(--primary)' : 'transparent',
-                color: mode === 'Unique Variation' ? '#fff' : 'var(--text-2)',
-                border: 'none',
-                padding: '0.5rem 0.75rem',
-                borderRadius: '0.4rem',
-                cursor: 'pointer',
-                fontSize: '0.75rem',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                transition: 'all 0.2s',
-                boxShadow: mode === 'Unique Variation' ? '0 2px 6px rgba(37,99,235,0.2)' : 'none'
-              }}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Variation
-            </button>
-          </div>
-        </div>
-
-        <div className="glass card animate-fade-in" style={{ padding: '1.25rem', border: '1px solid var(--glass-border)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', background: 'var(--glass)' }}>
-          <div style={{ flex: '1 1 300px' }}>
-            <h3 style={{ fontSize: '1rem', margin: 0, fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <h3 style={{ fontSize: '0.9rem', margin: 0, fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <ImageIcon className="w-4 h-4 text-primary" style={{ color: 'var(--primary)' }} />
               Target AI Model
             </h3>
-            <p className="text-muted" style={{ fontSize: '0.8rem', marginTop: '0.3rem', lineHeight: '1.4' }}>
+            <p className="text-muted" style={{ fontSize: '0.75rem', marginTop: '0.2rem', lineHeight: '1.4' }}>
               Choose which Image AI you plan to use this prompt with. The format will be optimized automatically.
             </p>
           </div>
           
-          <div style={{ flex: '1 1 320px', display: 'flex', justifyContent: 'flex-end' }}>
-            <select
-              value={promptSettings?.targetModel || 'ChatGPT'}
-              onChange={(e) => setPromptSettings && setPromptSettings(prev => ({ ...prev, targetModel: e.target.value }))}
+          <div ref={dropdownRef} style={{ position: 'relative', width: '100%', maxWidth: '240px', zIndex: 100 }}>
+            <button
+              type="button"
+              onClick={() => setDropdownOpen(!dropdownOpen)}
               style={{
                 width: '100%',
-                maxWidth: '320px',
-                padding: '0.5rem 1rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.45rem 0.75rem',
                 borderRadius: '0.5rem',
                 border: '1px solid var(--glass-border)',
                 background: 'var(--surface-2)',
                 color: 'var(--text-1)',
-                fontSize: '0.85rem',
+                fontSize: '0.8rem',
                 fontWeight: 600,
+                cursor: 'pointer',
                 outline: 'none',
-                cursor: 'pointer'
+                textAlign: 'left'
               }}
             >
-              <option value="ChatGPT">ChatGPT / DALL-E 3</option>
-              <option value="Midjourney">Midjourney</option>
-              <option value="Flux">Flux 1.1 Pro</option>
-              <option value="Nano Banana">Nano Banana</option>
-              <option value="Recraft">Recraft</option>
-              <option value="Ideogram">Ideogram</option>
-              <option value="Other">Other</option>
-            </select>
+              <span>{MODEL_OPTIONS.find(o => o.value === (promptSettings?.targetModel || 'ChatGPT'))?.label || 'ChatGPT / DALL-E 3'}</span>
+              <ChevronDown style={{ width: '0.8rem', height: '0.8rem', transform: dropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', opacity: 0.7 }} />
+            </button>
+            
+            {dropdownOpen && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                width: '100%',
+                marginTop: '0.25rem',
+                borderRadius: '0.5rem',
+                border: '1px solid var(--glass-border)',
+                background: 'var(--surface-1)',
+                boxShadow: 'var(--glass-shadow)',
+                zIndex: 50,
+                padding: '4px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2px'
+              }}>
+                {MODEL_OPTIONS.map(opt => {
+                  const isSelected = (promptSettings?.targetModel || 'ChatGPT') === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setPromptSettings && setPromptSettings(prev => ({ ...prev, targetModel: opt.value }));
+                        setDropdownOpen(false);
+                      }}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '0.35rem 0.6rem',
+                        borderRadius: '0.35rem',
+                        border: 'none',
+                        background: isSelected ? 'var(--primary)' : 'transparent',
+                        color: isSelected ? '#fff' : 'var(--text-1)',
+                        fontSize: '0.75rem',
+                        fontWeight: isSelected ? 700 : 500,
+                        cursor: 'pointer',
+                        display: 'block',
+                        transition: 'all 0.15s'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isSelected) {
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isSelected) {
+                          e.currentTarget.style.background = 'transparent';
+                        }
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>

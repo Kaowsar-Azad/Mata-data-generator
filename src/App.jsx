@@ -181,6 +181,7 @@ function App() {
                 <div style={{ overflow: 'hidden' }}>
                   <h1 style={{ fontSize: '1rem', margin: 0, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
                     Metadata<span style={{ color: 'var(--primary)' }}>Pro</span>
+                    <span style={{ position: 'absolute', width: '1px', height: '1px', padding: 0, margin: '-1px', overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', borderWidth: 0 }}> - Batch Image and Video Metadata Editor</span>
                   </h1>
                   <p style={{ fontSize: '0.6rem', color: 'var(--text-3)', margin: 0, fontWeight: 500 }}>AI Vision Engine</p>
                 </div>
@@ -214,13 +215,25 @@ function App() {
               </button>
             )}
           </div>
-
+        </div>
+        
+        {/* MIDDLE SCROLLABLE SECTION */}
+        <div style={{
+          flex: 1,
+          height: 'calc(100vh - 12.5rem)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem',
+          overflowY: 'auto',
+          paddingRight: '4px',
+        }} className="sidebar-middle-scroll scrollbar-thin">
           {/* NAVIGATION — outer wrapper clips blobs, inner nav is transparent so backdrop-filter works */}
           <div style={{
             position: 'relative',
             borderRadius: '0.65rem',
             overflow: 'hidden',   /* ← clips blobs, prevents leaking */
             border: '1px solid var(--glass-border)',
+            flexShrink: 0, // CRITICAL: prevent flex engine from shrinking the nav buttons
           }}>
             {/* Ambient glow blobs — inside the overflow:hidden wrapper so they never leak */}
             <div aria-hidden="true" style={{
@@ -305,40 +318,38 @@ function App() {
               )})}
             </div>
           </div>
+
+          {/* FTP CONFIGURATIONS */}
+          {sidebarOpen && activeTab === 'ftp' && (
+            <FtpConfigManager 
+              ftpConfigs={ftpConfigs}
+              setFtpConfigs={setFtpConfigs}
+              editingConfig={editingFtpConfig}
+              setEditingConfig={setEditingFtpConfig}
+              onStartEdit={(config) => {
+                setActiveTab('ftp');
+                setEditingFtpConfig(config);
+              }}
+            />
+          )}
+
+          {/* METADATA SETTINGS */}
+          {sidebarOpen && (activeTab === 'metadata' || activeTab === 'prompt') && (
+            <PromptSettings 
+              settings={promptSettings} 
+              setSettings={setPromptSettings} 
+              activeTab={activeTab} 
+              ftpConfigs={ftpConfigs}
+              setEditingFtpConfig={setEditingFtpConfig}
+              setActiveTab={setActiveTab}
+            />
+          )}
+
+          {/* AI IMAGE SETTINGS PORTAL */}
+          {sidebarOpen && activeTab === 'aiimage' && (
+            <div id="ai-image-settings-portal" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}></div>
+          )}
         </div>
-
-
-
-        {/* FTP CONFIGURATIONS */}
-        {sidebarOpen && activeTab === 'ftp' && (
-          <FtpConfigManager 
-            ftpConfigs={ftpConfigs}
-            setFtpConfigs={setFtpConfigs}
-            editingConfig={editingFtpConfig}
-            setEditingConfig={setEditingFtpConfig}
-            onStartEdit={(config) => {
-              setActiveTab('ftp');
-              setEditingFtpConfig(config);
-            }}
-          />
-        )}
-
-        {/* METADATA SETTINGS */}
-        {sidebarOpen && (activeTab === 'metadata' || activeTab === 'prompt') && (
-          <PromptSettings 
-            settings={promptSettings} 
-            setSettings={setPromptSettings} 
-            activeTab={activeTab} 
-            ftpConfigs={ftpConfigs}
-            setEditingFtpConfig={setEditingFtpConfig}
-            setActiveTab={setActiveTab}
-          />
-        )}
-
-        {/* AI IMAGE SETTINGS PORTAL */}
-        {sidebarOpen && activeTab === 'aiimage' && (
-          <div id="ai-image-settings-portal" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}></div>
-        )}
 
         {/* BOTTOM SECTION (Fixed/Static) */}
         <div className="sidebar-bottom-section">

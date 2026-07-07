@@ -24,10 +24,11 @@ function createWindow() {
     width: 1280,
     height: 800,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: false,
+      sandbox: true,
     },
     autoHideMenuBar: true,
   });
@@ -63,8 +64,8 @@ async function findGhostscript() {
     const bundled64 = path.join(app.isPackaged ? process.resourcesPath : __dirname, '..', 'bin', 'gswin64c.exe');
     const bundled32 = path.join(app.isPackaged ? process.resourcesPath : __dirname, '..', 'bin', 'gswin32c.exe');
     
-    if (fs.existsSync(bundled64)) return resolve(`"${bundled64}"`);
-    if (fs.existsSync(bundled32)) return resolve(`"${bundled32}"`);
+    if (fs.existsSync(bundled64)) return resolve(bundled64);
+    if (fs.existsSync(bundled32)) return resolve(bundled32);
 
     // 2. Fallback to system installation
     const commands = ['gswin64c', 'gswin32c', 'gs'];
@@ -93,9 +94,8 @@ async function findGhostscript() {
     function tryNext() {
       if (attempt >= allCommandsToTry.length) return resolve(null);
       const cmd = allCommandsToTry[attempt];
-      const spawnCmd = cmd.includes('\\') ? `"${cmd}"` : cmd;
-      
-      const proc = spawn(spawnCmd, ['-v'], { shell: true });
+      const spawnCmd = cmd;
+      const proc = spawn(spawnCmd, ['-v']);
       proc.on('error', () => { attempt++; tryNext(); });
       proc.on('close', (code) => {
         if (code === 0) resolve(spawnCmd);
@@ -120,11 +120,11 @@ ipcMain.handle('process-eps', async (event, inputPath) => {
     const args = [
       '-dSAFER', '-dBATCH', '-dNOPAUSE', '-dNOPROMPT', '-dEPSCrop',
       '-sDEVICE=png16m', '-r100', '-dTextAlphaBits=4', '-dGraphicsAlphaBits=4',
-      `-sOutputFile=${outputPath}`, `"${inputPath}"`
+      `-sOutputFile=${outputPath}`, inputPath
     ];
 
     return new Promise((resolve, reject) => {
-      const gsProc = spawn(gsCmd, args, { shell: true });
+      const gsProc = spawn(gsCmd, args);
 
       gsProc.on('close', (code) => {
         if (fs.existsSync(outputPath)) {
@@ -188,11 +188,11 @@ ipcMain.handle('generate-eps-jpg', async (event, inputPath, addWhiteBgToPng = tr
     const args = [
       '-dSAFER', '-dBATCH', '-dNOPAUSE', '-dNOPROMPT', '-dEPSCrop',
       '-sDEVICE=pngalpha', '-r400', '-dTextAlphaBits=4', '-dGraphicsAlphaBits=4',
-      `-sOutputFile="${tempPngPath}"`, `"${inputPath}"`
+      `-sOutputFile=${tempPngPath}`, inputPath
     ];
 
     return new Promise((resolve, reject) => {
-      const gsProc = spawn(gsCmd, args, { shell: true });
+      const gsProc = spawn(gsCmd, args);
       let errOutput = '';
       gsProc.stderr.on('data', (data) => errOutput += data.toString());
 

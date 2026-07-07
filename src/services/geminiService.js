@@ -724,10 +724,10 @@ Use a flowing description blending these elements. Output ONLY the final prompt 
       if (currentProvider !== "gemini") {
         try {
           let text;
-          if (currentProvider === "groq") text = await fetchGroq(apiKey, promptToUse, imageBuffer, mimeType, false);
-          else if (currentProvider === "openai") text = await fetchOpenAI(apiKey, promptToUse, imageBuffer, mimeType, false);
-          else if (currentProvider === "openrouter") text = await fetchOpenRouter(apiKey, promptToUse, imageBuffer, mimeType, false);
-          else if (currentProvider === "mistral") text = await fetchMistral(apiKey, promptToUse, imageBuffer, mimeType, false);
+          if (currentProvider === "groq") text = await fetchGroq(apiKey, promptToUse, imageBuffer, mimeType, false, promptSettings);
+          else if (currentProvider === "openai") text = await fetchOpenAI(apiKey, promptToUse, imageBuffer, mimeType, false, promptSettings);
+          else if (currentProvider === "openrouter") text = await fetchOpenRouter(apiKey, promptToUse, imageBuffer, mimeType, false, promptSettings);
+          else if (currentProvider === "mistral") text = await fetchMistral(apiKey, promptToUse, imageBuffer, mimeType, false, promptSettings);
           else throw new Error("Unknown provider: " + currentProvider);
           const finalPrompt = typeof text === 'string' ? text.trim() : (text?.title || JSON.stringify(text));
           return { prompt: finalPrompt, provider: currentProvider };
@@ -820,10 +820,10 @@ Your output must ONLY be the final prompt text ready to be copy-pasted into an i
       try {
         console.log(`[Attempt] Provider: ${currentProvider} (Image to Prompt) using key index ${currentKeyIndex}`);
         let text;
-        if (currentProvider === "groq") text = await fetchGroq(apiKey, exactMatchPrompt, imageBuffer, mimeType, false);
-        else if (currentProvider === "openai") text = await fetchOpenAI(apiKey, exactMatchPrompt, imageBuffer, mimeType, false);
-        else if (currentProvider === "openrouter") text = await fetchOpenRouter(apiKey, exactMatchPrompt, imageBuffer, mimeType, false);
-        else if (currentProvider === "mistral") text = await fetchMistral(apiKey, exactMatchPrompt, imageBuffer, mimeType, false);
+        if (currentProvider === "groq") text = await fetchGroq(apiKey, exactMatchPrompt, imageBuffer, mimeType, false, promptSettings);
+        else if (currentProvider === "openai") text = await fetchOpenAI(apiKey, exactMatchPrompt, imageBuffer, mimeType, false, promptSettings);
+        else if (currentProvider === "openrouter") text = await fetchOpenRouter(apiKey, exactMatchPrompt, imageBuffer, mimeType, false, promptSettings);
+        else if (currentProvider === "mistral") text = await fetchMistral(apiKey, exactMatchPrompt, imageBuffer, mimeType, false, promptSettings);
         else throw new Error("Unknown provider: " + currentProvider);
         const rawText = typeof text === 'string' ? text.trim() : (text?.title || JSON.stringify(text));
         return {

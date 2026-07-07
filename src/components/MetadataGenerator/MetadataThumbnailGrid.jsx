@@ -42,7 +42,7 @@ const ThumbnailCard = memo(({
       {/* Thumbnail Wrap */}
       <div className="thumbnail-card-img-wrap" style={{ position: 'relative', width: '100%', aspectRatio: '1/1', overflow: 'hidden', borderRadius: '0.5rem', background: 'rgba(0,0,0,0.1)' }}>
         {img.preview ? (
-          <img src={img.preview} style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.3s' }} alt="preview" />
+          <img src={img.preview} style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.3s' }} alt={img.file?.name || "Uploaded media preview"} />
         ) : img.isVideo ? (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(168,85,247,0.1)' }}>
             <Video style={{ width: '32px', height: '32px', color: '#a855f7' }} />

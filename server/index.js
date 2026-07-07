@@ -150,11 +150,10 @@ async function findGhostscript() {
       }
       
       const cmd = allCommandsToTry[attempt];
-      // Use double quotes around the command if it contains spaces (for absolute paths)
-      const isPath = cmd.includes('\\') || cmd.includes('/');
-      const spawnCmd = isPath ? `"${cmd}"` : cmd;
+      // No double quotes needed since we run without shell
+      const spawnCmd = cmd;
       
-      const proc = spawn(spawnCmd, ['-v'], { shell: true });
+      const proc = spawn(spawnCmd, ['-v']);
       
       proc.on('error', () => {
         attempt++;
@@ -478,7 +477,7 @@ app.post('/api/process-eps', upload.single('file'), async (req, res) => {
       inputPath
     ];
 
-    const gsProc = spawn(gsCmd, args, { shell: true });
+    const gsProc = spawn(gsCmd, args);
 
     gsProc.on('close', (code) => {
       // Regardless of code, check if output file exists
@@ -815,7 +814,7 @@ app.post('/api/convert-to-eps', express.json({ limit: '20mb' }), async (req, res
       tmpPdf
     ];
 
-    const gsProc = spawn(gsCmd, args, { shell: true });
+    const gsProc = spawn(gsCmd, args);
 
     gsProc.on('close', (code) => {
       if (code === 0 && fs.existsSync(tmpEps)) {

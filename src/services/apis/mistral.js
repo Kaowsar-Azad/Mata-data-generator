@@ -236,23 +236,35 @@ export async function fetchMistral(apiKey, prompt, base64Data, mimeType, forceJs
   const models = ["pixtral-large-latest", "pixtral-12b-2409"];
 
   let processedPrompt = prompt;
-  if (!forceJson) {
-    // Override Gemini's problematic instructions strictly for Mistral
-    processedPrompt = processedPrompt.replace(
-      "You MUST list EVERY single visible icon or element specifically.",
-      "If there are many icons, list only the first 4-5 representative ones to keep the prompt clean and prevent duplication."
-    );
-    processedPrompt = processedPrompt.replace(
-      "Describe the line weight (e.g., 2px uniform stroke), exact colors used for strokes vs fills, corner roundness, and spacing.",
-      "ACCURATELY analyze the actual line weight based on the image (e.g., ultra-fine hairline vector strokes, delicate wireframe). Avoid guessing '2px' or 'pixel art'. Describe exact colors, corner styles, and spacing."
-    );
 
-    processedPrompt = processedPrompt + `\n\nADDITIONAL INSTRUCTION FOR MISTRAL:
-1. Do NOT repeat quality buzzwords or spam modifiers (keep quality modifiers to a maximum of 3 at the very end).
-2. Colors & Background: Pay extreme attention to the background and stroke colors. If the image features black lines on a white background, explicitly specify "black outlines on a solid white background". Do NOT describe it as transparent or white outlines unless the source image actually has a dark or transparent background.
-3. Grid Count: Count the grid rows and columns accurately. If the image is a grid, specify the exact layout (e.g., "4x8 grid layout featuring 32 icons") and describe the general layout style.
-4. If there are many icons, list only the first 4-5 representative ones to keep the prompt clean, but ensure the overall grid dimensions and styling are perfectly described.
-5. Keep the output extremely clean, natural, and cohesive.`;
+  if (!forceJson) {
+    const targetModel = promptSettings?.targetModel || 'ChatGPT';
+
+    processedPrompt = `You are a world-class visual prompt engineer. Your job is to look at an image and reverse-engineer it into a single, extremely detailed text prompt that could be used with ${targetModel} to recreate an image as close as possible to the original.
+
+Analyze the image carefully and describe, in one flowing paragraph:
+- Main subject(s): exact appearance, pose, expression, age, clothing/material, distinguishing features
+- Composition: camera angle, shot type (close-up/medium/wide), framing, subject placement
+- Setting/background: location, era, objects present, foreground/midground/background depth
+- Lighting: source, direction, quality (soft/hard), color temperature, time of day, shadow/highlight behavior
+- Color palette: dominant colors, saturation, overall color grade/mood
+- Art style/medium: photorealistic photography, oil painting, 3D render, anime/illustration, etc. — plus camera/lens cues if photographic (e.g. 50mm, shallow depth of field, bokeh)
+- Textures/materials: skin, fabric, surfaces
+- Mood/atmosphere: the emotional feel
+- Unique fine details: patterns, text, logos, jewelry, weather, reflections — anything that would be missing without mention
+
+Rules:
+1. Output ONLY the final prompt — no titles, no explanations, no "Here is the prompt," no markdown.
+2. Write it as one dense, comma-separated descriptive paragraph, the way real image-generation prompts are written — not a list, not bullet points.
+3. Be concrete and specific; never use vague filler words like "nice," "beautiful," or "amazing" — describe exactly what makes it that way.
+4. Do not refer to "the image" or "the photo" — write it as an instruction to create the scene from scratch.
+5. Length: 60–150 words.
+6. End with 4-6 comma-separated quality/style tags appropriate to the content (e.g., "highly detailed, sharp focus, 8k, cinematic lighting" for photos; "trending on artstation, digital painting, intricate details" for illustrations).
+7. If the image has a transparent background (or checkerboard pattern), DO NOT mention "transparent background". Instead, instruct to generate it "isolated on a solid white background".
+8. DO NOT include any real-world company names, brand names, trademarks, or specific logos in the prompt.
+9. DO NOT include the word "watermark" or instruct to generate any watermarks.
+
+Return only the prompt text and nothing else.`;
   }
 
   return fetchOpenAICompatible("mistral", endpoint, models, apiKey, processedPrompt, base64Data, mimeType, forceJson, promptSettings);

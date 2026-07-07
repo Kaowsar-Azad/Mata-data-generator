@@ -12,7 +12,7 @@ const MetadataCard = memo(({
       {/* Preview thumbnail */}
       <div className="thumb-wrap">
         {img.preview ? (
-          <img src={img.preview} className="thumb-img" alt="preview" />
+          <img src={img.preview} className="thumb-img" alt={img.file?.name || "Uploaded media preview"} />
         ) : img.isVideo ? (
           <div className="thumb-loading" style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.15), rgba(168,85,247,0.08))' }}>
             <Video className="w-7 h-7" style={{ color: '#a855f7' }} />

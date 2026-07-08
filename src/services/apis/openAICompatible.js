@@ -67,7 +67,7 @@ REQUIRED JSON FORMAT:
           content: messageContent
         }
       ],
-      max_tokens: provider === "groq" ? 2048 : 4096,
+      max_tokens: 4096,
       temperature: 0.4
     };
 
@@ -97,7 +97,7 @@ REQUIRED JSON FORMAT:
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           const errMsg = errorData.error?.message || response.statusText;
-          const isRateLimit = response.status === 429 || errMsg.toLowerCase().includes("rate limit") || errMsg.toLowerCase().includes("limit") || errMsg.toLowerCase().includes("quota");
+          const isRateLimit = response.status === 429 || errMsg.toLowerCase().includes("rate limit") || errMsg.toLowerCase().includes("quota");
           
           if (isRateLimit && retries < maxRetries) {
             retries++;
@@ -105,6 +105,13 @@ REQUIRED JSON FORMAT:
             console.warn(`[${provider.toUpperCase()} Rate Limit] 429/quota received. Retrying in ${backoffMs/1000}s (Retry ${retries}/${maxRetries})...`);
             await new Promise(resolve => setTimeout(resolve, backoffMs));
             continue;
+          }
+
+          // 413 = Request too large for this model — try the next smaller model instead
+          if (response.status === 413 || errMsg.toLowerCase().includes("too large") || errMsg.toLowerCase().includes("request too large")) {
+            lastError = new Error(`${provider.toUpperCase()} API Error: ${response.status} ${errMsg}`);
+            console.warn(`[Fallback] Model ${currentModel} rejected request as too large (413). Trying next candidate...`);
+            break; // Try next model
           }
           
           throw new Error(`${provider.toUpperCase()} API Error: ${response.status} ${errMsg}`);
@@ -126,7 +133,7 @@ REQUIRED JSON FORMAT:
           errorToThrow = new Error(`Request timed out (90s). ${provider.toUpperCase()} API is taking too long.`);
         }
         
-        const isRateLimitErr = errorToThrow.message.includes("429") || errorToThrow.message.toLowerCase().includes("rate limit") || errorToThrow.message.toLowerCase().includes("limit") || errorToThrow.message.toLowerCase().includes("quota");
+        const isRateLimitErr = errorToThrow.message.includes("429") || errorToThrow.message.toLowerCase().includes("rate limit") || errorToThrow.message.toLowerCase().includes("quota");
         if (isRateLimitErr && retries < maxRetries && !errorToThrow.message.includes("timed out")) {
           retries++;
           const backoffMs = retries * 5000;
@@ -136,7 +143,15 @@ REQUIRED JSON FORMAT:
         }
 
         lastError = errorToThrow;
-        if (errorToThrow.message.includes("400") || errorToThrow.message.includes("decommissioned") || errorToThrow.message.includes("not found") || errorToThrow.message.includes("404")) {
+        // 413 / too large / model fallback errors → try next model, not a hard failure
+        if (
+          errorToThrow.message.includes("400") ||
+          errorToThrow.message.includes("413") ||
+          errorToThrow.message.toLowerCase().includes("too large") ||
+          errorToThrow.message.includes("decommissioned") ||
+          errorToThrow.message.includes("not found") ||
+          errorToThrow.message.includes("404")
+        ) {
           console.warn(`[Fallback] Model ${currentModel} failed on ${provider}: ${errorToThrow.message}. Trying next candidate...`);
           break; // Break retries loop, proceed to next model
         }
@@ -152,7 +167,11 @@ REQUIRED JSON FORMAT:
   const text = lastResponseText;
 
   if (!forceJson) {
-    return text.trim();
+    let finalOutput = text.trim();
+    // Remove reasoning blocks (e.g. <think>...</think>) from models like Qwen or DeepSeek.
+    // Handles cases where the closing </think> tag is missing due to token limits.
+    finalOutput = finalOutput.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
+    return finalOutput;
   }
 
 function extractJson(str) {
@@ -191,7 +210,8 @@ function extractJson(str) {
   return null;
 }
 
-  const cleaned = text.replace(/```json/g, "").replace(/```/g, "").trim();
+  let cleaned = text.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
+  cleaned = cleaned.replace(/```json/g, "").replace(/```/g, "").trim();
   let parsed;
   try {
     parsed = JSON.parse(cleaned);

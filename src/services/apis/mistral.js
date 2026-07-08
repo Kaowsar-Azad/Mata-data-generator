@@ -241,12 +241,35 @@ export async function fetchMistral(apiKey, prompt, base64Data, mimeType, forceJs
     const targetModel = promptSettings?.targetModel || 'ChatGPT';
     const mode = promptSettings?.promptSimilarityMode || 'Exact Match';
 
-    // Extract the model formatting rule (e.g. Nano Banana, Flux, or ChatGPT rule) from the original prompt
-    const formatRuleMatch = prompt.match(/\n\nCRITICAL [A-Z0-9 -\/]+ FORMAT:[\s\S]+/i);
-    const modelFormattingRule = formatRuleMatch ? formatRuleMatch[0].trim() : "";
+    // Model-specific formatting instructions
+    let modelFormattingRule = "";
+    switch (targetModel) {
+      case 'ChatGPT':
+        modelFormattingRule = `\n\nCRITICAL CHATGPT/DALL-E 3 FORMAT: Write the prompt as a highly descriptive, natural language paragraph. Focus on rich details, sensory descriptions, and cohesive composition. Do not use bullet points or parameters.`;
+        break;
+      case 'Midjourney':
+        modelFormattingRule = `\n\nCRITICAL MIDJOURNEY FORMAT: Write the prompt as a comma-separated list of descriptive keywords and phrases. Start with the main subject, followed by visual medium, stylistic details, lighting, camera settings, and append '--ar 16:9 --style raw --v 6.0' at the end. DO NOT write full conversational sentences.`;
+        break;
+      case 'Flux':
+        modelFormattingRule = `\n\nCRITICAL FLUX FORMAT: Write a highly detailed natural language description, focusing heavily on realistic textures, lighting details, camera lens info, and crisp composition without using generic buzzwords.`;
+        break;
+      case 'Nano Banana':
+        modelFormattingRule = `\n\nCRITICAL NANO BANANA FORMAT: You MUST output the ENTIRE PROMPT as a SINGLE, CONTINUOUS BLOCK OF TEXT. DO NOT use bullet points (- or *). DO NOT use bold headings (e.g., **Subject:**). DO NOT use line breaks or new paragraphs. Just one massively detailed, flowing paragraph.`;
+        break;
+      case 'Ideogram':
+        modelFormattingRule = `\n\nCRITICAL IDEOGRAM FORMAT: Describe text placement precisely if there is typography. Focus on graphic layouts, bold flat illustrations, or photographic rendering with text integration constraints.`;
+        break;
+      case 'Recraft':
+        modelFormattingRule = `\n\nCRITICAL RECRAFT FORMAT: Describe vector icons, modern UI assets, clean line art weight, flat color palette, and minimal asset layouts. Focus on graphic design terminology.`;
+        break;
+      default:
+        modelFormattingRule = `\n\nFormat the prompt as a clean, highly descriptive block of text optimized for image generation.`;
+    }
+
+    const dynamicInstruction = `[CRITICAL INSTRUCTION: I am generating an image using ${targetModel}. Please format your final output strictly for ${targetModel}. DO NOT output conversational text, greetings, bullet points, or explanations.]\n\n`;
 
     if (mode === 'Unique Variation') {
-      processedPrompt = `You are a world-class visual prompt engineer. Your job is to look at an image and write a single, detailed text prompt that could be used with ${targetModel} to create a NEW image that is visually distinct but thematically related to the original.
+      processedPrompt = dynamicInstruction + `You are a world-class visual prompt engineer. Your job is to look at an image and write a single, detailed text prompt that could be used with ${targetModel} to create a NEW image that is visually distinct but thematically related to the original.
 
 UNIQUE VARIATION MODE GOAL: Retain the core concept (about 40-50% conceptual similarity), but COMPLETELY CHANGE the secondary visual presentation to avoid duplicate stock content flags (e.g. Adobe Stock rejections). The result should feel like a natural alternate take or "sibling" of the original.
 
@@ -287,7 +310,7 @@ ${modelFormattingRule}
 
 Return only the prompt text and nothing else.`;
     } else {
-      processedPrompt = `You are a forensic-level visual prompt engineer. Your only job is to look at an image and reverse-engineer it into ONE extremely detailed, accurate text prompt that could be used with ${targetModel} to recreate this EXACT image as closely as possible. This is EXACT MATCH mode — maximum fidelity to the original always outranks brevity.
+      processedPrompt = dynamicInstruction + `You are a forensic-level visual prompt engineer. Your only job is to look at an image and reverse-engineer it into ONE extremely detailed, accurate text prompt that could be used with ${targetModel} to recreate this EXACT image as closely as possible. This is EXACT MATCH mode — maximum fidelity to the original always outranks brevity.
 
 ABSOLUTE RULE — DESCRIBE ONLY WHAT YOU SEE:
 - Never invent, assume, guess, or add any detail not clearly visible in the image.

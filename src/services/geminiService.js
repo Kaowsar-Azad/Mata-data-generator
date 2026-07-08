@@ -832,7 +832,13 @@ Your output must ONLY be the final prompt text ready to be copy-pasted into an i
         };
       } catch (error) {
         lastError = error;
-        if (error.message.includes("401") || error.message.includes("403") || error.message.includes("429")) {
+        if (
+          error.message.includes("401") ||
+          error.message.includes("403") ||
+          error.message.includes("429") ||
+          error.message.includes("413") ||
+          error.message.toLowerCase().includes("too large")
+        ) {
           continue; // Try next key smoothly
         }
         throw error;
@@ -896,8 +902,8 @@ Your output must ONLY be the final prompt text ready to be copy-pasted into an i
     }
   }
 
-  if (lastError && (lastError.message.includes("429") || lastError.message.includes("quota"))) {
-    throw new Error(`API Rate Limit Reached on all ${apiKeys.length} keys. Google says: "${lastError.message.substring(0, 150)}...". Please check your Google Cloud quota or region.`);
+  if (lastError && (lastError.message.includes("429") || lastError.message.includes("quota") || lastError.message.toLowerCase().includes("rate limit"))) {
+    throw new Error(`API Rate Limit Reached on all ${apiKeys.length} keys. Provider (${apiProvider}) says: "${lastError.message.substring(0, 150)}...". Please check your API quota or wait before retrying.`);
   }
 
   throw (

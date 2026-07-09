@@ -143,8 +143,8 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
           {(value || '').split(',').map(k => k.trim()).filter(Boolean).map((kw, idx) => {
             const cleanedKw = kw.replace(/\s+\d+$/, '');
             const score = getKeywordScore(cleanedKw, img);
-            let colorStr = score >= 75 ? '#10b981' : score >= 40 ? '#f59e0b' : '#ef4444';
-            let bgStr = score >= 75 ? 'rgba(16, 185, 129, 0.1)' : score >= 40 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+            let colorStr = score >= 70 ? '#10b981' : score >= 30 ? '#f59e0b' : '#ef4444';
+            let bgStr = score >= 70 ? 'rgba(16, 185, 129, 0.1)' : score >= 30 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)';
             
             return (
               <div 

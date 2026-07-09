@@ -149,9 +149,9 @@ Evaluate commercial potential across 4 dimensions. You MUST use exactly one of t
 == KEYWORD SCORES ==
 You MUST assign a score from 1 to 100 for EVERY generated keyword based on how LITERAL and VISIBLE it is in the image.
 Follow this STRICT scoring rubric to match our frontend visualization:
-- 75 to 100 (High / Green): ALL physically visible elements, main subjects, secondary details, colors, textures, patterns, and shapes (e.g. "marble", "stone", "black", "white", "veins", "texture", "pattern", "tiles", "wall", "wood").
-- 40 to 74 (Medium / Yellow): Abstract concepts, commercial uses, settings, or overarching design themes (e.g. "design", "architecture", "elegance", "branding", "luxury", "interior", "decor").
-- 1 to 39 (Low / Red): Low relevance or generic terms (DO NOT GENERATE THESE).
+- 70 to 100 (High / Green): ALL physically visible elements, main subjects, secondary details, colors, textures, patterns, and shapes (e.g. "marble", "stone", "black", "white", "veins", "texture", "pattern", "tiles", "wall", "wood").
+- 30 to 69 (Medium / Yellow): Abstract concepts, commercial uses, settings, or overarching design themes (e.g. "design", "architecture", "elegance", "branding", "luxury", "interior", "decor").
+- 1 to 29 (Low / Red): Low relevance or generic terms (DO NOT GENERATE THESE).
 CRITICAL RULE: The number of items in your "keywordScores" object MUST EXACTLY MATCH the number of keywords in your "keywords" string. Do NOT skip scoring ANY keyword.
 
 Output ONLY valid JSON, no markdown formatting:

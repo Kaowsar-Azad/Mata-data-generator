@@ -221,9 +221,9 @@ In "scoreReason": write exactly 1 sentence (max 15 words) naming the PRIMARY fac
 You MUST evaluate EVERY SINGLE keyword you generate and assign it a "Commercial Relevance Score" from 1 to 100 based strictly on how accurately and importantly it describes THIS SPECIFIC image.
 CRITICAL RULE: The number of items in your "keywordScores" object MUST EXACTLY MATCH the number of keywords in your "keywords" string. Do NOT skip scoring ANY keyword. If you output 48 keywords, you MUST output 48 scores.
 We use this score to color-code keywords (Green/Yellow/Red):
-- 80-100 (Green): Highly relevant SEO terms. The keyword perfectly describes the primary subjects, main actions, or core themes physically visible in this specific image.
-- 40-79 (Yellow): Moderately relevant. The keyword describes background details, secondary elements, or broader related commercial concepts (this includes your Tier 6 conceptual keywords).
-- 1-39 (Red): Low relevance or generic. DO NOT GENERATE THESE. Every keyword must be a high-value SEO search term.
+- 70-100 (Green): Highly relevant SEO terms. The keyword perfectly describes the primary subjects, main actions, or core themes physically visible in this specific image.
+- 30-69 (Yellow): Moderately relevant. The keyword describes background details, secondary elements, or broader related commercial concepts (this includes your Tier 6 conceptual keywords).
+- 1-29 (Red): Low relevance or generic. DO NOT GENERATE THESE. Every keyword must be a high-value SEO search term.
 Evaluate each keyword with brutal honesty based on the image content. Rank and score them exactly and accurately according to their true relevance to the image. Do not artificially inflate scores. A keyword must NEVER receive a high score if it is not physically visible or directly relevant.
 
 Output ONLY valid JSON, no markdown:
@@ -291,14 +291,14 @@ export async function fetchGemini(apiKey, currentKeyIndex, prompt, imageBuffer, 
     ];
   }
 
-  // Always start with modern 2026 models (gemini-3.5-flash and gemini-2.5-flash)
-  // because older models like 1.5-flash and 2.0-flash are deprecated/disabled for free tier in 2026
+  // Start with the best available 2026 models
+  // gemini-2.5-flash is the primary fast model for free tier in 2026
   if (msLower.includes('pro') || msLower.includes('high')) {
-    modelsToAttempt = ["gemini-2.5-pro", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+    modelsToAttempt = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite"];
   } else if (msLower.includes('flash') || msLower.includes('fast')) {
-    modelsToAttempt = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+    modelsToAttempt = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.1-flash-lite"];
   } else {
-    modelsToAttempt = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash"];
+    modelsToAttempt = ["gemini-2.5-flash", "gemini-3-flash-preview", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite"];
   }
   modelsToAttempt = [...new Set(modelsToAttempt)];
 

@@ -500,7 +500,7 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
 }
 
 let globalKeyIndex = 0;
-const modelsToTry = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+const modelsToTry = ["gemini-1.5-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"];
 
 /**
  * Helper to run content generation with a strict timeout (default 45 seconds).
@@ -1004,7 +1004,7 @@ Return ONLY a valid JSON object matching this schema:
 
     // Gemini branch
     const genAI = new GoogleGenerativeAI(apiKey);
-    let modelsToAttempt = [...modelsToTry];
+    let modelsToAttempt = ["gemini-1.5-flash", "gemini-2.5-flash"];
 
     for (let i = 0; i < modelsToAttempt.length; i++) {
       const modelName = modelsToAttempt[i];

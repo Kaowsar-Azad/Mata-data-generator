@@ -135,8 +135,8 @@ const filterMetadataKeywords = (metadata, removeYellow, removeRed) => {
 
   kws.forEach(kw => {
     const score = getKeywordScore(kw, newScores);
-    const isYellow = score >= 40 && score < 75;
-    const isRed = score < 40;
+    const isYellow = score >= 30 && score < 70;
+    const isRed = score < 30;
 
     if (removeYellow && isYellow) {
       delete newScores[kw];
@@ -1425,8 +1425,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
       kws.forEach(kw => {
         const score = getKeywordScore(kw, img);
-        const isYellow = score >= 40 && score < 75;
-        const isRed = score < 40;
+        const isYellow = score >= 30 && score < 70;
+        const isRed = score < 30;
 
         if (color === 'yellow' && isYellow) {
           delete newScores[kw];
@@ -1494,6 +1494,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const metadataDoneCount = images.filter((i) => i.result !== null).length;
   const upscaleDoneCount = images.filter((i) => i.status === "done" && (i.upscaleModel || i.upscaleProgress !== undefined)).length;
   const doneCount = images.filter((i) => i.status === "done").length;
+  const allDoneCount = images.filter((i) => i.status === "done" && (!autoEmbed || i.embeddingStatus === "success") && (!autoUpscale || i.upscaleProgress !== undefined)).length;
   const errorCount = images.filter((i) => i.status === "error").length;
   const pendingCount = images.filter((i) => i.status === "pending").length;
   const epsCount = images.filter((i) => i.isEps).length;
@@ -1799,7 +1800,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   gap: '6px',
                   flexShrink: 0
                 }} title="Successfully generated and upscaled">
-                  <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem' }} /> {doneCount} All done
+                  <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem' }} /> {allDoneCount} All done
                 </span>
               )}
 

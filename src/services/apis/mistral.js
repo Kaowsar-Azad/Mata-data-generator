@@ -221,11 +221,10 @@ In "scoreReason": write exactly 1 sentence (max 15 words) naming the PRIMARY fac
 == KEYWORD SCORES (ABSOLUTE CRITICAL MANDATE) ==
 You MUST evaluate EVERY SINGLE keyword you generate and assign it a "Commercial Relevance Score" from 1 to 100.
 CRITICAL RULE: The number of items in your "keywordScores" object MUST EXACTLY MATCH the number of keywords in your "keywords" string. Do NOT skip scoring ANY keyword.
-We use this score to color-code keywords. You MUST follow these strict scoring brackets:
-- 90-100 (Green): Primary subjects, highly relevant literal nouns visible in the image.
-- 75-89 (Green/Yellow): Secondary subjects, colors, materials, background details, and specific styles.
-- 50-74 (Yellow): Conceptual themes, industry niches, and commercial use-cases.
-- NEVER SCORE BELOW 50: Do not generate any keyword that would score below 50. If a keyword is irrelevant, do not include it. ALL keywords you generate MUST be highly relevant, therefore NO score should be lower than 50.
+We use this score to color-code keywords (Green/Yellow/Red):
+- 70-100 (Green): Highly relevant SEO terms. The keyword perfectly describes the primary subjects, main actions, or core themes physically visible in this specific image.
+- 30-69 (Yellow): Moderately relevant. The keyword describes background details, secondary elements, or broader related commercial concepts.
+- 1-29 (Red): Low relevance or generic. DO NOT GENERATE THESE. Every keyword must be a high-value SEO search term.
 
 Output ONLY valid JSON, no markdown, no conversational text:
 {"title":"...","description":"...","keywords":"apple, technology, screen, ... (\${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":65},"categories":\${categoryList},"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"...","policyWarning":null}`;

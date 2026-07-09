@@ -226,7 +226,7 @@ We use this score to color-code keywords (Green/Yellow/Red):
 Evaluate each keyword with brutal honesty based on the image content. Rank and score them exactly and accurately according to their true relevance to the image. Do not artificially inflate scores. A keyword must NEVER receive a high score if it is not physically visible or directly relevant.
 
 Output ONLY valid JSON, no markdown:
-{"title":"...","description":"...","keywords":"apple, technology, screen, ... (\${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":45},"categories":\${categoryList},"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"...","policyWarning":null}`;
+{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":45},"categories":${categoryList},"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"...","policyWarning":null}`;
 }
 
 export async function fetchOpenRouter(apiKey, prompt, base64Data, mimeType, forceJson = true, promptSettings = {}) {

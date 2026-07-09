@@ -227,7 +227,7 @@ We use this score to color-code keywords (Green/Yellow/Red):
 - 1-29 (Red): Low relevance or generic. DO NOT GENERATE THESE. Every keyword must be a high-value SEO search term.
 
 Output ONLY valid JSON, no markdown, no conversational text:
-{"title":"...","description":"...","keywords":"apple, technology, screen, ... (\${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":65},"categories":\${categoryList},"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"...","policyWarning":null}`;
+{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":65},"categories":${categoryList},"commercialConcept":"popular","subjectClarity":"clear","technicalQuality":"good","marketDemand":"evergreen","scoreReason":"...","policyWarning":null}`;
 }
 
 export async function fetchMistral(apiKey, prompt, base64Data, mimeType, forceJson = true, promptSettings = {}) {

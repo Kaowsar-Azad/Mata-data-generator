@@ -158,6 +158,12 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const [images, setImages] = useState([]);
   const imagesRef = useRef([]);
   imagesRef.current = images;
+  const promptSettingsRef = useRef(promptSettings);
+  promptSettingsRef.current = promptSettings;
+  const apiKeysRef = useRef(apiKeys);
+  apiKeysRef.current = apiKeys;
+  const apiProviderRef = useRef(apiProvider);
+  apiProviderRef.current = apiProvider;
   const [viewMode, setViewMode] = useState('card');
   const [isProcessing, setIsProcessing] = useState(false);
   const cancelRef = useRef(false);
@@ -691,15 +697,17 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 )
               );
             } else if (img.visualFile) {
-              const hasGroqInProvider = Array.isArray(apiProvider) ? apiProvider.includes("groq") : apiProvider === "groq";
-              const hasGroqInKeys = apiKeys && apiKeys.some(k => (typeof k === 'object' && k.provider === 'groq') || k === 'groq');
+              const currentApiProvider = apiProviderRef.current;
+              const currentApiKeys = apiKeysRef.current;
+              const hasGroqInProvider = Array.isArray(currentApiProvider) ? currentApiProvider.includes("groq") : currentApiProvider === "groq";
+              const hasGroqInKeys = currentApiKeys && currentApiKeys.some(k => (typeof k === 'object' && k.provider === 'groq') || k === 'groq');
               const targetSize = (hasGroqInProvider || hasGroqInKeys) ? 512 : 1024;
               fetch("http://127.0.0.1:3002/api/debug-log", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   fileName: img.file?.name,
-                  apiProvider,
+                  apiProvider: currentApiProvider,
                   hasGroqInProvider,
                   hasGroqInKeys,
                   targetSize
@@ -726,7 +734,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             }
 
             if (cancelRef.current) return;
-            if (promptSettings?.securityScanEnabled) {
+            if (promptSettingsRef.current?.securityScanEnabled) {
               setImages((prev) =>
                 prev.map((item) =>
                   item.id === img.id
@@ -737,8 +745,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               const securityRes = await analyzeImageSecurity(
                 base64,
                 mimeType,
-                apiKeys,
-                apiProvider || "gemini"
+                apiKeysRef.current,
+                apiProviderRef.current || "gemini"
               );
               if (!securityRes.isSafe) {
                 throw new Error(`Policy Violation: ${securityRes.reason}`);
@@ -751,15 +759,15 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               isPlaceholder: isPlaceholder,
               fileName: img.file?.name,
               extractedTextContext: img.epsData?.extractedTextContext || null,
-              promptSettings: promptSettings,
+              promptSettings: promptSettingsRef.current,
             };
 
             if (cancelRef.current) return;
             let metadata = await generateMetadata(
               base64,
               mimeType,
-              apiKeys,
-              apiProvider || "gemini",
+              apiKeysRef.current,
+              apiProviderRef.current || "gemini",
               fileInfo
             );
 

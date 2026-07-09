@@ -970,39 +970,25 @@ Return ONLY a valid JSON object matching this schema:
 }`;
 
   let lastError = null;
-  const startKeyIndex = globalKeyIndex;
-  if (apiKeys && apiKeys.length > 0) {
-    globalKeyIndex = (globalKeyIndex + 1) % apiKeys.length;
+  const geminiKeys = apiKeys ? apiKeys.filter(k => 
+    (typeof k === 'object' && k.provider === 'gemini') || 
+    (typeof k === 'string' && k.startsWith('AIza'))
+  ) : [];
+
+  if (geminiKeys.length === 0) {
+    throw new Error("No Gemini API keys found. Please add at least one Gemini key in Settings for Policy & Copyright Scan.");
   }
 
-  for (let k = 0; k < apiKeys.length; k++) {
-    const currentKeyIndex = (startKeyIndex + k) % apiKeys.length;
-    const keyItem = apiKeys[currentKeyIndex];
-    
-    let currentProvider = typeof keyItem === 'object' ? keyItem.provider : apiProvider;
-    if (Array.isArray(currentProvider)) currentProvider = currentProvider[0] || 'gemini';
+  const startKeyIndex = globalKeyIndex;
+  if (geminiKeys.length > 0) {
+    globalKeyIndex = (globalKeyIndex + 1) % geminiKeys.length;
+  }
+
+  for (let k = 0; k < geminiKeys.length; k++) {
+    const currentKeyIndex = (startKeyIndex + k) % geminiKeys.length;
+    const keyItem = geminiKeys[currentKeyIndex];
     const apiKey = typeof keyItem === 'object' ? keyItem.key : keyItem;
 
-    if (currentProvider !== "gemini") {
-      try {
-        const enrichedPrompt = `You are a strict Stock Photography AI Moderator.\n${prompt}`;
-        let parsed;
-        if (currentProvider === "groq") parsed = await fetchGroq(apiKey, enrichedPrompt, imageBuffer, mimeType, true);
-        else if (currentProvider === "openai") parsed = await fetchOpenAI(apiKey, enrichedPrompt, imageBuffer, mimeType, true);
-        else if (currentProvider === "openrouter") parsed = await fetchOpenRouter(apiKey, enrichedPrompt, imageBuffer, mimeType, true);
-        else if (currentProvider === "mistral") parsed = await fetchMistral(apiKey, enrichedPrompt, imageBuffer, mimeType, true);
-        else throw new Error("Unknown provider: " + currentProvider);
-        return parsed;
-      } catch (error) {
-        lastError = error;
-        if (error.message.includes("401") || error.message.includes("403") || error.message.includes("429")) {
-          continue;
-        }
-        throw error;
-      }
-    }
-
-    // Gemini branch
     const genAI = new GoogleGenerativeAI(apiKey);
     let modelsToAttempt = ["gemini-1.5-flash", "gemini-2.5-flash"];
 

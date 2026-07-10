@@ -1,5 +1,17 @@
 import React, { useState } from 'react';
-import { mainCategories, categories, mediaTypes, styles, lighting, cameraAngles } from '../../services/promptEngine/dataset';
+import { 
+  mainCategories, 
+  categories, 
+  mediaTypes, 
+  styles, 
+  lighting, 
+  cameraAngles,
+  addCustomMainCategory,
+  addCustomSubCategory,
+  addCustomStyle,
+  addCustomLighting,
+  addCustomCameraAngle
+} from '../../services/promptEngine/dataset';
 import { Sparkles, ChevronDown } from 'lucide-react';
 
 /* ─── Light Glassmorphism Tokens ──────────────────────────── */
@@ -73,7 +85,7 @@ const Sel = ({ value, onChange, children, focused, onFocus, onBlur }) => (
 export const ControlPanel = ({ onGenerate, isGenerating }) => {
   const [config, setConfig] = useState({
     mainCategory: Object.keys(mainCategories)[0],
-    categoryName: mainCategories[Object.keys(mainCategories)[0]][0],
+    categoryName: mainCategories[Object.keys(mainCategories)[0]]?.[0] || '',
     mediaType: 'photo',
     promptLength: 'detailed',
     count: 6,
@@ -83,6 +95,17 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
     customInstruction: '',
   });
   const [focus, setFocus] = useState(null);
+
+  const [showAddMain, setShowAddMain] = useState(false);
+  const [newMainName, setNewMainName] = useState('');
+  const [showAddSub, setShowAddSub] = useState(false);
+  const [newSubName, setNewSubName] = useState('');
+  const [showAddStyle, setShowAddStyle] = useState(false);
+  const [newStyleName, setNewStyleName] = useState('');
+  const [showAddLighting, setShowAddLighting] = useState(false);
+  const [newLightingName, setNewLightingName] = useState('');
+  const [showAddCamera, setShowAddCamera] = useState(false);
+  const [newCameraName, setNewCameraName] = useState('');
 
   const set  = (k, v) => setConfig(p => ({ ...p, [k]: v }));
   const foc  = name => () => setFocus(name);
@@ -131,25 +154,141 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
 
       {/* ── Main Category ── */}
       <div style={{ flexShrink: 0 }}>
-        <Label>Main Category</Label>
-        <Sel 
-          value={config.mainCategory} 
-          onChange={v => {
-            set('mainCategory', v);
-            set('categoryName', mainCategories[v][0]);
-          }} 
-          focused={focus==='maincat'} onFocus={foc('maincat')} onBlur={blur}
-        >
-          {Object.keys(mainCategories).map(mc => <option key={mc} value={mc}>{mc}</option>)}
-        </Sel>
+        {showAddMain ? (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <Label>New Main Category</Label>
+              <button 
+                type="button" 
+                onClick={() => { setShowAddMain(false); setNewMainName(''); }} 
+                style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+              >
+                Cancel
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <input 
+                type="text" 
+                value={newMainName} 
+                onChange={e => setNewMainName(e.target.value)}
+                placeholder="Name..."
+                style={{
+                  flex: 1, padding: '6px 8px', background: FIELD_BG, border: `1.5px solid ${FIELD_BORDER}`,
+                  borderRadius: '8px', color: TEXT_COLOR, fontSize: '0.78rem', outline: 'none'
+                }}
+              />
+              <button 
+                type="button"
+                onClick={() => {
+                  if (newMainName.trim()) {
+                    addCustomMainCategory(newMainName.trim());
+                    set('mainCategory', newMainName.trim());
+                    set('categoryName', '');
+                    setShowAddMain(false);
+                    setNewMainName('');
+                  }
+                }}
+                style={{
+                  padding: '6px 12px', border: 'none', borderRadius: '8px',
+                  background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+                  color: '#fff', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer'
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <Label>Main Category</Label>
+              <button 
+                type="button" 
+                onClick={() => setShowAddMain(true)} 
+                style={{ border: 'none', background: 'none', color: 'var(--primary)', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+              >
+                + Add New
+              </button>
+            </div>
+            <Sel 
+              value={config.mainCategory} 
+              onChange={v => {
+                set('mainCategory', v);
+                set('categoryName', mainCategories[v]?.[0] || '');
+              }} 
+              focused={focus==='maincat'} onFocus={foc('maincat')} onBlur={blur}
+            >
+              {Object.keys(mainCategories).map(mc => <option key={mc} value={mc}>{mc}</option>)}
+            </Sel>
+          </>
+        )}
       </div>
 
       {/* ── Sub-Category ── */}
       <div style={{ flexShrink: 0 }}>
-        <Label>Sub-Category</Label>
-        <Sel value={config.categoryName} onChange={v => set('categoryName', v)} focused={focus==='cat'} onFocus={foc('cat')} onBlur={blur}>
-          {mainCategories[config.mainCategory]?.map(c => <option key={c} value={c}>{c}</option>)}
-        </Sel>
+        {showAddSub ? (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <Label>New Sub-Category</Label>
+              <button 
+                type="button" 
+                onClick={() => { setShowAddSub(false); setNewSubName(''); }} 
+                style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+              >
+                Cancel
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <input 
+                type="text" 
+                value={newSubName} 
+                onChange={e => setNewSubName(e.target.value)}
+                placeholder="Name..."
+                style={{
+                  flex: 1, padding: '6px 8px', background: FIELD_BG, border: `1.5px solid ${FIELD_BORDER}`,
+                  borderRadius: '8px', color: TEXT_COLOR, fontSize: '0.78rem', outline: 'none'
+                }}
+              />
+              <button 
+                type="button"
+                onClick={() => {
+                  if (newSubName.trim()) {
+                    addCustomSubCategory(config.mainCategory, newSubName.trim());
+                    set('categoryName', newSubName.trim());
+                    setShowAddSub(false);
+                    setNewSubName('');
+                  }
+                }}
+                style={{
+                  padding: '6px 12px', border: 'none', borderRadius: '8px',
+                  background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+                  color: '#fff', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer'
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <Label>Sub-Category</Label>
+              <button 
+                type="button" 
+                onClick={() => setShowAddSub(true)} 
+                style={{ border: 'none', background: 'none', color: 'var(--primary)', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+              >
+                + Add New
+              </button>
+            </div>
+            <Sel value={config.categoryName} onChange={v => set('categoryName', v)} focused={focus==='cat'} onFocus={foc('cat')} onBlur={blur}>
+              {(!mainCategories[config.mainCategory] || mainCategories[config.mainCategory].length === 0) && (
+                <option value="">No subcategories (Click + Add New)</option>
+              )}
+              {mainCategories[config.mainCategory]?.map(c => <option key={c} value={c}>{c}</option>)}
+            </Sel>
+          </>
+        )}
       </div>
 
       {/* ── Type ── */}
@@ -194,29 +333,197 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
 
       {/* ── Style ── */}
       <div style={{ flexShrink: 0 }}>
-        <Label>Style</Label>
-        <Sel value={config.styleChoice} onChange={v => set('styleChoice', v)} focused={focus==='style'} onFocus={foc('style')} onBlur={blur}>
-          <option value="auto">✦  Auto (Random)</option>
-          {styles.map(s => <option key={s} value={s}>{s}</option>)}
-        </Sel>
+        {showAddStyle ? (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <Label>New Style</Label>
+              <button 
+                type="button" 
+                onClick={() => { setShowAddStyle(false); setNewStyleName(''); }} 
+                style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+              >
+                Cancel
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <input 
+                type="text" 
+                value={newStyleName} 
+                onChange={e => setNewStyleName(e.target.value)}
+                placeholder="Style name..."
+                style={{
+                  flex: 1, padding: '6px 8px', background: FIELD_BG, border: `1.5px solid ${FIELD_BORDER}`,
+                  borderRadius: '8px', color: TEXT_COLOR, fontSize: '0.78rem', outline: 'none'
+                }}
+              />
+              <button 
+                type="button"
+                onClick={() => {
+                  if (newStyleName.trim()) {
+                    addCustomStyle(newStyleName.trim());
+                    set('styleChoice', newStyleName.trim());
+                    setShowAddStyle(false);
+                    setNewStyleName('');
+                  }
+                }}
+                style={{
+                  padding: '6px 12px', border: 'none', borderRadius: '8px',
+                  background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+                  color: '#fff', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer'
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <Label>Style</Label>
+              <button 
+                type="button" 
+                onClick={() => setShowAddStyle(true)} 
+                style={{ border: 'none', background: 'none', color: 'var(--primary)', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+              >
+                + Add New
+              </button>
+            </div>
+            <Sel value={config.styleChoice} onChange={v => set('styleChoice', v)} focused={focus==='style'} onFocus={foc('style')} onBlur={blur}>
+              <option value="auto">✦  Auto (Random)</option>
+              {styles.map(s => <option key={s} value={s}>{s}</option>)}
+            </Sel>
+          </>
+        )}
       </div>
 
       {/* ── Lighting ── */}
       <div style={{ flexShrink: 0 }}>
-        <Label>Lighting</Label>
-        <Sel value={config.lightingChoice} onChange={v => set('lightingChoice', v)} focused={focus==='light'} onFocus={foc('light')} onBlur={blur}>
-          <option value="auto">✦  Auto (Random)</option>
-          {lighting.map(l => <option key={l} value={l}>{l}</option>)}
-        </Sel>
+        {showAddLighting ? (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <Label>New Lighting</Label>
+              <button 
+                type="button" 
+                onClick={() => { setShowAddLighting(false); setNewLightingName(''); }} 
+                style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+              >
+                Cancel
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <input 
+                type="text" 
+                value={newLightingName} 
+                onChange={e => setNewLightingName(e.target.value)}
+                placeholder="Lighting description..."
+                style={{
+                  flex: 1, padding: '6px 8px', background: FIELD_BG, border: `1.5px solid ${FIELD_BORDER}`,
+                  borderRadius: '8px', color: TEXT_COLOR, fontSize: '0.78rem', outline: 'none'
+                }}
+              />
+              <button 
+                type="button"
+                onClick={() => {
+                  if (newLightingName.trim()) {
+                    addCustomLighting(newLightingName.trim());
+                    set('lightingChoice', newLightingName.trim());
+                    setShowAddLighting(false);
+                    setNewLightingName('');
+                  }
+                }}
+                style={{
+                  padding: '6px 12px', border: 'none', borderRadius: '8px',
+                  background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+                  color: '#fff', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer'
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <Label>Lighting</Label>
+              <button 
+                type="button" 
+                onClick={() => setShowAddLighting(true)} 
+                style={{ border: 'none', background: 'none', color: 'var(--primary)', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+              >
+                + Add New
+              </button>
+            </div>
+            <Sel value={config.lightingChoice} onChange={v => set('lightingChoice', v)} focused={focus==='light'} onFocus={foc('light')} onBlur={blur}>
+              <option value="auto">✦  Auto (Random)</option>
+              {lighting.map(l => <option key={l} value={l}>{l}</option>)}
+            </Sel>
+          </>
+        )}
       </div>
 
       {/* ── Camera Angle ── */}
       <div style={{ flexShrink: 0 }}>
-        <Label>Camera Angle</Label>
-        <Sel value={config.cameraAngleChoice} onChange={v => set('cameraAngleChoice', v)} focused={focus==='cam'} onFocus={foc('cam')} onBlur={blur}>
-          <option value="auto">✦  Auto (Random)</option>
-          {cameraAngles.map(c => <option key={c} value={c}>{c}</option>)}
-        </Sel>
+        {showAddCamera ? (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <Label>New Camera Angle</Label>
+              <button 
+                type="button" 
+                onClick={() => { setShowAddCamera(false); setNewCameraName(''); }} 
+                style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+              >
+                Cancel
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <input 
+                type="text" 
+                value={newCameraName} 
+                onChange={e => setNewCameraName(e.target.value)}
+                placeholder="Angle description..."
+                style={{
+                  flex: 1, padding: '6px 8px', background: FIELD_BG, border: `1.5px solid ${FIELD_BORDER}`,
+                  borderRadius: '8px', color: TEXT_COLOR, fontSize: '0.78rem', outline: 'none'
+                }}
+              />
+              <button 
+                type="button"
+                onClick={() => {
+                  if (newCameraName.trim()) {
+                    addCustomCameraAngle(newCameraName.trim());
+                    set('cameraAngleChoice', newCameraName.trim());
+                    setShowAddCamera(false);
+                    setNewCameraName('');
+                  }
+                }}
+                style={{
+                  padding: '6px 12px', border: 'none', borderRadius: '8px',
+                  background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+                  color: '#fff', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer'
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <Label>Camera Angle</Label>
+              <button 
+                type="button" 
+                onClick={() => setShowAddCamera(true)} 
+                style={{ border: 'none', background: 'none', color: 'var(--primary)', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+              >
+                + Add New
+              </button>
+            </div>
+            <Sel value={config.cameraAngleChoice} onChange={v => set('cameraAngleChoice', v)} focused={focus==='cam'} onFocus={foc('cam')} onBlur={blur}>
+              <option value="auto">✦  Auto (Random)</option>
+              {cameraAngles.map(c => <option key={c} value={c}>{c}</option>)}
+            </Sel>
+          </>
+        )}
       </div>
 
       {/* ── Additional Direction ── */}

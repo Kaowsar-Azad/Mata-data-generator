@@ -1,6 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+
+dotenv.config();
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
@@ -21,7 +25,12 @@ async function getSegmentator() {
 }
 
 const app = express();
-const port = 3002;
+const port = process.env.PORT || 3002;
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('✅ Connected to MongoDB Atlas!'))
+  .catch((err) => console.error('❌ Failed to connect to MongoDB:', err));
 
 app.post('/api/debug-log', express.json(), (req, res) => {
   console.log('\x1b[36m[CLIENT DEBUG]\x1b[0m', req.body);

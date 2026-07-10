@@ -23,3 +23,29 @@ dist-electron
 *.njsproj
 *.sln
 *.sw?
+
+# Jupyter Notebooks & Python Scripts
+*.ipynb
+SDXL_RealESRGAN_Colab_Code.py
+
+# Temp JSON Data
+backend_url.json
+colab_temp.json
+free_models.json
+free_models_utf8.json
+
+# Scratch and Test Scripts
+brain.md
+mock_server.cjs
+npm
+scratch_download_icons.js
+test_groq_llama.cjs
+update_groq_scoring.cjs
+server/test_hf.js
+server/test_median.js
+
+# Test outputs
+bin/test_extract/
+bin/test.zip
+bin/upscayl/output_*.jpg
+bin/upscayl/test_out.jpg

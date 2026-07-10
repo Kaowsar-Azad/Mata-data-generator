@@ -10,7 +10,8 @@ import { FtpConfigManager } from './components/FtpConfigManager'
 import { EpsPreviewGenerator } from './components/EpsPreviewGenerator'
 import { ImageUpscaler } from './components/ImageUpscaler'
 import { AiImageGenerator } from './components/AiImageGenerator'
-import { Sparkles, Zap, Image as ImageIcon, Eraser, Box, ChevronLeft, ChevronRight, Server, Key, Camera, Maximize, Cpu } from 'lucide-react'
+import { PromptEnginePage } from './components/PromptEngine/PromptEnginePage'
+import { Sparkles, Zap, Image as ImageIcon, Eraser, Box, ChevronLeft, ChevronRight, Server, Key, Camera, Maximize, Cpu, Wand2 } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 const tabVariants = {
@@ -274,6 +275,7 @@ function App() {
             }}>
               {[
                 { id: 'metadata', icon: Zap, label: 'Metadata Generator', color: '#8b5cf6' },
+                { id: 'promptengine', icon: Wand2, label: 'Prompt Generator', color: '#14b8a6' },
                 { id: 'prompt', icon: ImageIcon, label: 'Image to Prompt', color: '#ec4899' },
                 { id: 'epspreview', icon: Camera, label: 'Auto EPS Preview', color: '#10b981' },
                 { id: 'removebg', icon: Eraser, label: 'Background Remover', color: '#ef4444' },
@@ -392,6 +394,10 @@ function App() {
             setPromptSettings={setPromptSettings} 
             ftpConfigs={ftpConfigs} 
           />
+        </TabWrapper>
+        
+        <TabWrapper active={activeTab === 'promptengine'}>
+          <PromptEnginePage apiKeys={apiKeys} apiProvider={apiProvider} />
         </TabWrapper>
         
         <TabWrapper active={activeTab === 'prompt'}>

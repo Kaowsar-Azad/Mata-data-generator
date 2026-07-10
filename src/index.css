@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
 
 /* Sidebar Nav Hover Effect */
 .sidebar-nav-btn:hover .sidebar-icon-badge {
@@ -10,7 +10,7 @@
    Inspired by Linear, Vercel, Framer, OpenAI
    ============================================================ */
 :root {
-  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-body: 'Outfit', system-ui, -apple-system, sans-serif;
 
   /* Core palette — Blue/Purple AI glow */
   --primary:        #2563eb;
@@ -392,6 +392,24 @@ input::placeholder, textarea::placeholder, .meta-textarea::placeholder { color: 
 @keyframes glow-pulse {
   0%, 100% { box-shadow: 0 0 12px rgba(37,99,235,0.15); }
   50%      { box-shadow: 0 0 24px rgba(37,99,235,0.3); }
+}
+
+@keyframes meshPan {
+  0% { background-position: 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0px 0px, 0px 0px; }
+  100% { background-position: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 128px 128px, 128px 128px; }
+}
+
+.animated-mesh-bg {
+  background-color: #f1f5f9;
+  background-image: 
+    radial-gradient(circle at 0% 0%, rgba(37, 99, 235, 0.22) 0%, transparent 60%),
+    radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.22) 0%, transparent 60%),
+    radial-gradient(circle at 0% 100%, rgba(20, 184, 166, 0.15) 0%, transparent 60%),
+    radial-gradient(circle at 100% 0%, rgba(236, 72, 153, 0.12) 0%, transparent 60%),
+    linear-gradient(rgba(148, 163, 184, 0.15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.15) 1px, transparent 1px);
+  background-size: 200% 200%, 200% 200%, 200% 200%, 200% 200%, 32px 32px, 32px 32px;
+  animation: meshPan 20s linear infinite alternate;
 }
 
 .animate-fade-in  { animation: fadeInUp 0.35s cubic-bezier(.2,.8,.3,1) forwards; }
@@ -1355,3 +1373,23 @@ input[type="checkbox"].ios-toggle:disabled {
   outline: none !important;
   box-shadow: none !important;
 }
+
+/* ============================================================
+   PROMPT ENGINE — Keyframes & Helpers
+   ============================================================ */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+/* Prompt Engine select option styling */
+.prompt-engine-select option {
+  background: #0f172a;
+  color: #e2e8f0;
+}
+

@@ -1,0 +1,283 @@
+import React, { useState } from 'react';
+import { mainCategories, categories, mediaTypes, styles, lighting, cameraAngles } from '../../services/promptEngine/dataset';
+import { Sparkles, ChevronDown } from 'lucide-react';
+
+/* ─── Light Glassmorphism Tokens ──────────────────────────── */
+const GLASS_BG      = 'rgba(255, 255, 255, 0.62)';
+const GLASS_BORDER  = 'rgba(0, 0, 0, 0.06)';
+const FIELD_BG      = 'rgba(255, 255, 255, 0.55)';
+const FIELD_BORDER  = 'rgba(0, 0, 0, 0.08)';
+const FOCUS_BORDER  = 'rgba(37, 99, 235, 0.45)';
+const FOCUS_RING    = 'rgba(37, 99, 235, 0.08)';
+const FOCUS_BG      = 'rgba(37, 99, 235, 0.04)';
+const LABEL_COLOR   = '#6b7280';
+const TEXT_COLOR     = '#1e293b';
+const TEAL          = '#14b8a6';
+
+/* ─── Tiny label ─────────────────────────────────────────── */
+const Label = ({ children }) => (
+  <span style={{
+    display: 'block',
+    fontSize: '0.62rem',
+    fontWeight: 700,
+    color: LABEL_COLOR,
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    marginBottom: '4px',
+  }}>
+    {children}
+  </span>
+);
+
+/* ─── Select wrapper with arrow ─────────────────────────── */
+const Sel = ({ value, onChange, children, focused, onFocus, onBlur }) => (
+  <div style={{ position: 'relative' }}>
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      style={{
+        width: '100%',
+        padding: '7px 28px 7px 10px',
+        background: focused ? FOCUS_BG : FIELD_BG,
+        border: `1.5px solid ${focused ? FOCUS_BORDER : FIELD_BORDER}`,
+        borderRadius: '10px',
+        color: TEXT_COLOR,
+        fontSize: '0.78rem',
+        fontWeight: 500,
+        outline: 'none',
+        cursor: 'pointer',
+        appearance: 'none',
+        WebkitAppearance: 'none',
+        transition: 'border-color .2s, background .2s, box-shadow .2s',
+        boxShadow: focused
+          ? `0 0 0 3px ${FOCUS_RING}, 0 1px 3px rgba(0,0,0,0.04)`
+          : '0 1px 3px rgba(0,0,0,0.04)',
+        fontFamily: 'inherit',
+      }}
+    >
+      {children}
+    </select>
+    <ChevronDown style={{
+      position: 'absolute', right: '8px', top: '50%',
+      transform: 'translateY(-50%)',
+      width: '12px', height: '12px',
+      color: focused ? 'var(--primary)' : '#9ca3af',
+      pointerEvents: 'none', transition: 'color .2s',
+    }} />
+  </div>
+);
+
+/* ─── Main Component ─────────────────────────────────────── */
+export const ControlPanel = ({ onGenerate, isGenerating }) => {
+  const [config, setConfig] = useState({
+    mainCategory: Object.keys(mainCategories)[0],
+    categoryName: mainCategories[Object.keys(mainCategories)[0]][0],
+    mediaType: 'photo',
+    promptLength: 'detailed',
+    count: 6,
+    styleChoice: 'auto',
+    lightingChoice: 'auto',
+    cameraAngleChoice: 'auto',
+    customInstruction: '',
+  });
+  const [focus, setFocus] = useState(null);
+
+  const set  = (k, v) => setConfig(p => ({ ...p, [k]: v }));
+  const foc  = name => () => setFocus(name);
+  const blur = () => setFocus(null);
+
+  return (
+    <form
+      onSubmit={e => { e.preventDefault(); onGenerate(config); }}
+      style={{
+        width: '260px',
+        minWidth: '260px',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '9px',
+        /* Light Glass Card */
+        background: GLASS_BG,
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        border: `1px solid ${GLASS_BORDER}`,
+        borderRadius: '16px',
+        padding: '14px 14px 12px',
+        boxSizing: 'border-box',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 4px 24px rgba(0,0,0,0.03)',
+        overflow: 'hidden',
+      }}
+    >
+      {/* ── Panel heading ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginBottom: '2px' }}>
+        <div style={{
+          width: '26px', height: '26px', borderRadius: '8px',
+          background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 3px 10px rgba(37,99,235,0.25)', flexShrink: 0,
+        }}>
+          <Sparkles style={{ width: '13px', height: '13px', color: '#fff' }} />
+        </div>
+        <div>
+          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-1)' }}>Configuration</span>
+          <p style={{ fontSize: '0.6rem', color: 'var(--text-3)', margin: 0, lineHeight: 1.3 }}>Set parameters & generate</p>
+        </div>
+      </div>
+
+      {/* thin divider */}
+      <div style={{ height: '1px', background: 'rgba(0,0,0,0.06)', flexShrink: 0 }} />
+
+      {/* ── Main Category ── */}
+      <div style={{ flexShrink: 0 }}>
+        <Label>Main Category</Label>
+        <Sel 
+          value={config.mainCategory} 
+          onChange={v => {
+            set('mainCategory', v);
+            set('categoryName', mainCategories[v][0]);
+          }} 
+          focused={focus==='maincat'} onFocus={foc('maincat')} onBlur={blur}
+        >
+          {Object.keys(mainCategories).map(mc => <option key={mc} value={mc}>{mc}</option>)}
+        </Sel>
+      </div>
+
+      {/* ── Sub-Category ── */}
+      <div style={{ flexShrink: 0 }}>
+        <Label>Sub-Category</Label>
+        <Sel value={config.categoryName} onChange={v => set('categoryName', v)} focused={focus==='cat'} onFocus={foc('cat')} onBlur={blur}>
+          {mainCategories[config.mainCategory]?.map(c => <option key={c} value={c}>{c}</option>)}
+        </Sel>
+      </div>
+
+      {/* ── Type ── */}
+      <div style={{ flexShrink: 0 }}>
+        <Label>Type</Label>
+        <Sel value={config.mediaType} onChange={v => set('mediaType', v)} focused={focus==='type'} onFocus={foc('type')} onBlur={blur}>
+          {mediaTypes.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </Sel>
+      </div>
+
+      {/* ── Length + Count ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px', gap: '8px', flexShrink: 0 }}>
+        <div>
+          <Label>Length</Label>
+          <Sel value={config.promptLength} onChange={v => set('promptLength', v)} focused={focus==='len'} onFocus={foc('len')} onBlur={blur}>
+            <option value="detailed">Detailed</option>
+            <option value="short">Short</option>
+          </Sel>
+        </div>
+        <div>
+          <Label>Count</Label>
+          <input
+            type="number" min="1" max="50"
+            value={config.count}
+            onChange={e => set('count', parseInt(e.target.value) || 6)}
+            onFocus={foc('count')} onBlur={blur}
+            style={{
+              width: '100%', padding: '7px 8px', boxSizing: 'border-box',
+              background: focus==='count' ? FOCUS_BG : FIELD_BG,
+              border: `1.5px solid ${focus==='count' ? FOCUS_BORDER : FIELD_BORDER}`,
+              borderRadius: '10px', color: TEXT_COLOR, fontSize: '0.78rem', fontWeight: 500,
+              outline: 'none',
+              boxShadow: focus==='count' ? `0 0 0 3px ${FOCUS_RING}` : '0 1px 3px rgba(0,0,0,0.04)',
+              transition: 'all .2s', fontFamily: 'inherit',
+            }}
+          />
+        </div>
+      </div>
+
+      {/* thin divider */}
+      <div style={{ height: '1px', background: 'rgba(0,0,0,0.06)', flexShrink: 0 }} />
+
+      {/* ── Style ── */}
+      <div style={{ flexShrink: 0 }}>
+        <Label>Style</Label>
+        <Sel value={config.styleChoice} onChange={v => set('styleChoice', v)} focused={focus==='style'} onFocus={foc('style')} onBlur={blur}>
+          <option value="auto">✦  Auto (Random)</option>
+          {styles.map(s => <option key={s} value={s}>{s}</option>)}
+        </Sel>
+      </div>
+
+      {/* ── Lighting ── */}
+      <div style={{ flexShrink: 0 }}>
+        <Label>Lighting</Label>
+        <Sel value={config.lightingChoice} onChange={v => set('lightingChoice', v)} focused={focus==='light'} onFocus={foc('light')} onBlur={blur}>
+          <option value="auto">✦  Auto (Random)</option>
+          {lighting.map(l => <option key={l} value={l}>{l}</option>)}
+        </Sel>
+      </div>
+
+      {/* ── Camera Angle ── */}
+      <div style={{ flexShrink: 0 }}>
+        <Label>Camera Angle</Label>
+        <Sel value={config.cameraAngleChoice} onChange={v => set('cameraAngleChoice', v)} focused={focus==='cam'} onFocus={foc('cam')} onBlur={blur}>
+          <option value="auto">✦  Auto (Random)</option>
+          {cameraAngles.map(c => <option key={c} value={c}>{c}</option>)}
+        </Sel>
+      </div>
+
+      {/* ── Additional Direction ── */}
+      <div style={{ flexShrink: 0 }}>
+        <Label>Additional Direction</Label>
+        <textarea
+          value={config.customInstruction}
+          onChange={e => set('customInstruction', e.target.value)}
+          onFocus={foc('custom')} onBlur={blur}
+          rows={2}
+          placeholder="e.g. luxury styling, no people…"
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            padding: '7px 10px',
+            background: focus==='custom' ? FOCUS_BG : FIELD_BG,
+            border: `1.5px solid ${focus==='custom' ? FOCUS_BORDER : FIELD_BORDER}`,
+            borderRadius: '10px', color: TEXT_COLOR, fontSize: '0.76rem',
+            outline: 'none', resize: 'none', lineHeight: 1.45,
+            boxShadow: focus==='custom' ? `0 0 0 3px ${FOCUS_RING}` : '0 1px 3px rgba(0,0,0,0.04)',
+            transition: 'all .2s', fontFamily: 'inherit',
+          }}
+        />
+      </div>
+
+      {/* ── Generate button ── */}
+      <button
+        type="submit"
+        disabled={isGenerating}
+        style={{
+          marginTop: 'auto',
+          width: '100%', flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
+          padding: '10px 14px',
+          borderRadius: '12px',
+          border: 'none',
+          background: isGenerating
+            ? 'linear-gradient(135deg, rgba(37,99,235,0.5), rgba(139,92,246,0.4))'
+            : 'linear-gradient(135deg, var(--primary), var(--secondary))',
+          color: '#ffffff',
+          fontSize: '0.76rem', fontWeight: 800,
+          letterSpacing: '0.06em', textTransform: 'uppercase',
+          cursor: isGenerating ? 'not-allowed' : 'pointer',
+          boxShadow: isGenerating ? 'none' : '0 4px 14px rgba(37,99,235,0.3)',
+          transition: 'all .2s', fontFamily: 'inherit',
+        }}
+        onMouseOver={e => {
+          if (!isGenerating) {
+            e.currentTarget.style.boxShadow = '0 6px 20px rgba(37,99,235,0.4)';
+            e.currentTarget.style.transform = 'translateY(-1px)';
+          }
+        }}
+        onMouseOut={e => {
+          if (!isGenerating) {
+            e.currentTarget.style.boxShadow = '0 4px 14px rgba(37,99,235,0.3)';
+            e.currentTarget.style.transform = 'translateY(0)';
+          }
+        }}
+      >
+        <Sparkles style={{ width: '13px', height: '13px', animation: isGenerating ? 'spin 1s linear infinite' : 'none' }} />
+        {isGenerating ? 'Generating…' : 'Generate Prompts'}
+      </button>
+    </form>
+  );
+};

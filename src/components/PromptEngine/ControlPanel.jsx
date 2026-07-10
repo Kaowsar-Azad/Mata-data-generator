@@ -27,7 +27,7 @@ const TEXT_COLOR     = '#1e293b';
 const TEAL          = '#14b8a6';
 
 /* ─── Tiny label ─────────────────────────────────────────── */
-const Label = ({ children }) => (
+const Label = ({ children, style }) => (
   <span style={{
     display: 'block',
     fontSize: '0.62rem',
@@ -36,6 +36,10 @@ const Label = ({ children }) => (
     textTransform: 'uppercase',
     letterSpacing: '0.06em',
     marginBottom: '4px',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    ...style
   }}>
     {children}
   </span>
@@ -51,10 +55,10 @@ const Sel = ({ value, onChange, children, focused, onFocus, onBlur }) => (
       onBlur={onBlur}
       style={{
         width: '100%',
-        padding: '7px 28px 7px 10px',
+        padding: '6px 24px 6px 8px',
         background: focused ? FOCUS_BG : FIELD_BG,
         border: `1.5px solid ${focused ? FOCUS_BORDER : FIELD_BORDER}`,
-        borderRadius: '10px',
+        borderRadius: '8px',
         color: TEXT_COLOR,
         fontSize: '0.78rem',
         fontWeight: 500,
@@ -84,8 +88,8 @@ const Sel = ({ value, onChange, children, focused, onFocus, onBlur }) => (
 /* ─── Main Component ─────────────────────────────────────── */
 export const ControlPanel = ({ onGenerate, isGenerating }) => {
   const [config, setConfig] = useState({
-    mainCategory: Object.keys(mainCategories)[0],
-    categoryName: mainCategories[Object.keys(mainCategories)[0]]?.[0] || '',
+    mainCategory: 'auto',
+    categoryName: 'auto',
     mediaType: 'photo',
     promptLength: 'detailed',
     count: 6,
@@ -115,12 +119,12 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
     <form
       onSubmit={e => { e.preventDefault(); onGenerate(config); }}
       style={{
-        width: '260px',
-        minWidth: '260px',
+        width: '280px',
+        minWidth: '280px',
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        gap: '9px',
+        gap: '8px',
         /* Light Glass Card */
         background: GLASS_BG,
         backdropFilter: 'blur(20px) saturate(180%)',
@@ -136,28 +140,40 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
       {/* ── Panel heading ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginBottom: '2px' }}>
         <div style={{
-          width: '26px', height: '26px', borderRadius: '8px',
+          width: '24px', height: '24px', borderRadius: '6px',
           background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           boxShadow: '0 3px 10px rgba(37,99,235,0.25)', flexShrink: 0,
         }}>
-          <Sparkles style={{ width: '13px', height: '13px', color: '#fff' }} />
+          <Sparkles style={{ width: '12px', height: '12px', color: '#fff' }} />
         </div>
         <div>
           <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-1)' }}>Configuration</span>
-          <p style={{ fontSize: '0.6rem', color: 'var(--text-3)', margin: 0, lineHeight: 1.3 }}>Set parameters & generate</p>
+          <p style={{ fontSize: '0.6rem', color: 'var(--text-3)', margin: 0, lineHeight: 1.2 }}>Set parameters & generate</p>
         </div>
       </div>
 
       {/* thin divider */}
       <div style={{ height: '1px', background: 'rgba(0,0,0,0.06)', flexShrink: 0 }} />
 
+      {/* Fields Container */}
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        paddingRight: '4px',
+        margin: '2px 0',
+        scrollbarWidth: 'none',
+      }}>
+
       {/* ── Main Category ── */}
       <div style={{ flexShrink: 0 }}>
         {showAddMain ? (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-              <Label>New Main Category</Label>
+              <Label>New Main Category ADD</Label>
               <button 
                 type="button" 
                 onClick={() => { setShowAddMain(false); setNewMainName(''); }} 
@@ -205,7 +221,7 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
               <button 
                 type="button" 
                 onClick={() => setShowAddMain(true)} 
-                style={{ border: 'none', background: 'none', color: 'var(--primary)', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+                style={{ border: 'none', background: 'rgba(37,99,235,0.1)', color: 'var(--primary)', fontSize: '0.55rem', fontWeight: 800, cursor: 'pointer', textTransform: 'uppercase', padding: '3px 6px', borderRadius: '4px' }}
               >
                 + Add New
               </button>
@@ -214,10 +230,11 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
               value={config.mainCategory} 
               onChange={v => {
                 set('mainCategory', v);
-                set('categoryName', mainCategories[v]?.[0] || '');
+                set('categoryName', v === 'auto' ? 'auto' : (mainCategories[v]?.[0] || ''));
               }} 
               focused={focus==='maincat'} onFocus={foc('maincat')} onBlur={blur}
             >
+              <option value="auto">✦  Auto (Random)</option>
               {Object.keys(mainCategories).map(mc => <option key={mc} value={mc}>{mc}</option>)}
             </Sel>
           </>
@@ -229,7 +246,7 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
         {showAddSub ? (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-              <Label>New Sub-Category</Label>
+              <Label>New Sub-Category ADD</Label>
               <button 
                 type="button" 
                 onClick={() => { setShowAddSub(false); setNewSubName(''); }} 
@@ -276,13 +293,14 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
               <button 
                 type="button" 
                 onClick={() => setShowAddSub(true)} 
-                style={{ border: 'none', background: 'none', color: 'var(--primary)', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+                style={{ border: 'none', background: 'rgba(37,99,235,0.1)', color: 'var(--primary)', fontSize: '0.55rem', fontWeight: 800, cursor: 'pointer', textTransform: 'uppercase', padding: '3px 6px', borderRadius: '4px' }}
               >
                 + Add New
               </button>
             </div>
             <Sel value={config.categoryName} onChange={v => set('categoryName', v)} focused={focus==='cat'} onFocus={foc('cat')} onBlur={blur}>
-              {(!mainCategories[config.mainCategory] || mainCategories[config.mainCategory].length === 0) && (
+              <option value="auto">✦  Auto (Random)</option>
+              {(!mainCategories[config.mainCategory] || mainCategories[config.mainCategory].length === 0) && config.mainCategory !== 'auto' && (
                 <option value="">No subcategories (Click + Add New)</option>
               )}
               {mainCategories[config.mainCategory]?.map(c => <option key={c} value={c}>{c}</option>)}
@@ -316,10 +334,10 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
             onChange={e => set('count', parseInt(e.target.value) || 6)}
             onFocus={foc('count')} onBlur={blur}
             style={{
-              width: '100%', padding: '7px 8px', boxSizing: 'border-box',
+              width: '100%', padding: '6px 8px', boxSizing: 'border-box',
               background: focus==='count' ? FOCUS_BG : FIELD_BG,
               border: `1.5px solid ${focus==='count' ? FOCUS_BORDER : FIELD_BORDER}`,
-              borderRadius: '10px', color: TEXT_COLOR, fontSize: '0.78rem', fontWeight: 500,
+              borderRadius: '8px', color: TEXT_COLOR, fontSize: '0.78rem', fontWeight: 500,
               outline: 'none',
               boxShadow: focus==='count' ? `0 0 0 3px ${FOCUS_RING}` : '0 1px 3px rgba(0,0,0,0.04)',
               transition: 'all .2s', fontFamily: 'inherit',
@@ -336,7 +354,7 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
         {showAddStyle ? (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-              <Label>New Style</Label>
+              <Label>New Style ADD</Label>
               <button 
                 type="button" 
                 onClick={() => { setShowAddStyle(false); setNewStyleName(''); }} 
@@ -350,10 +368,10 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
                 type="text" 
                 value={newStyleName} 
                 onChange={e => setNewStyleName(e.target.value)}
-                placeholder="Style name..."
+                placeholder="Style..."
                 style={{
                   flex: 1, padding: '6px 8px', background: FIELD_BG, border: `1.5px solid ${FIELD_BORDER}`,
-                  borderRadius: '8px', color: TEXT_COLOR, fontSize: '0.78rem', outline: 'none'
+                  borderRadius: '8px', color: TEXT_COLOR, fontSize: '0.78rem', outline: 'none', width: '0'
                 }}
               />
               <button 
@@ -367,9 +385,9 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
                   }
                 }}
                 style={{
-                  padding: '6px 12px', border: 'none', borderRadius: '8px',
+                  padding: '6px 10px', border: 'none', borderRadius: '8px',
                   background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
-                  color: '#fff', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer'
+                  color: '#fff', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', flexShrink: 0
                 }}
               >
                 Save
@@ -378,30 +396,33 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
           </>
         ) : (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-              <Label>Style</Label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', minHeight: '14.5px' }}>
+              <Label style={{ marginBottom: 0 }}>Style</Label>
               <button 
                 type="button" 
                 onClick={() => setShowAddStyle(true)} 
-                style={{ border: 'none', background: 'none', color: 'var(--primary)', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+                style={{ border: 'none', background: 'rgba(37,99,235,0.1)', color: 'var(--primary)', fontSize: '0.55rem', fontWeight: 800, cursor: 'pointer', textTransform: 'uppercase', padding: '3px 6px', borderRadius: '4px' }}
               >
-                + Add New
+                + Add
               </button>
             </div>
             <Sel value={config.styleChoice} onChange={v => set('styleChoice', v)} focused={focus==='style'} onFocus={foc('style')} onBlur={blur}>
-              <option value="auto">✦  Auto (Random)</option>
+              <option value="auto">✦ Auto</option>
               {styles.map(s => <option key={s} value={s}>{s}</option>)}
             </Sel>
           </>
         )}
       </div>
 
+      {/* thin divider */}
+      <div style={{ height: '1px', background: 'rgba(0,0,0,0.06)', flexShrink: 0 }} />
+
       {/* ── Lighting ── */}
       <div style={{ flexShrink: 0 }}>
         {showAddLighting ? (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-              <Label>New Lighting</Label>
+              <Label>New Light ADD</Label>
               <button 
                 type="button" 
                 onClick={() => { setShowAddLighting(false); setNewLightingName(''); }} 
@@ -415,10 +436,10 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
                 type="text" 
                 value={newLightingName} 
                 onChange={e => setNewLightingName(e.target.value)}
-                placeholder="Lighting description..."
+                placeholder="Light..."
                 style={{
                   flex: 1, padding: '6px 8px', background: FIELD_BG, border: `1.5px solid ${FIELD_BORDER}`,
-                  borderRadius: '8px', color: TEXT_COLOR, fontSize: '0.78rem', outline: 'none'
+                  borderRadius: '8px', color: TEXT_COLOR, fontSize: '0.78rem', outline: 'none', width: '0'
                 }}
               />
               <button 
@@ -432,9 +453,9 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
                   }
                 }}
                 style={{
-                  padding: '6px 12px', border: 'none', borderRadius: '8px',
+                  padding: '6px 10px', border: 'none', borderRadius: '8px',
                   background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
-                  color: '#fff', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer'
+                  color: '#fff', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', flexShrink: 0
                 }}
               >
                 Save
@@ -443,30 +464,33 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
           </>
         ) : (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-              <Label>Lighting</Label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', minHeight: '14.5px' }}>
+              <Label style={{ marginBottom: 0 }}>Lighting</Label>
               <button 
                 type="button" 
                 onClick={() => setShowAddLighting(true)} 
-                style={{ border: 'none', background: 'none', color: 'var(--primary)', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+                style={{ border: 'none', background: 'rgba(37,99,235,0.1)', color: 'var(--primary)', fontSize: '0.55rem', fontWeight: 800, cursor: 'pointer', textTransform: 'uppercase', padding: '3px 6px', borderRadius: '4px' }}
               >
-                + Add New
+                + Add
               </button>
             </div>
             <Sel value={config.lightingChoice} onChange={v => set('lightingChoice', v)} focused={focus==='light'} onFocus={foc('light')} onBlur={blur}>
-              <option value="auto">✦  Auto (Random)</option>
+              <option value="auto">✦ Auto</option>
               {lighting.map(l => <option key={l} value={l}>{l}</option>)}
             </Sel>
           </>
         )}
       </div>
 
+      {/* thin divider */}
+      <div style={{ height: '1px', background: 'rgba(0,0,0,0.06)', flexShrink: 0 }} />
+
       {/* ── Camera Angle ── */}
       <div style={{ flexShrink: 0 }}>
         {showAddCamera ? (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-              <Label>New Camera Angle</Label>
+              <Label>New Angle ADD</Label>
               <button 
                 type="button" 
                 onClick={() => { setShowAddCamera(false); setNewCameraName(''); }} 
@@ -480,10 +504,10 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
                 type="text" 
                 value={newCameraName} 
                 onChange={e => setNewCameraName(e.target.value)}
-                placeholder="Angle description..."
+                placeholder="Angle..."
                 style={{
                   flex: 1, padding: '6px 8px', background: FIELD_BG, border: `1.5px solid ${FIELD_BORDER}`,
-                  borderRadius: '8px', color: TEXT_COLOR, fontSize: '0.78rem', outline: 'none'
+                  borderRadius: '8px', color: TEXT_COLOR, fontSize: '0.78rem', outline: 'none', width: '0'
                 }}
               />
               <button 
@@ -497,9 +521,9 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
                   }
                 }}
                 style={{
-                  padding: '6px 12px', border: 'none', borderRadius: '8px',
+                  padding: '6px 10px', border: 'none', borderRadius: '8px',
                   background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
-                  color: '#fff', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer'
+                  color: '#fff', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', flexShrink: 0
                 }}
               >
                 Save
@@ -508,18 +532,18 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
           </>
         ) : (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-              <Label>Camera Angle</Label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', minHeight: '14.5px' }}>
+              <Label style={{ marginBottom: 0 }}>Camera</Label>
               <button 
                 type="button" 
                 onClick={() => setShowAddCamera(true)} 
-                style={{ border: 'none', background: 'none', color: 'var(--primary)', fontSize: '0.62rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}
+                style={{ border: 'none', background: 'rgba(37,99,235,0.1)', color: 'var(--primary)', fontSize: '0.55rem', fontWeight: 800, cursor: 'pointer', textTransform: 'uppercase', padding: '3px 6px', borderRadius: '4px' }}
               >
-                + Add New
+                + Add
               </button>
             </div>
             <Sel value={config.cameraAngleChoice} onChange={v => set('cameraAngleChoice', v)} focused={focus==='cam'} onFocus={foc('cam')} onBlur={blur}>
-              <option value="auto">✦  Auto (Random)</option>
+              <option value="auto">✦ Auto</option>
               {cameraAngles.map(c => <option key={c} value={c}>{c}</option>)}
             </Sel>
           </>
@@ -546,6 +570,7 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
             transition: 'all .2s', fontFamily: 'inherit',
           }}
         />
+      </div>
       </div>
 
       {/* ── Generate button ── */}

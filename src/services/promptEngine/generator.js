@@ -1,4 +1,5 @@
 import { 
+  mainCategories,
   categories, 
   styles, 
   lighting, 
@@ -35,8 +36,24 @@ const formatCustomInstruction = (text) => {
 /**
  * Generate a single prompt based on selected parameters
  */
-const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice, lightingChoice, cameraChoice, customInstruction) => {
-  const categoryData = categories[categoryName] || categories[Object.keys(categories)[0]];
+const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice, lightingChoice, cameraChoice, customInstruction, mainCategory) => {
+  let resolvedCategory = categoryName;
+  
+  if (!resolvedCategory || resolvedCategory === 'auto') {
+    let resolvedMain = mainCategory;
+    if (!resolvedMain || resolvedMain === 'auto') {
+      const mainKeys = Object.keys(mainCategories);
+      resolvedMain = mainKeys[Math.floor(Math.random() * mainKeys.length)];
+    }
+    const subs = mainCategories[resolvedMain] || [];
+    if (subs.length > 0) {
+      resolvedCategory = subs[Math.floor(Math.random() * subs.length)];
+    } else {
+      resolvedCategory = Object.keys(categories)[0];
+    }
+  }
+
+  const categoryData = categories[resolvedCategory] || categories[Object.keys(categories)[0]];
   
   // Resolve Auto or explicit choices
   const pStyle = styleChoice === 'auto' ? getRandom(styles) : styleChoice;
@@ -105,6 +122,7 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
  */
 export const generatePrompts = ({
   categoryName,
+  mainCategory = 'auto',
   mediaType = 'photo',
   promptLength = 'detailed',
   styleChoice = 'auto',
@@ -125,7 +143,8 @@ export const generatePrompts = ({
       styleChoice,
       lightingChoice,
       cameraAngleChoice,
-      customInstruction
+      customInstruction,
+      mainCategory
     );
     uniquePrompts.add(prompt);
     attempts++;

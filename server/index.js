@@ -3,6 +3,7 @@ import cors from 'cors';
 import multer from 'multer';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import Category from './models/Category.js';
 
 dotenv.config();
 import { spawn } from 'child_process';
@@ -31,6 +32,16 @@ const port = process.env.PORT || 3002;
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ Connected to MongoDB Atlas!'))
   .catch((err) => console.error('❌ Failed to connect to MongoDB:', err));
+
+app.get('/api/prompt-categories', async (req, res) => {
+  try {
+    const categories = await Category.find({});
+    res.json(categories);
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    res.status(500).json({ error: 'Failed to fetch categories' });
+  }
+});
 
 app.post('/api/debug-log', express.json(), (req, res) => {
   console.log('\x1b[36m[CLIENT DEBUG]\x1b[0m', req.body);

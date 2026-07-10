@@ -3,6 +3,7 @@ import { Helmet, HelmetProvider } from 'react-helmet-async';
 import { ControlPanel } from './ControlPanel';
 import { ResultsPanel } from './ResultsPanel';
 import { generatePrompts } from '../../services/promptEngine/generator';
+import { motion } from 'framer-motion';
 
 export const PromptEnginePage = ({ apiKeys, apiProvider }) => {
   const [prompts, setPrompts] = useState([]);
@@ -42,7 +43,7 @@ export const PromptEnginePage = ({ apiKeys, apiProvider }) => {
 
   return (
     <HelmetProvider>
-      <div className="animated-mesh-bg" style={{
+      <div style={{
         width: '100%', height: '100%',
         display: 'flex', flexDirection: 'column',
         padding: '12px 14px 10px',
@@ -59,18 +60,33 @@ export const PromptEnginePage = ({ apiKeys, apiProvider }) => {
 
         {/* ── Main: Control + Results ── */}
         <div style={{ flex: 1, display: 'flex', gap: '12px', minHeight: 0 }}>
-          <ControlPanel
-            onGenerate={handleGenerate}
-            isGenerating={isGenerating}
-          />
-          <ResultsPanel
-            prompts={prompts}
-            onClear={() => setPrompts([])}
-            isGenerating={isGenerating}
-            statusText={statusText}
-            apiKeys={apiKeys}
-            apiProvider={apiProvider}
-          />
+          <motion.div 
+            initial={{ opacity: 0, x: -30 }} 
+            animate={{ opacity: 1, x: 0 }} 
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+            style={{ height: '100%', flexShrink: 0 }}
+          >
+            <ControlPanel
+              onGenerate={handleGenerate}
+              isGenerating={isGenerating}
+            />
+          </motion.div>
+
+          <motion.div 
+            initial={{ opacity: 0, x: 30 }} 
+            animate={{ opacity: 1, x: 0 }} 
+            transition={{ duration: 0.4, ease: 'easeOut', delay: 0.1 }}
+            style={{ flex: 1, height: '100%', minWidth: 0 }}
+          >
+            <ResultsPanel
+              prompts={prompts}
+              onClear={() => setPrompts([])}
+              isGenerating={isGenerating}
+              statusText={statusText}
+              apiKeys={apiKeys}
+              apiProvider={apiProvider}
+            />
+          </motion.div>
         </div>
       </div>
     </HelmetProvider>

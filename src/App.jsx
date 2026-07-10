@@ -17,13 +17,11 @@ import { motion } from 'framer-motion'
 const tabVariants = {
   active: (isFlexColumn) => ({
     opacity: 1, 
-    y: 0, 
     pointerEvents: 'auto', 
     display: isFlexColumn ? 'flex' : 'block'
   }),
   inactive: { 
     opacity: 0, 
-    y: 15, 
     pointerEvents: 'none', 
     transitionEnd: { display: 'none' } 
   }
@@ -35,7 +33,7 @@ const TabWrapper = ({ active, children, isFlexColumn, padding }) => (
     variants={tabVariants}
     initial={active ? "active" : "inactive"}
     animate={active ? "active" : "inactive"}
-    transition={{ duration: 0.25, ease: 'easeOut' }}
+    transition={{ duration: 0.15, ease: 'linear' }}
     style={{
       gridArea: '1 / 1 / 2 / 2',
       flexDirection: isFlexColumn ? 'column' : undefined,

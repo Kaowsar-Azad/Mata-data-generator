@@ -74,6 +74,8 @@ export const ResultsPanel = ({ prompts, onClear, isGenerating, statusText }) => 
   return (
     <div style={{
       flex: 1,
+      height: '100%',
+      minHeight: 0,
       background: GLASS_BG,
       backdropFilter: 'blur(20px) saturate(180%)',
       WebkitBackdropFilter: 'blur(20px) saturate(180%)',
@@ -120,7 +122,7 @@ export const ResultsPanel = ({ prompts, onClear, isGenerating, statusText }) => 
       <div style={{ height: '1px', background: 'rgba(0,0,0,0.05)', marginBottom: '10px', flexShrink: 0 }} />
 
       {/* ── Content Area ── */}
-      <div className="scrollbar-thin" style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px', scrollbarWidth: 'none', display: 'flex', flexDirection: 'column' }}>
         {isGenerating ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '14px' }}>
             <div style={{
@@ -209,23 +211,31 @@ export const ResultsPanel = ({ prompts, onClear, isGenerating, statusText }) => 
             </AnimatePresence>
           </div>
         ) : (
-          <div style={{
-            display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center',
-            height: '100%', gap: '10px', textAlign: 'center',
-          }}>
+          <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             <div style={{
-              width: '50px', height: '50px', borderRadius: '14px',
-              background: 'rgba(255,255,255,0.6)',
-              border: '1px solid rgba(0,0,0,0.06)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+              width: '100%',
+              maxWidth: '440px',
+              background: 'rgba(255, 255, 255, 0.45)',
+              border: '1px solid rgba(0, 0, 0, 0.05)',
+              borderRadius: '16px',
+              padding: '40px 20px',
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              textAlign: 'center',
             }}>
-              <Sparkles style={{ width: '20px', height: '20px', color: 'var(--text-3)' }} />
-            </div>
-            <div>
-              <p style={{ color: 'var(--text-2)', fontWeight: 600, fontSize: '0.82rem', marginBottom: '3px' }}>No prompts yet</p>
-              <p style={{ color: 'var(--text-3)', fontSize: '0.72rem', margin: 0 }}>Configure settings on the left and click Generate.</p>
+              <div style={{
+                width: '46px', height: '46px', borderRadius: '12px',
+                background: 'rgba(255,255,255,0.75)',
+                border: '1px solid rgba(0,0,0,0.05)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                marginBottom: '12px',
+              }}>
+                <Sparkles style={{ width: '18px', height: '18px', color: 'var(--text-3)' }} />
+              </div>
+              <div>
+                <p style={{ color: 'var(--text-2)', fontWeight: 600, fontSize: '0.8rem', marginBottom: '4px' }}>No prompts yet</p>
+                <p style={{ color: 'var(--text-3)', fontSize: '0.7rem', margin: 0 }}>Configure settings on the left and click Generate.</p>
+              </div>
             </div>
           </div>
         )}

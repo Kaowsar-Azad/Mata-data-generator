@@ -485,7 +485,7 @@ function PromptField({ value, onChange, provider }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(value);
+    navigator.clipboard.writeText(value).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

@@ -189,6 +189,7 @@ function App() {
 
             {sidebarOpen && (
               <button 
+                id="api-keys-btn"
                 onClick={() => setIsApiKeyModalOpen(true)}
                 title="API Keys"
                 style={{

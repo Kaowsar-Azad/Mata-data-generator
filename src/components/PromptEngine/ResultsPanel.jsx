@@ -14,14 +14,14 @@ export const ResultsPanel = ({ prompts, onClear, isGenerating, statusText }) => 
   const [copiedAll, setCopiedAll] = React.useState(false);
 
   const handleCopySingle = (prompt) => {
-    navigator.clipboard.writeText(prompt.text);
+    navigator.clipboard.writeText(prompt.text).catch(() => {});
     setCopiedId(prompt.id);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
   const handleCopyAll = () => {
     if (!prompts.length) return;
-    navigator.clipboard.writeText(prompts.map(p => p.text).join('\n\n'));
+    navigator.clipboard.writeText(prompts.map(p => p.text).join('\n\n')).catch(() => {});
     setCopiedAll(true);
     setTimeout(() => setCopiedAll(false), 2000);
   };

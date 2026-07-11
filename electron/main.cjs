@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, net } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -2726,7 +2726,7 @@ ipcMain.handle('show-colab', async () => {
 ipcMain.handle('fetch-image', async (event, url) => {
   try {
     fileLog('[fetch-image] Fetching URL:', url);
-    const res = await fetch(url);
+    const res = await net.fetch(url);
     if (!res.ok) {
       throw new Error(`Failed to fetch image: HTTP ${res.status}`);
     }
@@ -2737,5 +2737,7 @@ ipcMain.handle('fetch-image', async (event, url) => {
     return { success: false, error: err.message };
   }
 });
+
+
 
 

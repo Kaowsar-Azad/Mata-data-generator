@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Trash2, Key, CheckCircle, X, Shield, ExternalLink, Sparkles, Wind, Zap, Cpu, Network } from "lucide-react";
+import { Plus, Trash2, Key, CheckCircle, X, Shield, ExternalLink, Sparkles, Wind, Zap, Cpu, Network, Cloud } from "lucide-react";
 
 const PROVIDERS = [
   { id: "gemini",     label: "Google Gemini", icon: Sparkles, iconColor: "#6366f1", desc: "Google's most capable multimodal AI models", url: "https://aistudio.google.com/app/apikey" },
+  { id: "cloudflare", label: "Cloudflare AI", icon: Cloud,    iconColor: "#f38020", desc: "Free AI inference via Cloudflare Workers", url: "https://dash.cloudflare.com/profile/api-tokens" },
   { id: "mistral",    label: "Mistral AI",    icon: Wind,     iconColor: "#f97316", desc: "High performance open models", url: "https://console.mistral.ai/api-keys/" },
   { id: "groq",       label: "Groq",          icon: Zap,      iconColor: "#f59e0b", desc: "Fast LLM inference with OpenAI-compatible API", url: "https://console.groq.com/keys" },
   { id: "openai",     label: "OpenAI",        icon: Cpu,      iconColor: "#10b981", desc: "Powerful language models and vision capabilities", url: "https://platform.openai.com/api-keys" },
@@ -19,11 +20,13 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
     const oldGemini = localStorage.getItem("gemini_keys");
     return {
       gemini: oldGemini ? JSON.parse(oldGemini) : [],
-      groq: [], openrouter: [], openai: [], mistral: []
+      cloudflare: [], groq: [], openrouter: [], openai: [], mistral: []
     };
   });
 
   const [newKey, setNewKey] = useState("");
+  const [cfAccountId, setCfAccountId] = useState("");
+  const [cfToken, setCfToken] = useState("");
 
   const activeKeys = allKeys[viewedProvider] || [];
 
@@ -49,10 +52,17 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
   if (!isOpen) return null;
 
   const addKey = () => {
-    const trimmed = newKey.trim();
-    if (trimmed && !activeKeys.includes(trimmed)) {
-      setAllKeys(prev => ({ ...prev, [viewedProvider]: [...(prev[viewedProvider] || []), trimmed] }));
+    let finalKey = newKey.trim();
+    if (viewedProvider === "cloudflare") {
+      if (!cfAccountId.trim() || !cfToken.trim()) return;
+      finalKey = `${cfAccountId.trim()}:${cfToken.trim()}`;
+    }
+    
+    if (finalKey && !activeKeys.includes(finalKey)) {
+      setAllKeys(prev => ({ ...prev, [viewedProvider]: [...(prev[viewedProvider] || []), finalKey] }));
       setNewKey("");
+      setCfAccountId("");
+      setCfToken("");
     }
   };
 
@@ -279,40 +289,104 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
                 <Key style={{ width: '0.8rem', height: '0.8rem' }} />
                 API KEY
               </label>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <input
-                  type="password"
-                  placeholder={`Enter ${currentProvider?.label} API key...`}
-                  value={newKey}
-                  onChange={(e) => setNewKey(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addKey()}
-                  style={{
-                    flex: 1,
-                    padding: '0.75rem 1rem',
-                    fontSize: '0.9rem',
-                    background: 'var(--surface-2)',
-                    border: '1px solid var(--glass-border)',
-                    borderRadius: '0.5rem',
-                    color: 'var(--text-1)',
-                    outline: 'none',
-                    transition: 'all 0.2s',
-                    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.02)'
-                  }}
-                  onFocus={(e) => e.target.style.borderColor = 'var(--primary)'}
-                  onBlur={(e) => e.target.style.borderColor = 'var(--glass-border)'}
-                />
-                <button
-                  onClick={addKey}
-                  disabled={!newKey.trim()}
-                  style={{
-                    padding: '0 1.25rem',
-                    borderRadius: '0.5rem',
-                    background: newKey.trim() ? 'var(--primary)' : 'var(--surface-3)',
-                    border: 'none',
-                    color: newKey.trim() ? '#fff' : 'var(--text-3)',
-                    cursor: newKey.trim() ? 'pointer' : 'not-allowed',
-                    display: 'flex',
-                    alignItems: 'center',
+              
+              {currentProvider?.id === "cloudflare" ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <input
+                    type="text"
+                    placeholder="Account ID (e.g. 12345abcdef...)"
+                    value={cfAccountId}
+                    onChange={(e) => setCfAccountId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem 1rem',
+                      fontSize: '0.9rem',
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '0.5rem',
+                      color: 'var(--text-1)',
+                      outline: 'none',
+                      transition: 'all 0.2s',
+                    }}
+                    onFocus={(e) => e.target.style.borderColor = 'var(--primary)'}
+                    onBlur={(e) => e.target.style.borderColor = 'var(--glass-border)'}
+                  />
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <input
+                      type="password"
+                      placeholder="API Token (e.g. abcdef12345...)"
+                      value={cfToken}
+                      onChange={(e) => setCfToken(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && addKey()}
+                      style={{
+                        flex: 1,
+                        padding: '0.75rem 1rem',
+                        fontSize: '0.9rem',
+                        background: 'var(--surface-2)',
+                        border: '1px solid var(--glass-border)',
+                        borderRadius: '0.5rem',
+                        color: 'var(--text-1)',
+                        outline: 'none',
+                        transition: 'all 0.2s',
+                      }}
+                      onFocus={(e) => e.target.style.borderColor = 'var(--primary)'}
+                      onBlur={(e) => e.target.style.borderColor = 'var(--glass-border)'}
+                    />
+                    <button
+                      onClick={addKey}
+                      disabled={!cfAccountId.trim() || !cfToken.trim()}
+                      style={{
+                        padding: '0 1.25rem',
+                        borderRadius: '0.5rem',
+                        background: (cfAccountId.trim() && cfToken.trim()) ? 'var(--primary)' : 'var(--surface-3)',
+                        border: 'none',
+                        color: (cfAccountId.trim() && cfToken.trim()) ? '#fff' : 'var(--text-3)',
+                        cursor: (cfAccountId.trim() && cfToken.trim()) ? 'pointer' : 'not-allowed',
+                        display: 'flex',
+                        alignItems: 'center',
+                        fontWeight: 700,
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      <Plus style={{ width: '1.2rem', height: '1.2rem' }} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    type="password"
+                    placeholder={`Enter ${currentProvider?.label} API key...`}
+                    value={newKey}
+                    onChange={(e) => setNewKey(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && addKey()}
+                    style={{
+                      flex: 1,
+                      padding: '0.75rem 1rem',
+                      fontSize: '0.9rem',
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: '0.5rem',
+                      color: 'var(--text-1)',
+                      outline: 'none',
+                      transition: 'all 0.2s',
+                      boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.02)'
+                    }}
+                    onFocus={(e) => e.target.style.borderColor = 'var(--primary)'}
+                    onBlur={(e) => e.target.style.borderColor = 'var(--glass-border)'}
+                  />
+                  <button
+                    onClick={addKey}
+                    disabled={!newKey.trim()}
+                    style={{
+                      padding: '0 1.25rem',
+                      borderRadius: '0.5rem',
+                      background: newKey.trim() ? 'var(--primary)' : 'var(--surface-3)',
+                      border: 'none',
+                      color: newKey.trim() ? '#fff' : 'var(--text-3)',
+                      cursor: newKey.trim() ? 'pointer' : 'not-allowed',
+                      display: 'flex',
+                      alignItems: 'center',
                     gap: '0.4rem',
                     fontSize: '0.85rem',
                     fontWeight: 600,
@@ -322,6 +396,7 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
                   <Plus style={{ width: '1rem', height: '1rem' }} /> Add Key
                 </button>
               </div>
+              )}
             </div>
 
             {/* Stored Keys */}

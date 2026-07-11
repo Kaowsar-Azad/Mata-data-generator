@@ -857,7 +857,52 @@ app.post('/api/convert-to-eps', express.json({ limit: '20mb' }), async (req, res
     res.status(500).json({ error: error.message });
   }
 });
+// Cloudflare API Proxy to avoid CORS and browser fetch issues
+app.post('/api/cloudflare-generate', express.json(), async (req, res) => {
+  const { accountId, apiToken, prompt, model } = req.body;
+  if (!accountId || !apiToken || !prompt) return res.status(400).json({ error: "Missing parameters" });
 
+  try {
+    const selectedModel = model || '@cf/black-forest-labs/flux-1-schnell';
+    const cfUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${selectedModel}`;
+    const cfRes = await fetch(cfUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ prompt })
+    });
+
+    if (!cfRes.ok) {
+      const errTxt = await cfRes.text();
+      return res.status(cfRes.status).json({ error: `Cloudflare Error: ${cfRes.status} - ${errTxt.substring(0, 100)}` });
+    }
+
+    const contentType = cfRes.headers.get('content-type') || '';
+    
+    if (contentType.includes('application/json')) {
+      const data = await cfRes.json();
+      if (data.result && data.result.image) {
+        // Cloudflare returned JSON with a base64 string
+        const buffer = Buffer.from(data.result.image, 'base64');
+        res.setHeader('Content-Type', 'image/jpeg');
+        return res.send(buffer);
+      } else {
+        return res.status(500).json({ error: "Cloudflare returned JSON but no image found", details: data });
+      }
+    } else {
+      // Cloudflare returned raw binary
+      const arrayBuffer = await cfRes.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      res.setHeader('Content-Type', contentType || 'image/jpeg');
+      return res.send(buffer);
+    }
+  } catch (error) {
+    console.error("[Cloudflare API Error]", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 
 

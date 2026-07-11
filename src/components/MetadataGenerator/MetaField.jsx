@@ -7,7 +7,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
   const [newKeyword, setNewKeyword] = useState("");
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(value);
+    navigator.clipboard.writeText(value).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

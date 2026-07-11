@@ -27,6 +27,14 @@ const ASPECT_RATIOS = [
   { label: "4:3",  width: 1152, height: 896  }
 ];
 
+const CF_MODELS = [
+  { id: "@cf/black-forest-labs/flux-1-schnell", label: "Flux-1-Schnell (Fast)" },
+  { id: "@cf/stabilityai/stable-diffusion-xl-base-1.0", label: "SDXL Base 1.0 (No NSFW Filter)" },
+  { id: "@cf/bytedance/sdxl-lightning-4step", label: "SDXL Lightning (Fast)" },
+  { id: "@cf/lykon/dreamshaper-8-lcm", label: "Dreamshaper 8 LCM" }
+];
+
+
 const POLL_INTERVAL_MS = 3000;
 const POLL_MAX_ATTEMPTS = 200; 
 
@@ -84,6 +92,14 @@ export function AiImageGenerator({ apiKeys }) {
   const [manualUrl, setManualUrl] = useState("");
   const [status, setStatus]       = useState("disconnected");
   const [serverUrl, setServerUrl] = useState("");
+  const [engine, setEngine]       = useState(() => {
+    const saved = localStorage.getItem("ai_image_engine");
+    return (saved && saved !== "gemini") ? saved : "cloud_gpu";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("ai_image_engine", engine);
+  }, [engine]);
 
   const [connectProgress, setConnectProgress] = useState(0);
 
@@ -114,6 +130,7 @@ export function AiImageGenerator({ apiKeys }) {
   const [aspectRatio, setAspectRatio]     = useState(ASPECT_RATIOS[0]);
   const [steps, setSteps]                 = useState(30);
   const [batchCount, setBatchCount]       = useState(1);
+  const [cfModel, setCfModel]             = useState(CF_MODELS[0]);
 
   // State
   const [isGenerating, setIsGenerating]   = useState(false);
@@ -306,11 +323,13 @@ export function AiImageGenerator({ apiKeys }) {
   const handleGenerate = async () => {
     if (!prompt.trim()) { setError("একটি Prompt লিখুন।"); return; }
     
-    if (status !== "connected" || !serverUrl) {
-      setError("আগে ComfyUI সার্ভারের সাথে সংযুক্ত হন।");
-      return;
+    if (engine === "cloud_gpu") {
+      if (status !== "connected" || !serverUrl) {
+        setError("আগে ComfyUI সার্ভারের সাথে সংযুক্ত হন।");
+        return;
+      }
+      if (mode === "img2img" && !initImage) { setError("Image to Image মোডে একটি Init Image আপলোড করুন।"); return; }
     }
-    if (mode === "img2img" && !initImage) { setError("Image to Image মোডে একটি Init Image আপলোড করুন।"); return; }
 
     cancelRef.current = false;
     setIsGenerating(true);
@@ -323,9 +342,63 @@ export function AiImageGenerator({ apiKeys }) {
         ? `${prompt.trim()}, ${selectedStyle.tag}, ${qualityBoost}`
         : `${prompt.trim()}, ${qualityBoost}`;
       const negativePrompt = selectedStyle.neg || "";
+      if (engine === "cloudflare") {
+        const keyObj = apiKeys?.find(k => k.provider === "cloudflare");
+        if (!keyObj || !keyObj.key || !keyObj.key.includes(":")) {
+          setError("Cloudflare AI ব্যবহার করতে সেটিংসে গিয়ে ACCOUNT_ID:API_TOKEN ফরমেটে আপনার কি (Key) যোগ করুন।");
+          setIsGenerating(false);
+          return;
+        }
+        const [accountId, apiToken] = keyObj.key.split(":");
+        
+        setGenStatus("Cloudflare Workers-এ রিকোয়েস্ট পাঠানো হচ্ছে...");
+        for (let i = 0; i < batchCount; i++) {
+          if (cancelRef.current) break;
+          const currentImageIndex = i + 1;
+          setGenStatus(batchCount > 1 ? `Flux ইমেজ তৈরি করছে (${currentImageIndex}/${batchCount})...` : "Flux ইমেজ তৈরি করছে...");
+          
+          // Flux-1-schnell model via Local Proxy
+          const proxyUrl = `http://localhost:3002/api/cloudflare-generate`;
+          
+          try {
+            const cfRes = await fetch(proxyUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ 
+                accountId: accountId.trim(),
+                apiToken: apiToken.trim(),
+                prompt: finalPrompt,
+                model: cfModel.id
+              })
+            });
+
+            if (!cfRes.ok) {
+              const errData = await cfRes.json().catch(() => ({ error: cfRes.statusText }));
+              throw new Error(errData.error || `Cloudflare Error: ${cfRes.status}`);
+            }
+
+            const imgBlob = await cfRes.blob();
+            const dataUrl = await blobToDataUrl(imgBlob);
+            
+            addToHistory(dataUrl, prompt, {
+              engine: "Cloudflare Workers", mode, style: selectedStyle.label, ratio: aspectRatio.label,
+              quality: "Flux-1-schnell", denoising: null,
+              batch: batchCount > 1 ? `${i+1}/${batchCount}` : "1"
+            });
+          } catch (err) {
+            throw new Error("Cloudflare থেকে ছবি তৈরি ব্যর্থ হয়েছে: " + err.message);
+          }
+        }
+        if (!cancelRef.current) setGenStatus("✅ সব ইমেজ তৈরি সম্পন্ন!");
+        return;
+      }
+
+
 
       // ─────────────────────────────────────────────────────────────────
-      // ENGINE 2: CLOUD GPU (ComfyUI / Colab)
+      // ENGINE 3: CLOUD GPU (ComfyUI / Colab)
       // ─────────────────────────────────────────────────────────────────
       setGenStatus("প্রস্তুতি নিচ্ছে...");
       let ws = null;
@@ -471,10 +544,11 @@ export function AiImageGenerator({ apiKeys }) {
   const handleCancel = async () => {
     cancelRef.current = true;
     setIsGenerating(false);
+    abortControllerRef.current?.abort();
     
-    setGenStatus("বাতিল করা হচ্ছে (Stopping GPU)...");
+    setGenStatus("বাতিল করা হচ্ছে...");
     try {
-      if (serverUrl) {
+      if (engine === "cloud_gpu" && serverUrl) {
         const api = serverUrl.replace(/\/$/, "");
         await fetch(`${api}/interrupt`, { method: "POST", headers: { "bypass-tunnel-reminder": "true" } });
         await fetch(`${api}/queue`, { method: "POST", headers: { "bypass-tunnel-reminder": "true" }, body: JSON.stringify({ clear: true }) });
@@ -502,7 +576,7 @@ export function AiImageGenerator({ apiKeys }) {
     alert(result.success ? "✅ ছবি সংরক্ষিত হয়েছে!" : "❌ সংরক্ষণ ব্যর্থ: " + result.error);
   };
 
-  const statusColor = status === "connected" ? "#22c55e" : status === "connecting" ? "#3b82f6" : "#ef4444";
+  const statusColor = engine === "pollinations" ? "#22c55e" : status === "connected" ? "#22c55e" : status === "connecting" ? "#3b82f6" : "#ef4444";
 
   const settingsContent = (
     <div style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "1.25rem", flex: 1 }}>
@@ -511,18 +585,20 @@ export function AiImageGenerator({ apiKeys }) {
       </h3>
 
       {/* Mode & Img2Img */}
-      <div>
-        <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-2)", marginBottom: "0.5rem" }}>মোড</label>
-        <div style={{ display: "flex", background: "var(--surface-2)", borderRadius: "0.5rem", padding: "0.2rem" }}>
-          {[{ id: "txt2img", label: "Text → Image" }, { id: "img2img", label: "Image → Image" }].map(m => (
-            <button key={m.id} onClick={() => setMode(m.id)} style={{ flex: 1, padding: "0.45rem", border: "none", background: mode === m.id ? "var(--primary)" : "transparent", color: mode === m.id ? "#fff" : "var(--text-2)", borderRadius: "0.35rem", fontWeight: 600, fontSize: "0.78rem", cursor: "pointer", transition: "all 0.15s" }}>
-              {m.label}
-            </button>
-          ))}
+      {engine === "cloud_gpu" && (
+        <div>
+          <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-2)", marginBottom: "0.5rem" }}>মোড</label>
+          <div style={{ display: "flex", background: "var(--surface-2)", borderRadius: "0.5rem", padding: "0.2rem" }}>
+            {[{ id: "txt2img", label: "Text → Image" }, { id: "img2img", label: "Image → Image" }].map(m => (
+              <button key={m.id} onClick={() => setMode(m.id)} style={{ flex: 1, padding: "0.45rem", border: "none", background: mode === m.id ? "var(--primary)" : "transparent", color: mode === m.id ? "#fff" : "var(--text-2)", borderRadius: "0.35rem", fontWeight: 600, fontSize: "0.78rem", cursor: "pointer", transition: "all 0.15s" }}>
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-          {mode === "img2img" && (
+          {engine === "cloud_gpu" && mode === "img2img" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", padding: "0.85rem", background: "var(--surface-2)", borderRadius: "0.75rem", border: "1px solid var(--glass-border)" }}>
               <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-2)" }}>Init Image</label>
               <div
@@ -553,13 +629,15 @@ export function AiImageGenerator({ apiKeys }) {
             </div>
           )}
 
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-              <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-2)" }}>কোয়ালিটি স্টেপস (Steps)</label>
-              <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--primary)" }}>{steps}</span>
+          {engine === "cloud_gpu" && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "var(--text-2)" }}>কোয়ালিটি স্টেপস (Steps)</label>
+                <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--primary)" }}>{steps}</span>
+              </div>
+              <input type="range" min="1" max="50" step="1" value={steps} onChange={e => setSteps(parseInt(e.target.value))} style={{ width: "100%", cursor: "pointer", accentColor: "var(--primary)" }} />
             </div>
-            <input type="range" min="1" max="50" step="1" value={steps} onChange={e => setSteps(parseInt(e.target.value))} style={{ width: "100%", cursor: "pointer", accentColor: "var(--primary)" }} />
-          </div>
+          )}
 
           <div>
             <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-2)", marginBottom: "0.5rem" }}>ছবির পরিমাণ (Batch)</label>
@@ -606,113 +684,193 @@ export function AiImageGenerator({ apiKeys }) {
 
           {/* ── CONNECTION PANEL ──────────────────────────────────── */}
           <div style={{ background: "var(--surface-1)", border: "1px solid var(--glass-border)", borderRadius: "1rem", padding: "1.25rem", display: "flex", flexDirection: "column", gap: "1rem", flexShrink: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem" }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: "1.4rem", fontWeight: 800, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <Cpu size={22} color="var(--primary)" /> SDXL 1.0 Cloud GPU
-                </h2>
-                <p style={{ margin: "0.25rem 0 0", color: "var(--text-2)", fontSize: "0.85rem" }}>
-                  Google Colab এর মাধ্যমে শক্তিশালী GPU ব্যবহার করুন
-                </p>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "var(--surface-2)", border: "1px solid var(--glass-border)", borderRadius: "2rem", padding: "0.4rem 0.9rem" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor, display: "inline-block", boxShadow: status === "connected" ? `0 0 0 3px ${statusColor}33` : "none" }} />
-                  <span style={{ fontSize: "0.78rem", fontWeight: 700, color: statusColor }}>
-                    {status === "connected" ? "সংযুক্ত ✓" : status === "connecting" ? `সার্ভার রেডি হচ্ছে... ${connectProgress}%` : "বিচ্ছিন্ন"}
-                  </span>
-                </div>
-                {(status === "connected" || status === "connecting") && (
-                  <button onClick={handleStopColab} style={{ background: "none", border: "1px solid var(--danger)", color: "var(--danger)", padding: "0.4rem 0.8rem", borderRadius: "0.6rem", fontSize: "0.75rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                    <X size={12} /> সংযোগ বাতিল
-                  </button>
-                )}
-                {(status === "connected" || status === "connecting") && (
-                  <button onClick={() => window.electronAPI?.showColab()} title="Colab এর পেছনের কাজ দেখতে ক্লিক করুন" style={{ background: "var(--surface-2)", border: "1px solid var(--glass-border)", color: "var(--text-1)", padding: "0.4rem 0.8rem", borderRadius: "0.6rem", fontSize: "0.75rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                    <Maximize2 size={12} /> লগ দেখুন
-                  </button>
-                )}
-                {status === "disconnected" && (
-                  <button onClick={() => window.location.reload()} style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)", color: "#fff", border: "none", padding: "0.5rem 1rem", borderRadius: "0.6rem", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                    <RefreshCw size={14} /> আবার চেষ্টা করুন
-                  </button>
-                )}
-              </div>
-            </div>
-            {status === "disconnected" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", background: "rgba(239,68,68,0.06)", border: "1px dashed rgba(239,68,68,0.3)", borderRadius: "0.75rem", padding: "0.9rem 1.1rem", fontSize: "0.82rem", color: "var(--danger)", lineHeight: 1.7 }}>
-                <div>
-                  <strong style={{ display: "block", marginBottom: "0.4rem", fontWeight: 700 }}>⚠️ সার্ভার অফলাইন!</strong>
-                  GitHub থেকে পাওয়া সার্ভার লিঙ্কটি কাজ করছে না অথবা আপডেট করা হয়নি। আপনার Google Colab এর Cloudflare লিঙ্কটি নিচে দিন:
-                </div>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <input 
-                    type="text" 
-                    placeholder="https://your-url.trycloudflare.com" 
-                    value={manualUrl} 
-                    onChange={e => setManualUrl(e.target.value)} 
-                    style={{ flex: 1, padding: "0.5rem 0.75rem", borderRadius: "0.4rem", border: "1px solid var(--glass-border)", background: "var(--surface-2)", color: "var(--text-1)", fontSize: "0.8rem" }} 
-                  />
-                  <button onClick={handleManualConnect} style={{ background: "var(--primary)", color: "#fff", border: "none", padding: "0 1rem", borderRadius: "0.4rem", fontWeight: 600, fontSize: "0.8rem", cursor: "pointer" }}>
-                    Connect
-                  </button>
-                </div>
-                <div style={{ marginTop: "0.5rem", paddingTop: "0.75rem", borderTop: "1px solid rgba(239,68,68,0.2)", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                  <span style={{ fontWeight: 600, color: "var(--text-2)" }}>কোথাও সার্ভার রান করা নেই? নিচের লিংক থেকে রান করুন:</span>
-                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                    <button onClick={handleStartColab} style={{ background: "linear-gradient(135deg, #f97316, #ea580c)", color: "#fff", border: "none", padding: "0.5rem 0.9rem", borderRadius: "0.4rem", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem", boxShadow: "0 4px 12px rgba(249,115,22,0.2)" }}>
-                      <Cpu size={14} /> এক ক্লিকে সার্ভার চালু করুন (Auto-Hidden)
-                    </button>
-                    <button onClick={() => window.electronAPI?.openExternal(colabUrl)} style={{ background: "var(--surface-2)", color: "var(--text-1)", border: "1px solid var(--glass-border)", padding: "0.5rem 0.9rem", borderRadius: "0.4rem", fontWeight: 600, fontSize: "0.8rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                      <ExternalLink size={12} /> Open in Browser
-                    </button>
-                  </div>
-                </div>
-                
-                {/* ── Kaggle Fallback Settings ── */}
-                <div style={{ marginTop: "1rem", background: "rgba(0,0,0,0.1)", border: "1px solid var(--glass-border)", borderRadius: "0.5rem", padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setShowSettings(!showSettings)}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: 600, color: "var(--text-1)", fontSize: "0.85rem" }}>
-                      <Settings2 size={15} color="var(--primary)" /> Kaggle GPU Fallback (30h/week)
-                    </div>
-                    <div style={{ fontSize: "0.8rem", color: autoFallback ? "var(--success)" : "var(--text-3)" }}>
-                      {autoFallback ? "Enabled" : "Disabled"}
-                    </div>
-                  </div>
-                  
-                  {showSettings && (
-                    <div style={{ borderTop: "1px solid var(--glass-border)", paddingTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.75rem", animation: "fadeIn 0.2s ease-out" }}>
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-2)", lineHeight: 1.5 }}>
-                        Colab-এর লিমিট শেষ হলে অ্যাপটি নিজে থেকেই অফিশিয়াল Kaggle নোটবুকটি আপনার অ্যাকাউন্টে কপি করে সার্ভার রান করবে। আপনার শুধু জিমেইল দিয়ে লগইন করা থাকা লাগবে।
-                      </div>
-                      
-                      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8rem", color: "var(--text-1)", cursor: "pointer" }}>
-                        <input
-                          type="checkbox"
-                          checked={autoFallback}
-                          onChange={(e) => {
-                            setAutoFallback(e.target.checked);
-                            localStorage.setItem("auto_fallback", e.target.checked);
-                          }}
-                          style={{ accentColor: "var(--primary)" }}
-                        />
-                        Colab কাজ না করলে অটোমেটিক Kaggle চালু করুন (Recommended)
-                      </label>
+            {/* TOGGLE ENGINE BUTTONS */}
+            <div style={{ display: "flex", gap: "0.5rem", borderBottom: "1px solid var(--glass-border)", paddingBottom: "0.75rem", marginBottom: "0.25rem" }}>
+              <button 
+                onClick={() => setEngine("cloud_gpu")}
+                style={{
+                  flex: 1,
+                  padding: "0.6rem",
+                  background: engine === "cloud_gpu" ? "var(--primary)" : "var(--surface-2)",
+                  color: engine === "cloud_gpu" ? "#fff" : "var(--text-2)",
+                  border: "none",
+                  borderRadius: "0.5rem",
+                  fontWeight: 700,
+                  fontSize: "0.82rem",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.4rem",
+                  transition: "all 0.15s"
+                }}
+              >
+                <Cpu size={14} /> ⚡ Cloud GPU (ComfyUI)
+              </button>
 
-                      <button onClick={() => handleStartKaggle("https://www.kaggle.com/prantopranto/notebookc1bc2188cc")} disabled={status === "connecting"} style={{ alignSelf: "flex-start", padding: "0.4rem 0.8rem", background: "var(--surface-3)", border: "1px solid var(--primary)", color: "var(--primary)", borderRadius: "0.4rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                        <Cpu size={12} /> ম্যানুয়ালি Kaggle সার্ভার চালু করুন
+              <button 
+                onClick={() => {
+                  setEngine("cloudflare");
+                  setMode("txt2img");
+                }}
+                style={{
+                  flex: 1,
+                  padding: "0.6rem",
+                  background: engine === "cloudflare" ? "var(--primary)" : "var(--surface-2)",
+                  color: engine === "cloudflare" ? "#fff" : "var(--text-2)",
+                  border: "none",
+                  borderRadius: "0.5rem",
+                  fontWeight: 700,
+                  fontSize: "0.82rem",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.4rem",
+                  transition: "all 0.15s"
+                }}
+              >
+                <Zap size={14} /> ☁️ Cloudflare AI
+              </button>
+            </div>
+
+            {engine === "cloud_gpu" ? (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem" }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 800, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <Cpu size={20} color="var(--primary)" /> SDXL 1.0 Cloud GPU
+                    </h2>
+                    <p style={{ margin: "0.25rem 0 0", color: "var(--text-2)", fontSize: "0.82rem" }}>
+                      Google Colab এর মাধ্যমে শক্তিশালী GPU ব্যবহার করুন
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "var(--surface-2)", border: "1px solid var(--glass-border)", borderRadius: "2rem", padding: "0.4rem 0.9rem" }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor, display: "inline-block", boxShadow: status === "connected" ? `0 0 0 3px ${statusColor}33` : "none" }} />
+                      <span style={{ fontSize: "0.78rem", fontWeight: 700, color: statusColor }}>
+                        {status === "connected" ? "সংযুক্ত ✓" : status === "connecting" ? `সার্ভার রেডি হচ্ছে... ${connectProgress}%` : "বিচ্ছিন্ন"}
+                      </span>
+                    </div>
+                    {(status === "connected" || status === "connecting") && (
+                      <button onClick={handleStopColab} style={{ background: "none", border: "1px solid var(--danger)", color: "var(--danger)", padding: "0.4rem 0.8rem", borderRadius: "0.6rem", fontSize: "0.75rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        <X size={12} /> সংযোগ বাতিল
+                      </button>
+                    )}
+                    {(status === "connected" || status === "connecting") && (
+                      <button onClick={() => window.electronAPI?.showColab()} title="Colab এর পেছনের কাজ দেখতে ক্লিক করুন" style={{ background: "var(--surface-2)", border: "1px solid var(--glass-border)", color: "var(--text-1)", padding: "0.4rem 0.8rem", borderRadius: "0.6rem", fontSize: "0.75rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        <Maximize2 size={12} /> লগ দেখুন
+                      </button>
+                    )}
+                    {status === "disconnected" && (
+                      <button onClick={() => window.location.reload()} style={{ background: "linear-gradient(135deg,#2563eb,#7c3aed)", color: "#fff", border: "none", padding: "0.5rem 1rem", borderRadius: "0.6rem", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        <RefreshCw size={14} /> আবার চেষ্টা করুন
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {status === "disconnected" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", background: "rgba(239,68,68,0.06)", border: "1px dashed rgba(239,68,68,0.3)", borderRadius: "0.75rem", padding: "0.9rem 1.1rem", fontSize: "0.82rem", color: "var(--danger)", lineHeight: 1.7 }}>
+                    <div>
+                      <strong style={{ display: "block", marginBottom: "0.4rem", fontWeight: 700 }}>⚠️ সার্ভার অফলাইন!</strong>
+                      GitHub থেকে পাওয়া সার্ভার লিঙ্কটি কাজ করছে না অথবা আপডেট করা হয়নি। আপনার Google Colab এর Cloudflare লিঙ্কটি নিচে দিন:
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                      <input 
+                        type="text" 
+                        placeholder="https://your-url.trycloudflare.com" 
+                        value={manualUrl} 
+                        onChange={e => setManualUrl(e.target.value)} 
+                        style={{ flex: 1, padding: "0.5rem 0.75rem", borderRadius: "0.4rem", border: "1px solid var(--glass-border)", background: "var(--surface-2)", color: "var(--text-1)", fontSize: "0.8rem" }} 
+                      />
+                      <button onClick={handleManualConnect} style={{ background: "var(--primary)", color: "#fff", border: "none", padding: "0 1rem", borderRadius: "0.4rem", fontWeight: 600, fontSize: "0.8rem", cursor: "pointer" }}>
+                        Connect
                       </button>
                     </div>
-                  )}
+                    <div style={{ marginTop: "0.5rem", paddingTop: "0.75rem", borderTop: "1px solid rgba(239,68,68,0.2)", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                      <span style={{ fontWeight: 600, color: "var(--text-2)" }}>কোথাও সার্ভার রান করা নেই? নিচের লিংক থেকে রান করুন:</span>
+                      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                        <button onClick={handleStartColab} style={{ background: "linear-gradient(135deg, #f97316, #ea580c)", color: "#fff", border: "none", padding: "0.5rem 0.9rem", borderRadius: "0.4rem", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem", boxShadow: "0 4px 12px rgba(249,115,22,0.2)" }}>
+                          <Cpu size={14} /> এক ক্লিকে সার্ভার চালু করুন (Auto-Hidden)
+                        </button>
+                        <button onClick={() => window.electronAPI?.openExternal(colabUrl)} style={{ background: "var(--surface-2)", color: "var(--text-1)", border: "1px solid var(--glass-border)", padding: "0.5rem 0.9rem", borderRadius: "0.4rem", fontWeight: 600, fontSize: "0.8rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                          <ExternalLink size={12} /> Open in Browser
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* ── Kaggle Fallback Settings ── */}
+                    <div style={{ marginTop: "1rem", background: "rgba(0,0,0,0.1)", border: "1px solid var(--glass-border)", borderRadius: "0.5rem", padding: "0.75rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setShowSettings(!showSettings)}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: 600, color: "var(--text-1)", fontSize: "0.85rem" }}>
+                          <Settings2 size={15} color="var(--primary)" /> Kaggle GPU Fallback (30h/week)
+                        </div>
+                        <div style={{ fontSize: "0.8rem", color: autoFallback ? "var(--success)" : "var(--text-3)" }}>
+                          {autoFallback ? "Enabled" : "Disabled"}
+                        </div>
+                      </div>
+                      
+                      {showSettings && (
+                        <div style={{ borderTop: "1px solid var(--glass-border)", paddingTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.75rem", animation: "fadeIn 0.2s ease-out" }}>
+                          <div style={{ fontSize: "0.75rem", color: "var(--text-2)", lineHeight: 1.5 }}>
+                            Colab-এর লিমিট শেষ হলে অ্যাপটি নিজে থেকেই অফিশিয়াল Kaggle নোটবুকটি আপনার অ্যাকাউন্টে কপি করে সার্ভার রান করবে। আপনার শুধু জিমেইল দিয়ে লগইন করা থাকা লাগবে।
+                          </div>
+                          
+                          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8rem", color: "var(--text-1)", cursor: "pointer" }}>
+                            <input
+                              type="checkbox"
+                              checked={autoFallback}
+                              onChange={(e) => {
+                                setAutoFallback(e.target.checked);
+                                localStorage.setItem("auto_fallback", e.target.checked);
+                              }}
+                              style={{ accentColor: "var(--primary)" }}
+                            />
+                            Colab কাজ না করলে অটোমেটিক Kaggle চালু করুন (Recommended)
+                          </label>
+
+                          <button onClick={() => handleStartKaggle("https://www.kaggle.com/prantopranto/notebookc1bc2188cc")} disabled={status === "connecting"} style={{ alignSelf: "flex-start", padding: "0.4rem 0.8rem", background: "var(--surface-3)", border: "1px solid var(--primary)", color: "var(--primary)", borderRadius: "0.4rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                            <Cpu size={12} /> ম্যানুয়ালি Kaggle সার্ভার চালু করুন
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {status === "connected" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#22c55e", fontSize: "0.82rem", fontWeight: 600, flexWrap: "wrap" }}>
+                    <CheckCircle2 size={14} /> সংযুক্ত: <code style={{ color: "var(--text-2)", fontWeight: 400 }}>{serverUrl}</code>
+                      <button onClick={handleStopColab} style={{ background: "none", border: "none", color: "var(--danger)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline" }}>বিচ্ছিন্ন করুন</button>
+                  </div>
+                )}
+              </>
+            ) : engine === "cloudflare" ? (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem" }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 800, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <Zap size={20} color="var(--primary)" /> Cloudflare Workers AI
+                  </h2>
+                  <p style={{ margin: "0.25rem 0 0.5rem", color: "var(--text-2)", fontSize: "0.82rem" }}>
+                    ফ্রি ও দ্রুত ছবি তৈরি করুন। <span style={{color: "var(--primary)", cursor: "pointer", fontWeight: 700}} onClick={() => document.querySelector('#api-keys-btn')?.click()}>API Keys সেটিংসে</span> গিয়ে টোকেন বসান।
+                  </p>
+                  <select 
+                    value={cfModel.id} 
+                    onChange={e => setCfModel(CF_MODELS.find(m => m.id === e.target.value) || CF_MODELS[0])}
+                    style={{ padding: "0.4rem 0.6rem", borderRadius: "0.4rem", border: "1px solid var(--glass-border)", background: "var(--surface-2)", color: "var(--text-1)", fontSize: "0.8rem", width: "100%", maxWidth: "300px", cursor: "pointer" }}
+                  >
+                    {CF_MODELS.map(m => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: "2rem", padding: "0.4rem 0.9rem" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", display: "inline-block", boxShadow: "0 0 0 3px rgba(34,197,94,0.2)" }} />
+                  <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#22c55e" }}>
+                    সক্রিয় ও প্রস্তুত ✓
+                  </span>
                 </div>
               </div>
-            )}
-            {status === "connected" && (
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#22c55e", fontSize: "0.82rem", fontWeight: 600, flexWrap: "wrap" }}>
-                <CheckCircle2 size={14} /> সংযুক্ত: <code style={{ color: "var(--text-2)", fontWeight: 400 }}>{serverUrl}</code>
-                  <button onClick={handleStopColab} style={{ background: "none", border: "none", color: "var(--danger)", fontSize: "0.75rem", cursor: "pointer", textDecoration: "underline" }}>বিচ্ছিন্ন করুন</button>
-              </div>
-            )}
+            ) : null}
           </div>
 
           {/* ── GENERATION INTERFACE ──────────────────────────────── */}
@@ -725,7 +883,9 @@ export function AiImageGenerator({ apiKeys }) {
                     <Loader2 size={48} className="spin" />
                   </div>
                   <div style={{ textAlign: "center" }}>
-                    <div style={{ fontWeight: 700, fontSize: "1rem", marginBottom: "0.4rem" }}>SDXL 1.0 কাজ করছে...</div>
+                    <div style={{ fontWeight: 700, fontSize: "1rem", marginBottom: "0.4rem" }}>
+                      {engine === "cloudflare" ? "Flux কাজ করছে..." : "SDXL 1.0 কাজ করছে..."}
+                    </div>
                     <div style={{ color: "var(--text-2)", fontSize: "0.82rem" }}>{genStatus}</div>
                   </div>
                   <button onClick={handleCancel} style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444", padding: "0.4rem 1rem", borderRadius: "0.5rem", cursor: "pointer", fontWeight: 600, fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "0.3rem" }}>
@@ -773,20 +933,20 @@ export function AiImageGenerator({ apiKeys }) {
 
               <button
                 onClick={handleGenerate}
-                disabled={isGenerating || !prompt.trim() || status !== "connected"}
+                disabled={isGenerating || !prompt.trim() || (engine === "cloud_gpu" && status !== "connected")}
                 style={{
-                  background: status !== "connected" ? "var(--surface-2)" : "linear-gradient(135deg, #2563eb, #7c3aed)",
-                  color: status !== "connected" ? "var(--text-3)" : "#fff",
-                  border: "none", padding: "0.9rem", borderRadius: "0.75rem", fontWeight: 800, fontSize: "1rem", cursor: (isGenerating || !prompt.trim() || status !== "connected") ? "not-allowed" : "pointer",
+                  background: (engine === "cloud_gpu" && status !== "connected") ? "var(--surface-2)" : "linear-gradient(135deg, #2563eb, #7c3aed)",
+                  color: (engine === "cloud_gpu" && status !== "connected") ? "var(--text-3)" : "#fff",
+                  border: "none", padding: "0.9rem", borderRadius: "0.75rem", fontWeight: 800, fontSize: "1rem", cursor: (isGenerating || !prompt.trim() || (engine === "cloud_gpu" && status !== "connected")) ? "not-allowed" : "pointer",
                   opacity: (isGenerating || !prompt.trim()) ? 0.7 : 1,
                   display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
-                  boxShadow: status !== "connected" ? "none" : "0 4px 18px rgba(0,0,0,0.15)",
+                  boxShadow: (engine === "cloud_gpu" && status !== "connected") ? "none" : "0 4px 18px rgba(0,0,0,0.15)",
                   transition: "all 0.2s"
                 }}
               >
                 {isGenerating
                   ? <><Loader2 size={18} className="spin" /> তৈরি হচ্ছে...</>
-                  : <><Wand2 size={18} /> Generate with SDXL 1.0</>
+                  : <><Wand2 size={18} /> {engine === "pollinations" ? "Generate with Pollinations.ai" : "Generate with SDXL 1.0"}</>
                 }
               </button>
 

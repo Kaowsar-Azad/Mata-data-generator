@@ -569,7 +569,7 @@ const generateData = (name, parentGroup) => {
         subjects: [
           `a student focused on ${nameL}`,
           `academic and research concepts of ${nameL}`,
-          `a educator explaining ${nameL}`,
+          `an educator explaining ${nameL}`,
           `academic success depicting ${nameL}`
         ],
         environments: [
@@ -1022,7 +1022,7 @@ export const globalModifiers = [
   "highly detailed textures",
   "commercial grade color grading",
   "perfect composition",
-  "vogue editorial style"
+  "vogue editorial aesthetic"
 ];
 
 export const safetyModifiers = [

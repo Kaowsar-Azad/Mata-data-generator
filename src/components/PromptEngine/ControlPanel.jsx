@@ -88,6 +88,8 @@ const Sel = ({ value, onChange, children, focused, onFocus, onBlur }) => (
 /* ─── Main Component ─────────────────────────────────────── */
 export const ControlPanel = ({ onGenerate, isGenerating }) => {
   const [config, setConfig] = useState({
+    targetModel: 'default',
+    aspectRatio: '16:9',
     mainCategory: 'auto',
     categoryName: 'auto',
     mediaType: 'photo',
@@ -167,6 +169,26 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
         margin: '2px 0',
         scrollbarWidth: 'none',
       }}>
+
+      {/* ── Target AI Model ── */}
+      <div style={{ flexShrink: 0 }}>
+        <Label>Target AI Model</Label>
+        <Sel 
+          value={config.targetModel} 
+          onChange={v => set('targetModel', v)} 
+          focused={focus==='targetModel'} 
+          onFocus={foc('targetModel')} 
+          onBlur={blur}
+        >
+          <option value="default">Default (General)</option>
+          <option value="midjourney">Midjourney v6</option>
+          <option value="dalle3">DALL-E 3 (ChatGPT)</option>
+          <option value="flux">Flux 1.1 Pro</option>
+          <option value="nanobanana">Nano Banana</option>
+          <option value="ideogram">Ideogram</option>
+          <option value="recraft">Recraft</option>
+        </Sel>
+      </div>
 
       {/* ── Main Category ── */}
       <div style={{ flexShrink: 0 }}>
@@ -549,6 +571,28 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
           </>
         )}
       </div>
+
+      {/* thin divider */}
+      <div style={{ height: '1px', background: 'rgba(0,0,0,0.06)', flexShrink: 0 }} />
+
+      {/* ── Aspect Ratio (Only for Midjourney) ── */}
+      {config.targetModel === 'midjourney' && (
+        <>
+          <div style={{ flexShrink: 0 }}>
+            <Label>Aspect Ratio</Label>
+            <Sel value={config.aspectRatio} onChange={v => set('aspectRatio', v)} focused={focus==='ar'} onFocus={foc('ar')} onBlur={blur}>
+              <option value="16:9">16:9 (Landscape)</option>
+              <option value="9:16">9:16 (Portrait)</option>
+              <option value="1:1">1:1 (Square)</option>
+              <option value="4:5">4:5 (Vertical)</option>
+              <option value="3:2">3:2 (Classic Photo)</option>
+              <option value="2:3">2:3 (Classic Portrait)</option>
+            </Sel>
+          </div>
+          {/* thin divider */}
+          <div style={{ height: '1px', background: 'rgba(0,0,0,0.06)', flexShrink: 0 }} />
+        </>
+      )}
 
       {/* ── Additional Direction ── */}
       <div style={{ flexShrink: 0 }}>

@@ -665,10 +665,10 @@ export async function generatePromptFromImage(imageBuffer, mimeType, apiKeys, ap
       modelFormattingRule = `\n\nCRITICAL NANO BANANA FORMAT: You MUST output the ENTIRE PROMPT as a SINGLE, CONTINUOUS BLOCK OF TEXT. DO NOT use bullet points (- or *). DO NOT use bold headings (e.g., **Subject:**). DO NOT use line breaks or new paragraphs. Just one massively detailed, flowing paragraph.`;
       break;
     case 'Ideogram':
-      modelFormattingRule = `\n\nCRITICAL IDEOGRAM FORMAT: Describe text placement precisely if there is typography. Focus on graphic layouts, bold flat illustrations, or photographic rendering with text integration constraints.`;
+      modelFormattingRule = `\n\nCRITICAL IDEOGRAM FORMAT: Write a highly precise, natural language description. Ideogram strictly follows the prompt, so specify the exact positioning of subjects, lighting, and camera angles. If there is typography in the image, quote it exactly and describe its layout. Otherwise, focus on flawless descriptive detail without hallucinating text.`;
       break;
     case 'Recraft':
-      modelFormattingRule = `\n\nCRITICAL RECRAFT FORMAT: Describe vector icons, modern UI assets, clean line art weight, flat color palette, and minimal asset layouts. Focus on graphic design terminology.`;
+      modelFormattingRule = `\n\nCRITICAL RECRAFT FORMAT: Write a concise, structured prompt. Break down the description logically: start with the main subject, then environment, then stylistic attributes, lighting, and camera. Use clear, definitive terms rather than long flowing narratives.`;
       break;
     default:
       modelFormattingRule = `\n\nFormat the prompt as a clean, highly descriptive block of text optimized for image generation.`;

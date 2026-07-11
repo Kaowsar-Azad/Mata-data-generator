@@ -34,9 +34,33 @@ const formatCustomInstruction = (text) => {
 };
 
 /**
+ * Advanced grammar cleanup to prevent robotic text
+ */
+const cleanPrompt = (text) => {
+  let cleaned = text;
+  // Fix "a educator" -> "an educator"
+  cleaned = cleaned.replace(/\b([aA])\s+([aeiouAEIOU])/g, '$1n $2');
+  // Fix repeated prepositions
+  cleaned = cleaned.replace(/\bwithin\s+in\b/gi, 'within');
+  cleaned = cleaned.replace(/\bin\s+in\b/gi, 'in');
+  cleaned = cleaned.replace(/\bwith\s+with\b/gi, 'with');
+  // Fix spacing and punctuation
+  cleaned = cleaned.replace(/\s+/g, ' ');
+  cleaned = cleaned.replace(/\s+,/g, ',');
+  cleaned = cleaned.replace(/,{2,}/g, ',');
+  cleaned = cleaned.replace(/,\s*\./g, '.');
+  cleaned = cleaned.trim();
+  // Capitalize first letter
+  if (cleaned.length > 0) {
+    cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+  return cleaned;
+};
+
+/**
  * Generate a single prompt based on selected parameters
  */
-const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice, lightingChoice, cameraChoice, customInstruction, mainCategory) => {
+const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice, lightingChoice, cameraChoice, customInstruction, mainCategory, targetModel = 'default', aspectRatio = '16:9') => {
   let resolvedCategory = categoryName;
   
   if (!resolvedCategory || resolvedCategory === 'auto') {
@@ -70,51 +94,139 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
   const safety = getRandom(safetyModifiers);
   const custom = formatCustomInstruction(customInstruction);
 
-  // Switch based on media type
-  switch (mediaType) {
-    case 'video':
-      if (promptLength === 'detailed') {
-        const templates = [
-          `${pStyle} 4k stock footage prompt featuring ${subject}, ${action}, set in ${environment}, with ${pLighting}, ${pCamera}, stable cinematic framing, natural motion continuity, realistic detail, ${selectedModifiers}, ${safety}${custom}.`,
-          `${pStyle} commercial video prompt centered on ${subject}, ${action}, in ${environment}, shaped by ${pLighting} and ${pCamera}, smooth visual pacing, realistic scene detail, ${selectedModifiers}, ${safety}${custom}.`
-        ];
-        return getRandom(templates);
-      }
-      return `${pStyle} stock footage of ${subject}, ${action}, in ${environment}, ${pLighting}, ${pCamera}${custom}.`;
-      
-    case 'vector':
-    case 'illustration':
-      if (promptLength === 'detailed') {
-        const templates = [
-          `${pStyle} commercial illustration focused on ${subject}, ${action}, placed in ${environment}, with polished visual storytelling, clean edges, strong focal point, ${selectedModifiers}, controlled color balance, ${safety}${custom}.`,
-          `${pStyle} scalable vector asset built around ${subject}, ${action}, in ${environment}, disciplined shape language, ${selectedModifiers}, professional stock-library usability, ${safety}${custom}.`
-        ];
-        return getRandom(templates);
-      }
-      return `${pStyle} vector design for ${subject}, ${action}, clean scalable shapes, ${selectedModifiers}, editable look${custom}.`;
-      
-    case 'isolated_white':
-      if (promptLength === 'detailed') {
-        const templates = [
-          `${pStyle} commercial stock cutout of ${subject}, ${action}, isolated on a pure white seamless background, entire object fully visible with generous margins, no crop, no cut off edges, no shadow, no reflection, realistic detail, ${selectedModifiers}, ${safety}${custom}.`,
-          `${pStyle} extraction-ready stock subject featuring ${subject}, ${action}, placed on pure white seamless background, fully visible with safe margins, balanced centered layout, no cut off edges, no shadow, no reflection, ${selectedModifiers}, ${safety}${custom}.`
-        ];
-        return getRandom(templates);
-      }
-      return `${pStyle} isolated ${subject}, ${action}, pure white seamless background, fully visible, centered, no crop, no shadow, clean cutout${custom}.`;
+  let rawPrompt = '';
 
-    case 'photo':
-    default:
-      if (promptLength === 'detailed') {
-        const templates = [
-          `${pStyle} commercial stock photo of ${subject}, ${action}, placed in ${environment}, with ${pLighting}, ${pCamera}, ${selectedModifiers}, realistic textures, natural proportions, strong subject clarity, authentic stock photography detail, ${safety}${custom}.`,
-          `${pStyle} high-end stock image featuring ${subject}, ${action}, within ${environment}, shaped by ${pLighting}, ${pCamera}, refined visual hierarchy, authentic surface detail, premium commercial atmosphere, ${selectedModifiers}, polished photography look, ${safety}${custom}.`,
-          `${pStyle} premium commercial photography prompt showing ${subject}, ${action}, inside ${environment}, with ${pLighting} and ${pCamera}, strong buyer-friendly framing, ${selectedModifiers}, authentic real-world detail, brand-safe output${custom}.`
-        ];
-        return getRandom(templates);
-      }
-      return `${pStyle} stock photo of ${subject}, ${action}, in ${environment}, ${pLighting}, ${pCamera}, ${selectedModifiers}${custom}.`;
+  if (targetModel === 'midjourney') {
+    const base = `${subject}, ${action}, ${environment}`;
+    const keywords = `${pLighting}, ${pCamera}, ${selectedModifiers}, ${safety}${custom}`;
+    if (mediaType === 'isolated_white') {
+      const openings = [
+        `${pStyle} ${subject}, ${action}, isolated on pure white seamless background`,
+        `${subject}, ${action}, ${pStyle} style, isolated on pure white seamless background`,
+      ];
+      rawPrompt = `${getRandom(openings)}, ${keywords} --v 6.0 --ar ${aspectRatio}`;
+    } else {
+      const mjOpenings = [
+        `${pStyle} ${mediaType} of ${base}`,
+        `${mediaType} of ${subject}, ${pStyle} style, ${action}, ${environment}`,
+        `${subject}, ${action}, ${environment}, ${pStyle}`,
+      ];
+      rawPrompt = `${getRandom(mjOpenings)}, ${keywords}`;
+      if (mediaType === 'photo') rawPrompt += ` --v 6.0 --style raw --ar ${aspectRatio}`;
+      else rawPrompt += ` --v 6.0 --ar ${aspectRatio}`;
+    }
+  } 
+  else if (targetModel === 'dalle3') {
+    const typeText = mediaType === 'isolated_white' ? 'cutout on a pure white background' : mediaType;
+    const tail = `The scene is illuminated by ${pLighting} with ${pCamera}, emphasizing ${selectedModifiers}. ${safety}${custom}.`;
+    const openings = [
+      `A ${pStyle} ${typeText} of ${subject} ${action}, ${environment}.`,
+      `${subject} ${action}, ${environment} — a ${pStyle} ${typeText}.`,
+      `${pStyle} ${typeText} depicting ${subject} ${action}, ${environment}.`,
+    ];
+    rawPrompt = `${getRandom(openings)} ${tail}`;
+  } 
+  else if (targetModel === 'flux') {
+    const typeText = mediaType === 'isolated_white' ? 'cutout on a pure white background' : mediaType;
+    const tail = `Detailed textures, ${pLighting}, and ${pCamera}. Crisp composition, ${selectedModifiers}. ${safety}${custom}.`;
+    const openings = [
+      `A ${pStyle} ${typeText} of ${subject} ${action}, ${environment}.`,
+      `${subject} ${action}, ${environment} — a ${pStyle} ${typeText}.`,
+      `${pStyle} ${typeText} showing ${subject} ${action}, ${environment}.`,
+    ];
+    rawPrompt = `${getRandom(openings)} ${tail}`;
   }
+  else if (targetModel === 'nanobanana') {
+    const typeText = mediaType === 'isolated_white' ? 'cutout on a pure white seamless background' : mediaType;
+    const tail = `Beautifully captured with ${pLighting} and ${pCamera}, this highly detailed composition highlights intricate details, striking visual elements, and ${selectedModifiers} for a flawless look. ${safety}${custom}.`;
+    const openings = [
+      `A ${pStyle} ${typeText} of ${subject} ${action}, ${environment}.`,
+      `${subject} ${action}, ${environment} — a ${pStyle} ${typeText}.`,
+      `${pStyle} ${typeText} featuring ${subject} ${action}, ${environment}.`,
+    ];
+    rawPrompt = `${getRandom(openings)} ${tail}`;
+  }
+  else if (targetModel === 'ideogram') {
+    const typeText = mediaType === 'isolated_white' ? 'isolated cutout on white background' : mediaType;
+    const tail = `lit by ${pLighting} with ${pCamera}. High quality, ${selectedModifiers}, ${safety}${custom}.`;
+    const openings = [
+      `A ${pStyle} ${typeText} of ${subject} ${action}, ${environment},`,
+      `${subject} ${action}, ${environment} — ${pStyle} ${typeText},`,
+      `${pStyle} ${typeText} showing ${subject} ${action}, ${environment},`,
+    ];
+    rawPrompt = `${getRandom(openings)} ${tail}`;
+  }
+  else if (targetModel === 'recraft') {
+    const typeText = mediaType === 'isolated_white' ? 'isolated white background' : mediaType;
+    const tail = `${pStyle} style, ${pLighting}, ${pCamera}, ${typeText}, ${selectedModifiers}. ${safety}${custom}.`;
+    const openings = [
+      `${subject} ${action}, ${environment},`,
+      `${environment} — ${subject} ${action},`,
+      `${subject}, ${environment}, ${action},`,
+    ];
+    rawPrompt = `${getRandom(openings)} ${tail}`;
+  }
+  else {
+    // Default (General) - with opening variations per media type
+    switch (mediaType) {
+      case 'video': {
+        if (promptLength === 'detailed') {
+          const openings = [
+            `${pStyle} stock footage featuring ${subject} ${action}, ${environment}.`,
+            `${subject} ${action}, ${environment} — ${pStyle} stock footage.`,
+            `A ${pStyle} video of ${subject} ${action}, ${environment}.`,
+          ];
+          rawPrompt = `${getRandom(openings)} Cinematic ${pLighting} and ${pCamera}, stable motion, ${selectedModifiers}, ${safety}${custom}.`;
+        } else {
+          rawPrompt = `${pStyle} stock footage of ${subject} ${action}, ${environment}, ${pLighting}, ${pCamera}${custom}.`;
+        }
+        break;
+      }
+      case 'vector':
+      case 'illustration': {
+        if (promptLength === 'detailed') {
+          const openings = [
+            `${pStyle} illustration of ${subject} ${action}, ${environment}.`,
+            `${subject} ${action}, ${environment} — ${pStyle} vector art.`,
+            `A ${pStyle} vector design of ${subject} ${action}, ${environment}.`,
+          ];
+          rawPrompt = `${getRandom(openings)} Clean edges, strong focal point, ${selectedModifiers}, ${safety}${custom}.`;
+        } else {
+          rawPrompt = `${pStyle} vector design of ${subject} ${action}, ${selectedModifiers}${custom}.`;
+        }
+        break;
+      }
+      case 'isolated_white': {
+        if (promptLength === 'detailed') {
+          const openings = [
+            `${pStyle} cutout of ${subject} ${action}, isolated cleanly on a pure white seamless background.`,
+            `${subject} ${action} — ${pStyle} isolated cutout on a pure white seamless background.`,
+            `A ${pStyle} clean cutout of ${subject} ${action}, on a pure white seamless background.`,
+          ];
+          rawPrompt = `${getRandom(openings)} Entire object fully visible, realistic detail, no shadow, no reflection, ${selectedModifiers}, ${safety}${custom}.`;
+        } else {
+          rawPrompt = `${pStyle} isolated ${subject} ${action}, pure white background, centered, clean cutout${custom}.`;
+        }
+        break;
+      }
+      case 'photo':
+      default: {
+        if (promptLength === 'detailed') {
+          const openings = [
+            `${pStyle} stock photography of ${subject} ${action}, ${environment}.`,
+            `A ${pStyle} photograph of ${subject} ${action}, ${environment}.`,
+            `${subject} ${action}, ${environment} — ${pStyle} stock photo.`,
+          ];
+          rawPrompt = `${getRandom(openings)} Beautiful ${pLighting} with ${pCamera}, realistic textures, ${selectedModifiers}, ${safety}${custom}.`;
+        } else {
+          rawPrompt = `${pStyle} photo of ${subject} ${action}, ${environment}, ${pLighting}, ${pCamera}, ${selectedModifiers}${custom}.`;
+        }
+        break;
+      }
+    }
+  }
+
+  return cleanPrompt(rawPrompt);
 };
 
 /**
@@ -129,10 +241,12 @@ export const generatePrompts = ({
   lightingChoice = 'auto',
   cameraAngleChoice = 'auto',
   customInstruction = '',
-  count = 6
+  count = 6,
+  targetModel = 'default',
+  aspectRatio = '16:9'
 }) => {
   const uniquePrompts = new Set();
-  const maxAttempts = count * 20; // prevent infinite loops
+  const maxAttempts = count * 30; // increased from 20 to 30 for better uniqueness
   let attempts = 0;
 
   while (uniquePrompts.size < count && attempts < maxAttempts) {
@@ -144,7 +258,9 @@ export const generatePrompts = ({
       lightingChoice,
       cameraAngleChoice,
       customInstruction,
-      mainCategory
+      mainCategory,
+      targetModel,
+      aspectRatio
     );
     uniquePrompts.add(prompt);
     attempts++;
@@ -155,3 +271,4 @@ export const generatePrompts = ({
     text
   }));
 };
+

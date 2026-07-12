@@ -252,7 +252,7 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
               value={config.mainCategory} 
               onChange={v => {
                 set('mainCategory', v);
-                set('categoryName', v === 'auto' ? 'auto' : (mainCategories[v]?.[0] || ''));
+                set('categoryName', 'auto');
               }} 
               focused={focus==='maincat'} onFocus={foc('maincat')} onBlur={blur}
             >

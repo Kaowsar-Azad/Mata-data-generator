@@ -60,7 +60,7 @@ const cleanPrompt = (text) => {
 /**
  * Generate a single prompt based on selected parameters
  */
-const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice, lightingChoice, cameraChoice, customInstruction, mainCategory, targetModel = 'default', aspectRatio = '16:9') => {
+const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice, lightingChoice, cameraChoice, customInstruction, mainCategory, targetModel = 'default', aspectRatio = '16:9', promptIndex = 0) => {
   let resolvedCategory = categoryName;
   
   if (!resolvedCategory || resolvedCategory === 'auto') {
@@ -95,6 +95,7 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
   const custom = formatCustomInstruction(customInstruction);
 
   let rawPrompt = '';
+  const selectOpening = (openings, index) => openings[index % openings.length];
 
   if (targetModel === 'midjourney') {
     const base = `${subject}, ${action}, ${environment}`;
@@ -102,16 +103,19 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
     if (mediaType === 'isolated_white') {
       const openings = [
         `${pStyle} ${subject}, ${action}, isolated on pure white seamless background`,
-        `${subject}, ${action}, ${pStyle} style, isolated on pure white seamless background`,
+        `${subject}, ${action}, isolated on pure white seamless background, ${pStyle} style`,
+        `Isolated on pure white seamless background: ${pStyle} ${subject}, ${action}`,
+        `${subject}, ${action}, ${pStyle} design, isolated on white`,
       ];
-      rawPrompt = `${getRandom(openings)}, ${keywords} --v 6.0 --ar ${aspectRatio}`;
+      rawPrompt = `${selectOpening(openings, promptIndex)}, ${keywords} --v 6.0 --ar ${aspectRatio}`;
     } else {
       const mjOpenings = [
-        `${pStyle} ${mediaType} of ${base}`,
-        `${mediaType} of ${subject}, ${pStyle} style, ${action}, ${environment}`,
-        `${subject}, ${action}, ${environment}, ${pStyle}`,
+        `${pStyle} ${mediaType} of ${subject}, ${action}, ${environment}`,
+        `${subject}, ${action}, ${pStyle} ${mediaType}, ${environment}`,
+        `${environment}, ${pStyle} ${mediaType} of ${subject}, ${action}`,
+        `A ${pStyle} ${mediaType} capturing ${subject} ${action}, ${environment}`,
       ];
-      rawPrompt = `${getRandom(mjOpenings)}, ${keywords}`;
+      rawPrompt = `${selectOpening(mjOpenings, promptIndex)}, ${keywords}`;
       if (mediaType === 'photo') rawPrompt += ` --v 6.0 --style raw --ar ${aspectRatio}`;
       else rawPrompt += ` --v 6.0 --ar ${aspectRatio}`;
     }
@@ -122,9 +126,10 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
     const openings = [
       `A ${pStyle} ${typeText} of ${subject} ${action}, ${environment}.`,
       `${subject} ${action}, ${environment} — a ${pStyle} ${typeText}.`,
-      `${pStyle} ${typeText} depicting ${subject} ${action}, ${environment}.`,
+      `${environment}, a ${pStyle} ${typeText} of ${subject} ${action}.`,
+      `A ${typeText} capturing ${subject} ${action}, ${environment}, in a ${pStyle} aesthetic.`,
     ];
-    rawPrompt = `${getRandom(openings)} ${tail}`;
+    rawPrompt = `${selectOpening(openings, promptIndex)} ${tail}`;
   } 
   else if (targetModel === 'flux') {
     const typeText = mediaType === 'isolated_white' ? 'cutout on a pure white background' : mediaType;
@@ -132,9 +137,10 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
     const openings = [
       `A ${pStyle} ${typeText} of ${subject} ${action}, ${environment}.`,
       `${subject} ${action}, ${environment} — a ${pStyle} ${typeText}.`,
-      `${pStyle} ${typeText} showing ${subject} ${action}, ${environment}.`,
+      `${environment}, a ${pStyle} ${typeText} of ${subject} ${action}.`,
+      `A ${typeText} capturing ${subject} ${action}, ${environment}, in a ${pStyle} style.`,
     ];
-    rawPrompt = `${getRandom(openings)} ${tail}`;
+    rawPrompt = `${selectOpening(openings, promptIndex)} ${tail}`;
   }
   else if (targetModel === 'nanobanana') {
     const typeText = mediaType === 'isolated_white' ? 'cutout on a pure white seamless background' : mediaType;
@@ -142,9 +148,10 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
     const openings = [
       `A ${pStyle} ${typeText} of ${subject} ${action}, ${environment}.`,
       `${subject} ${action}, ${environment} — a ${pStyle} ${typeText}.`,
-      `${pStyle} ${typeText} featuring ${subject} ${action}, ${environment}.`,
+      `${environment}, a ${pStyle} ${typeText} of ${subject} ${action}.`,
+      `A ${typeText} featuring ${subject} ${action}, ${environment}, in a ${pStyle} style.`,
     ];
-    rawPrompt = `${getRandom(openings)} ${tail}`;
+    rawPrompt = `${selectOpening(openings, promptIndex)} ${tail}`;
   }
   else if (targetModel === 'ideogram') {
     const typeText = mediaType === 'isolated_white' ? 'isolated cutout on white background' : mediaType;
@@ -152,9 +159,10 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
     const openings = [
       `A ${pStyle} ${typeText} of ${subject} ${action}, ${environment},`,
       `${subject} ${action}, ${environment} — ${pStyle} ${typeText},`,
-      `${pStyle} ${typeText} showing ${subject} ${action}, ${environment},`,
+      `${environment}, a ${pStyle} ${typeText} of ${subject} ${action},`,
+      `A ${typeText} showing ${subject} ${action}, ${environment}, in a ${pStyle} aesthetic,`,
     ];
-    rawPrompt = `${getRandom(openings)} ${tail}`;
+    rawPrompt = `${selectOpening(openings, promptIndex)} ${tail}`;
   }
   else if (targetModel === 'recraft') {
     const typeText = mediaType === 'isolated_white' ? 'isolated white background' : mediaType;
@@ -163,8 +171,9 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
       `${subject} ${action}, ${environment},`,
       `${environment} — ${subject} ${action},`,
       `${subject}, ${environment}, ${action},`,
+      `A visual layout of ${subject} ${action}, ${environment},`,
     ];
-    rawPrompt = `${getRandom(openings)} ${tail}`;
+    rawPrompt = `${selectOpening(openings, promptIndex)} ${tail}`;
   }
   else {
     // Default (General) - with opening variations per media type
@@ -175,8 +184,9 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
             `${pStyle} stock footage featuring ${subject} ${action}, ${environment}.`,
             `${subject} ${action}, ${environment} — ${pStyle} stock footage.`,
             `A ${pStyle} video of ${subject} ${action}, ${environment}.`,
+            `In ${environment}, a ${pStyle} stock video capturing ${subject} ${action}.`,
           ];
-          rawPrompt = `${getRandom(openings)} Cinematic ${pLighting} and ${pCamera}, stable motion, ${selectedModifiers}, ${safety}${custom}.`;
+          rawPrompt = `${selectOpening(openings, promptIndex)} Cinematic ${pLighting} and ${pCamera}, stable motion, ${selectedModifiers}, ${safety}${custom}.`;
         } else {
           rawPrompt = `${pStyle} stock footage of ${subject} ${action}, ${environment}, ${pLighting}, ${pCamera}${custom}.`;
         }
@@ -189,8 +199,9 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
             `${pStyle} illustration of ${subject} ${action}, ${environment}.`,
             `${subject} ${action}, ${environment} — ${pStyle} vector art.`,
             `A ${pStyle} vector design of ${subject} ${action}, ${environment}.`,
+            `Against ${environment}, a ${pStyle} illustration of ${subject} ${action}.`,
           ];
-          rawPrompt = `${getRandom(openings)} Clean edges, strong focal point, ${selectedModifiers}, ${safety}${custom}.`;
+          rawPrompt = `${selectOpening(openings, promptIndex)} Clean edges, strong focal point, ${selectedModifiers}, ${safety}${custom}.`;
         } else {
           rawPrompt = `${pStyle} vector design of ${subject} ${action}, ${selectedModifiers}${custom}.`;
         }
@@ -202,8 +213,9 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
             `${pStyle} cutout of ${subject} ${action}, isolated cleanly on a pure white seamless background.`,
             `${subject} ${action} — ${pStyle} isolated cutout on a pure white seamless background.`,
             `A ${pStyle} clean cutout of ${subject} ${action}, on a pure white seamless background.`,
+            `Isolated cleanly on a pure white seamless background: a ${pStyle} cutout of ${subject} ${action}.`,
           ];
-          rawPrompt = `${getRandom(openings)} Entire object fully visible, realistic detail, no shadow, no reflection, ${selectedModifiers}, ${safety}${custom}.`;
+          rawPrompt = `${selectOpening(openings, promptIndex)} Entire object fully visible, realistic detail, no shadow, no reflection, ${selectedModifiers}, ${safety}${custom}.`;
         } else {
           rawPrompt = `${pStyle} isolated ${subject} ${action}, pure white background, centered, clean cutout${custom}.`;
         }
@@ -216,8 +228,9 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
             `${pStyle} stock photography of ${subject} ${action}, ${environment}.`,
             `A ${pStyle} photograph of ${subject} ${action}, ${environment}.`,
             `${subject} ${action}, ${environment} — ${pStyle} stock photo.`,
+            `In ${environment}, a ${pStyle} stock photo of ${subject} ${action}.`,
           ];
-          rawPrompt = `${getRandom(openings)} Beautiful ${pLighting} with ${pCamera}, realistic textures, ${selectedModifiers}, ${safety}${custom}.`;
+          rawPrompt = `${selectOpening(openings, promptIndex)} Beautiful ${pLighting} with ${pCamera}, realistic textures, ${selectedModifiers}, ${safety}${custom}.`;
         } else {
           rawPrompt = `${pStyle} photo of ${subject} ${action}, ${environment}, ${pLighting}, ${pCamera}, ${selectedModifiers}${custom}.`;
         }
@@ -249,18 +262,29 @@ export const generatePrompts = ({
   const maxAttempts = count * 30; // increased from 20 to 30 for better uniqueness
   let attempts = 0;
 
+  // Pre-shuffle styles, lightings, camera angles for deterministic diversity in the batch
+  const shuffledStyles = [...styles].sort(() => 0.5 - Math.random());
+  const shuffledLightings = [...lighting].sort(() => 0.5 - Math.random());
+  const shuffledCameras = [...cameraAngles].sort(() => 0.5 - Math.random());
+
   while (uniquePrompts.size < count && attempts < maxAttempts) {
+    const currentIndex = uniquePrompts.size;
+    const batchStyle = styleChoice === 'auto' ? shuffledStyles[currentIndex % shuffledStyles.length] : styleChoice;
+    const batchLighting = lightingChoice === 'auto' ? shuffledLightings[currentIndex % shuffledLightings.length] : lightingChoice;
+    const batchCamera = cameraAngleChoice === 'auto' ? shuffledCameras[currentIndex % shuffledCameras.length] : cameraAngleChoice;
+
     const prompt = generateSinglePrompt(
       categoryName,
       mediaType,
       promptLength,
-      styleChoice,
-      lightingChoice,
-      cameraAngleChoice,
+      batchStyle,
+      batchLighting,
+      batchCamera,
       customInstruction,
       mainCategory,
       targetModel,
-      aspectRatio
+      aspectRatio,
+      currentIndex
     );
     uniquePrompts.add(prompt);
     attempts++;

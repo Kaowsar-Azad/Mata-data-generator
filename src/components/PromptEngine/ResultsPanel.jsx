@@ -16,7 +16,6 @@ export const ResultsPanel = ({ prompts, onClear, isGenerating, statusText }) => 
   const handleCopySingle = (prompt) => {
     navigator.clipboard.writeText(prompt.text).catch(() => {});
     setCopiedId(prompt.id);
-    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const handleCopyAll = () => {
@@ -150,7 +149,9 @@ export const ResultsPanel = ({ prompts, onClear, isGenerating, statusText }) => 
                     border: `1px solid ${CARD_BORDER}`,
                     borderRadius: '12px',
                     padding: '12px 14px',
-                    position: 'relative',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
                     transition: 'border-color .2s, box-shadow .2s',
                     boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                   }}
@@ -163,47 +164,68 @@ export const ResultsPanel = ({ prompts, onClear, isGenerating, statusText }) => 
                     e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.03)';
                   }}
                 >
-                  {/* Number badge */}
-                  <div style={{
-                    position: 'absolute', top: '11px', left: '12px',
-                    width: '20px', height: '20px', borderRadius: '6px',
-                    background: 'var(--primary-glow)',
-                    border: '1px solid rgba(37,99,235,0.15)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '0.58rem', fontWeight: 800, color: 'var(--primary)',
-                  }}>
-                    {index + 1}
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                    {/* Number badge */}
+                    <div style={{
+                      flexShrink: 0,
+                      width: '20px', height: '20px', borderRadius: '6px',
+                      background: 'var(--primary-glow)',
+                      border: '1px solid rgba(37,99,235,0.15)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '0.58rem', fontWeight: 800, color: 'var(--primary)',
+                      marginTop: '2px'
+                    }}>
+                      {index + 1}
+                    </div>
+
+                    <p style={{
+                      fontSize: '0.78rem', color: 'var(--text-2)',
+                      lineHeight: 1.7, margin: 0,
+                      userSelect: 'text',
+                      flex: 1,
+                    }}>
+                      {prompt.text}
+                    </p>
                   </div>
 
-                  <p style={{
-                    fontSize: '0.78rem', color: 'var(--text-2)',
-                    lineHeight: 1.7, margin: 0,
-                    paddingLeft: '28px', paddingRight: '30px',
-                    userSelect: 'text',
+                  {/* Actions Row at bottom */}
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'flex-end', 
+                    borderTop: '1px dashed rgba(0,0,0,0.05)', 
+                    paddingTop: '8px', 
+                    marginTop: '4px' 
                   }}>
-                    {prompt.text}
-                  </p>
-
-                  {/* Copy button */}
-                  <button
-                    onClick={() => handleCopySingle(prompt)}
-                    title="Copy prompt"
-                    style={{
-                      position: 'absolute', top: '10px', right: '10px',
-                      padding: '4px', borderRadius: '6px',
-                      border: '1px solid rgba(0,0,0,0.06)',
-                      background: 'rgba(255,255,255,0.7)',
-                      color: copiedId === prompt.id ? '#10b981' : '#9ca3af',
-                      cursor: 'pointer', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center',
-                      transition: 'all .15s', fontFamily: 'inherit',
-                    }}
-                  >
-                    {copiedId === prompt.id
-                      ? <Check style={{ width: '12px', height: '12px' }} />
-                      : <Copy style={{ width: '12px', height: '12px' }} />
-                    }
-                  </button>
+                    <button
+                      onClick={() => handleCopySingle(prompt)}
+                      title="Copy prompt"
+                      style={{
+                        padding: '4px 10px', borderRadius: '6px',
+                        width: '76px',
+                        border: copiedId === prompt.id ? '1px solid #10b981' : '1px solid rgba(0,0,0,0.06)',
+                        background: copiedId === prompt.id ? '#ecfdf5' : 'rgba(255,255,255,0.85)',
+                        color: copiedId === prompt.id ? '#10b981' : '#4b5563',
+                        cursor: 'pointer', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center',
+                        gap: '4px',
+                        transition: 'all .2s ease', fontFamily: 'inherit',
+                        fontSize: '0.65rem',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {copiedId === prompt.id ? (
+                        <>
+                          <Check style={{ width: '11px', height: '11px' }} />
+                          <span>Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy style={{ width: '11px', height: '11px' }} />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
 
 
                 </motion.div>

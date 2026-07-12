@@ -5,6 +5,8 @@ import {
   lighting, 
   cameraAngles, 
   globalModifiers, 
+  vectorModifiers,
+  illustrationModifiers,
   safetyModifiers 
 } from './dataset';
 
@@ -90,7 +92,11 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
   const action = getRandom(categoryData.actions);
   
   // Get modifiers
-  const selectedModifiers = getMultipleRandom(globalModifiers, promptLength === 'detailed' ? 3 : 1).join(', ');
+  let sourceModifiers = globalModifiers;
+  if (mediaType === 'vector') sourceModifiers = vectorModifiers;
+  else if (mediaType === 'illustration') sourceModifiers = illustrationModifiers;
+  
+  const selectedModifiers = getMultipleRandom(sourceModifiers, promptLength === 'detailed' ? 3 : 1).join(', ');
   const safety = getRandom(safetyModifiers);
   const custom = formatCustomInstruction(customInstruction);
 
@@ -99,7 +105,8 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
 
   if (targetModel === 'midjourney') {
     const base = `${subject}, ${action}, ${environment}`;
-    const keywords = `${pLighting}, ${pCamera}, ${selectedModifiers}, ${safety}${custom}`;
+    const isGraphic = mediaType === 'vector' || mediaType === 'illustration';
+    const keywords = isGraphic ? `${selectedModifiers}, ${safety}${custom}` : `${pLighting}, ${pCamera}, ${selectedModifiers}, ${safety}${custom}`;
     if (mediaType === 'isolated_white') {
       const openings = [
         `${pStyle} ${subject}, ${action}, isolated on pure white seamless background`,
@@ -122,7 +129,10 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
   } 
   else if (targetModel === 'dalle3') {
     const typeText = mediaType === 'isolated_white' ? 'cutout on a pure white background' : mediaType;
-    const tail = `The scene is illuminated by ${pLighting} with ${pCamera}, emphasizing ${selectedModifiers}. ${safety}${custom}.`;
+    const isGraphic = mediaType === 'vector' || mediaType === 'illustration';
+    const tail = isGraphic 
+      ? `Emphasizing ${selectedModifiers}. ${safety}${custom}.`
+      : `The scene is illuminated by ${pLighting} with ${pCamera}, emphasizing ${selectedModifiers}. ${safety}${custom}.`;
     const openings = [
       `A ${pStyle} ${typeText} of ${subject} ${action}, ${environment}.`,
       `${subject} ${action}, ${environment} — a ${pStyle} ${typeText}.`,
@@ -133,7 +143,10 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
   } 
   else if (targetModel === 'flux') {
     const typeText = mediaType === 'isolated_white' ? 'cutout on a pure white background' : mediaType;
-    const tail = `Detailed textures, ${pLighting}, and ${pCamera}. Crisp composition, ${selectedModifiers}. ${safety}${custom}.`;
+    const isGraphic = mediaType === 'vector' || mediaType === 'illustration';
+    const tail = isGraphic
+      ? `Clean composition, ${selectedModifiers}. ${safety}${custom}.`
+      : `Detailed textures, ${pLighting}, and ${pCamera}. Crisp composition, ${selectedModifiers}. ${safety}${custom}.`;
     const openings = [
       `A ${pStyle} ${typeText} of ${subject} ${action}, ${environment}.`,
       `${subject} ${action}, ${environment} — a ${pStyle} ${typeText}.`,
@@ -144,7 +157,10 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
   }
   else if (targetModel === 'nanobanana') {
     const typeText = mediaType === 'isolated_white' ? 'cutout on a pure white seamless background' : mediaType;
-    const tail = `Beautifully captured with ${pLighting} and ${pCamera}, this highly detailed composition highlights intricate details, striking visual elements, and ${selectedModifiers} for a flawless look. ${safety}${custom}.`;
+    const isGraphic = mediaType === 'vector' || mediaType === 'illustration';
+    const tail = isGraphic 
+      ? `This stunning composition features clean elements, perfect layout, and ${selectedModifiers} for a professional look. ${safety}${custom}.` 
+      : `Beautifully captured with ${pLighting} and ${pCamera}, this highly detailed composition highlights intricate details, striking visual elements, and ${selectedModifiers} for a flawless look. ${safety}${custom}.`;
     const openings = [
       `A ${pStyle} ${typeText} of ${subject} ${action}, ${environment}.`,
       `${subject} ${action}, ${environment} — a ${pStyle} ${typeText}.`,
@@ -155,7 +171,10 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
   }
   else if (targetModel === 'ideogram') {
     const typeText = mediaType === 'isolated_white' ? 'isolated cutout on white background' : mediaType;
-    const tail = `lit by ${pLighting} with ${pCamera}. High quality, ${selectedModifiers}, ${safety}${custom}.`;
+    const isGraphic = mediaType === 'vector' || mediaType === 'illustration';
+    const tail = isGraphic
+      ? `High quality, ${selectedModifiers}, ${safety}${custom}.`
+      : `lit by ${pLighting} with ${pCamera}. High quality, ${selectedModifiers}, ${safety}${custom}.`;
     const openings = [
       `A ${pStyle} ${typeText} of ${subject} ${action}, ${environment},`,
       `${subject} ${action}, ${environment} — ${pStyle} ${typeText},`,
@@ -166,7 +185,10 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
   }
   else if (targetModel === 'recraft') {
     const typeText = mediaType === 'isolated_white' ? 'isolated white background' : mediaType;
-    const tail = `${pStyle} style, ${pLighting}, ${pCamera}, ${typeText}, ${selectedModifiers}. ${safety}${custom}.`;
+    const isGraphic = mediaType === 'vector' || mediaType === 'illustration';
+    const tail = isGraphic
+      ? `${pStyle} style, ${typeText}, ${selectedModifiers}. ${safety}${custom}.`
+      : `${pStyle} style, ${pLighting}, ${pCamera}, ${typeText}, ${selectedModifiers}. ${safety}${custom}.`;
     const openings = [
       `${subject} ${action}, ${environment},`,
       `${environment} — ${subject} ${action},`,
@@ -192,18 +214,31 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
         }
         break;
       }
-      case 'vector':
+      case 'vector': {
+        if (promptLength === 'detailed') {
+          const openings = [
+            `${pStyle} flat vector design of ${subject} ${action}, ${environment}.`,
+            `${subject} ${action}, ${environment} — ${pStyle} vector graphic.`,
+            `A ${pStyle} scalable vector illustration of ${subject} ${action}, ${environment}.`,
+            `Against ${environment}, a ${pStyle} clean vector art of ${subject} ${action}.`,
+          ];
+          rawPrompt = `${selectOpening(openings, promptIndex)} Clean edges, solid colors, Adobe Illustrator style, strong focal point, ${selectedModifiers}, ${safety}${custom}.`;
+        } else {
+          rawPrompt = `${pStyle} vector graphic of ${subject} ${action}, clean shapes, ${selectedModifiers}${custom}.`;
+        }
+        break;
+      }
       case 'illustration': {
         if (promptLength === 'detailed') {
           const openings = [
-            `${pStyle} illustration of ${subject} ${action}, ${environment}.`,
-            `${subject} ${action}, ${environment} — ${pStyle} vector art.`,
-            `A ${pStyle} vector design of ${subject} ${action}, ${environment}.`,
-            `Against ${environment}, a ${pStyle} illustration of ${subject} ${action}.`,
+            `${pStyle} digital illustration of ${subject} ${action}, ${environment}.`,
+            `${subject} ${action}, ${environment} — ${pStyle} detailed artwork.`,
+            `A ${pStyle} beautifully drawn illustration of ${subject} ${action}, ${environment}.`,
+            `Against ${environment}, a ${pStyle} conceptual illustration of ${subject} ${action}.`,
           ];
-          rawPrompt = `${selectOpening(openings, promptIndex)} Clean edges, strong focal point, ${selectedModifiers}, ${safety}${custom}.`;
+          rawPrompt = `${selectOpening(openings, promptIndex)} Expressive style, artistic detail, strong focal point, ${selectedModifiers}, ${safety}${custom}.`;
         } else {
-          rawPrompt = `${pStyle} vector design of ${subject} ${action}, ${selectedModifiers}${custom}.`;
+          rawPrompt = `${pStyle} digital illustration of ${subject} ${action}, ${selectedModifiers}${custom}.`;
         }
         break;
       }

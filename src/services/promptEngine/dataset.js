@@ -222,7 +222,6 @@ export const mainCategories = {
   ],
   "Graphic Elements": [
     "Lines",
-    "Arrows",
     "Dividers",
     "Shapes",
     "Scribbles",
@@ -303,28 +302,9 @@ export const mainCategories = {
     "Posts",
     "Covers"
   ],
-  "Holidays": [
-    "Christmas",
-    "New Year",
-    "Halloween",
-    "Valentine's Day",
-    "Ramadan",
-    "Eid",
-    "Diwali"
-  ],
-  "Religion": [
-    "Islam",
-    "Christianity",
-    "Hinduism",
-    "Buddhism",
-    "Prayer"
-  ],
-  "Culture": [
-    "Traditional Clothing",
-    "Cultural Festival",
-    "Heritage",
-    "Folk Art"
-  ],
+
+
+
   "Industry": [
     "Factory",
     "Manufacturing",
@@ -742,6 +722,26 @@ const generateData = (name, parentGroup) => {
         ]
       };
     case "Icons":
+      return {
+        subjects: [
+          `a complete set of clean ${nameL}`,
+          `a unified collection of minimalist ${nameL}`,
+          `perfectly aligned ${nameL} arranged in a neat grid`,
+          `flat design graphic icons depicting ${nameL}`
+        ],
+        environments: [
+          "against a solid, clean flat color background",
+          "isolated on a pristine white background",
+          "presented with generous and balanced spacing between each icon",
+          "arranged on a minimal, invisible grid structure"
+        ],
+        actions: [
+          "designed with clean vector precision",
+          "optimized for website and mobile app navigation",
+          "drawn with perfectly scalable strokes and solid fills",
+          "isolated for easy drag-and-drop usage"
+        ]
+      };
     case "UI Elements":
     case "Infographics":
       return {
@@ -785,29 +785,7 @@ const generateData = (name, parentGroup) => {
           "styled with modern commercial aesthetics"
         ]
       };
-    case "Holidays":
-    case "Religion":
-    case "Culture":
-      return {
-        subjects: [
-          `a festive celebration of ${nameL}`,
-          `a symbolic representation of ${nameL}`,
-          `traditional items depicting ${nameL}`,
-          `candid moments showing ${nameL}`
-        ],
-        environments: [
-          "in a warmly decorated cozy home environment",
-          "during a vibrant community celebration",
-          "at a historical cultural location",
-          "in a beautifully lit prayer space"
-        ],
-        actions: [
-          "evoking a strong sense of joy and community",
-          "highlighting deep-rooted traditions and heritage",
-          "captured in a warm, candid style",
-          "demonstrating traditional customs"
-        ]
-      };
+
     case "Industry":
     case "Agriculture":
       return {
@@ -922,7 +900,8 @@ export function addCustomSubCategory(mainCat, subCat) {
 export const mediaTypes = [
   { id: "photo", label: "Stock Photo" },
   { id: "video", label: "Stock Video (Footage)" },
-  { id: "vector", label: "Vector Illustration" },
+  { id: "vector", label: "Vector Graphics" },
+  { id: "illustration", label: "Digital Illustration" },
   { id: "isolated_white", label: "Isolated on White (Cutout)" }
 ];
 
@@ -1023,6 +1002,26 @@ export const globalModifiers = [
   "commercial grade color grading",
   "perfect composition",
   "vogue editorial aesthetic"
+];
+
+export const vectorModifiers = [
+  "pure flat 2D vector, NO drop shadows, NO 3D rendering",
+  "clean crisp lines, solid colors only, zero gradients",
+  "smooth scalable curves, strict 2D illustration",
+  "flawless flat design, no lighting effects, completely flat",
+  "high-end commercial vector art, UI icon style",
+  "isolated clean elements, perfectly flat shapes",
+  "modern minimalist graphics, zero depth, zero shadow"
+];
+
+export const illustrationModifiers = [
+  "rich artistic details",
+  "expressive digital painting",
+  "vibrant illustrative style",
+  "beautifully composed artwork",
+  "creative visual storytelling",
+  "highly detailed drawing",
+  "stylized digital illustration"
 ];
 
 export const safetyModifiers = [

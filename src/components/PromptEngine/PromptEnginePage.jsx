@@ -3,27 +3,39 @@ import { Helmet, HelmetProvider } from 'react-helmet-async';
 import { ControlPanel } from './ControlPanel';
 import { ResultsPanel } from './ResultsPanel';
 import { generatePrompts } from '../../services/promptEngine/generator';
+import { generateAIPrompts } from '../../services/promptEngine/aiGenerator';
 import { motion } from 'framer-motion';
 
-export const PromptEnginePage = ({ apiKeys, apiProvider }) => {
+export const PromptEnginePage = ({ apiKeys, apiProvider, promptGenMode }) => {
   const [prompts, setPrompts] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusText, setStatusText] = useState('');
 
   const handleGenerate = async (config) => {
     setIsGenerating(true);
-    setStatusText('Preparing prompt rules...');
     setPrompts([]);
     try {
-      await new Promise(r => setTimeout(r, 220));
-      setStatusText('Blending category, style and lighting...');
-      await new Promise(r => setTimeout(r, 320));
-      setStatusText('Building unique prompt variations...');
-      const newPrompts = generatePrompts(config);
-      await new Promise(r => setTimeout(r, 200));
-      setPrompts(newPrompts);
+      if (promptGenMode === 'ai') {
+        const providerName = Array.isArray(apiProvider) ? apiProvider[0] : apiProvider;
+        setStatusText(`Generating prompts with ${providerName.toUpperCase()} AI...`);
+        const rawPrompts = await generateAIPrompts({ config, apiKeys, apiProvider });
+        setPrompts(rawPrompts.map((text, index) => ({
+          id: `ai-prompt-${Date.now()}-${index}`,
+          text
+        })));
+      } else {
+        setStatusText('Preparing prompt rules...');
+        await new Promise(r => setTimeout(r, 220));
+        setStatusText('Blending category, style and lighting...');
+        await new Promise(r => setTimeout(r, 320));
+        setStatusText('Building unique prompt variations...');
+        const newPrompts = generatePrompts(config);
+        await new Promise(r => setTimeout(r, 200));
+        setPrompts(newPrompts);
+      }
     } catch (err) {
       console.error('Failed to generate prompts:', err);
+      alert(err.message || 'AI Generation failed. Please check your connection and API Keys.');
     } finally {
       setIsGenerating(false);
       setStatusText('');

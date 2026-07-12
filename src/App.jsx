@@ -11,6 +11,7 @@ import { EpsPreviewGenerator } from './components/EpsPreviewGenerator'
 import { ImageUpscaler } from './components/ImageUpscaler'
 import { AiImageGenerator } from './components/AiImageGenerator'
 import { PromptEnginePage } from './components/PromptEngine/PromptEnginePage'
+import { PromptEngineSettings } from './components/PromptEngine/PromptEngineSettings'
 import { Sparkles, Zap, Image as ImageIcon, Eraser, Box, ChevronLeft, ChevronRight, Server, Key, Camera, Maximize, Cpu, Wand2 } from 'lucide-react'
 import { motion } from 'framer-motion'
 
@@ -129,6 +130,7 @@ function App() {
     targetModel: 'ChatGPT',
   })
   const [activeTab, setActiveTab] = useState('metadata')
+  const [promptGenMode, setPromptGenMode] = useState('local')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [editingFtpConfig, setEditingFtpConfig] = useState(null)
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false)
@@ -346,6 +348,14 @@ function App() {
             />
           )}
 
+          {/* PROMPT GENERATOR SETTINGS */}
+          {sidebarOpen && activeTab === 'promptengine' && (
+            <PromptEngineSettings 
+              activeMode={promptGenMode} 
+              onModeChange={setPromptGenMode} 
+            />
+          )}
+
           {/* AI IMAGE SETTINGS PORTAL */}
           {sidebarOpen && activeTab === 'aiimage' && (
             <div id="ai-image-settings-portal" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}></div>
@@ -396,7 +406,11 @@ function App() {
         </TabWrapper>
         
         <TabWrapper active={activeTab === 'promptengine'}>
-          <PromptEnginePage apiKeys={apiKeys} apiProvider={apiProvider} />
+          <PromptEnginePage 
+            apiKeys={apiKeys} 
+            apiProvider={apiProvider} 
+            promptGenMode={promptGenMode} 
+          />
         </TabWrapper>
         
         <TabWrapper active={activeTab === 'prompt'}>

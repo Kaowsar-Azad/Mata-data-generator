@@ -6,7 +6,11 @@ import {
   cameraAngles, 
   globalModifiers, 
   vectorModifiers,
-  illustrationModifiers,
+  techIllustrationModifiers,
+  natureIllustrationModifiers,
+  lifestyleIllustrationModifiers,
+  generalIllustrationModifiers,
+  threeDModifiers,
   safetyModifiers 
 } from './dataset';
 
@@ -87,14 +91,51 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
   const pCamera = cameraChoice === 'auto' ? getRandom(cameraAngles) : cameraChoice;
   
   // Get category specific elements
-  const subject = getRandom(categoryData.subjects);
-  const environment = getRandom(categoryData.environments);
+  let subject = getRandom(categoryData.subjects);
+  let environment = getRandom(categoryData.environments);
   const action = getRandom(categoryData.actions);
+  
+  if (mediaType === 'vector') {
+    if (!subject.toLowerCase().includes('vector') && !subject.toLowerCase().includes('icon')) {
+      // Remove leading 'a ' or 'an ' if present to avoid "a flat vector illustration of a..."
+      const cleanSubject = subject.replace(/^(a|an)\s+/i, '');
+      subject = `a flat vector illustration of ${cleanSubject}`;
+    }
+    if (!environment.toLowerCase().includes('flat') && !environment.toLowerCase().includes('white background')) {
+      environment = `${environment}, drawn in a minimal flat style`;
+    }
+  }
   
   // Get modifiers
   let sourceModifiers = globalModifiers;
-  if (mediaType === 'vector') sourceModifiers = vectorModifiers;
-  else if (mediaType === 'illustration') sourceModifiers = illustrationModifiers;
+  if (mediaType === 'vector') {
+    sourceModifiers = vectorModifiers;
+  } else if (mediaType === 'illustration') {
+    const techCategories = ['Technology', 'Architecture', 'Environment'];
+    const natureCategories = ['Nature', 'Animals', 'Food', 'Drinks', 'Fashion', 'Beauty'];
+    const lifestyleCategories = ['People', 'Lifestyle', 'Healthcare', 'Wellness', 'Education', 'Sports', 'Travel'];
+    
+    // Find the main category for the current categoryName
+    let resolvedMain = 'Business'; // fallback
+    for (const [mainCat, subCats] of Object.entries(mainCategories)) {
+      if (subCats.includes(categoryName)) {
+        resolvedMain = mainCat;
+        break;
+      }
+    }
+
+    if (techCategories.includes(resolvedMain)) {
+      sourceModifiers = techIllustrationModifiers;
+    } else if (natureCategories.includes(resolvedMain)) {
+      sourceModifiers = natureIllustrationModifiers;
+    } else if (lifestyleCategories.includes(resolvedMain)) {
+      sourceModifiers = lifestyleIllustrationModifiers;
+    } else {
+      sourceModifiers = generalIllustrationModifiers;
+    }
+  } else if (mediaType === '3d') {
+    sourceModifiers = threeDModifiers;
+  }
   
   const selectedModifiers = getMultipleRandom(sourceModifiers, promptLength === 'detailed' ? 3 : 1).join(', ');
   const safety = getRandom(safetyModifiers);
@@ -105,7 +146,7 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
 
   if (targetModel === 'midjourney') {
     const base = `${subject}, ${action}, ${environment}`;
-    const isGraphic = mediaType === 'vector' || mediaType === 'illustration';
+    const isGraphic = mediaType === 'vector' || mediaType === 'illustration' || mediaType === '3d';
     const keywords = isGraphic ? `${selectedModifiers}, ${safety}${custom}` : `${pLighting}, ${pCamera}, ${selectedModifiers}, ${safety}${custom}`;
     if (mediaType === 'isolated_white') {
       const openings = [
@@ -129,7 +170,7 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
   } 
   else if (targetModel === 'dalle3') {
     const typeText = mediaType === 'isolated_white' ? 'cutout on a pure white background' : mediaType;
-    const isGraphic = mediaType === 'vector' || mediaType === 'illustration';
+    const isGraphic = mediaType === 'vector' || mediaType === 'illustration' || mediaType === '3d';
     const tail = isGraphic 
       ? `Emphasizing ${selectedModifiers}. ${safety}${custom}.`
       : `The scene is illuminated by ${pLighting} with ${pCamera}, emphasizing ${selectedModifiers}. ${safety}${custom}.`;
@@ -143,7 +184,7 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
   } 
   else if (targetModel === 'flux') {
     const typeText = mediaType === 'isolated_white' ? 'cutout on a pure white background' : mediaType;
-    const isGraphic = mediaType === 'vector' || mediaType === 'illustration';
+    const isGraphic = mediaType === 'vector' || mediaType === 'illustration' || mediaType === '3d';
     const tail = isGraphic
       ? `Clean composition, ${selectedModifiers}. ${safety}${custom}.`
       : `Detailed textures, ${pLighting}, and ${pCamera}. Crisp composition, ${selectedModifiers}. ${safety}${custom}.`;
@@ -157,7 +198,7 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
   }
   else if (targetModel === 'nanobanana') {
     const typeText = mediaType === 'isolated_white' ? 'cutout on a pure white seamless background' : mediaType;
-    const isGraphic = mediaType === 'vector' || mediaType === 'illustration';
+    const isGraphic = mediaType === 'vector' || mediaType === 'illustration' || mediaType === '3d';
     const tail = isGraphic 
       ? `This stunning composition features clean elements, perfect layout, and ${selectedModifiers} for a professional look. ${safety}${custom}.` 
       : `Beautifully captured with ${pLighting} and ${pCamera}, this highly detailed composition highlights intricate details, striking visual elements, and ${selectedModifiers} for a flawless look. ${safety}${custom}.`;
@@ -171,7 +212,7 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
   }
   else if (targetModel === 'ideogram') {
     const typeText = mediaType === 'isolated_white' ? 'isolated cutout on white background' : mediaType;
-    const isGraphic = mediaType === 'vector' || mediaType === 'illustration';
+    const isGraphic = mediaType === 'vector' || mediaType === 'illustration' || mediaType === '3d';
     const tail = isGraphic
       ? `High quality, ${selectedModifiers}, ${safety}${custom}.`
       : `lit by ${pLighting} with ${pCamera}. High quality, ${selectedModifiers}, ${safety}${custom}.`;
@@ -185,7 +226,7 @@ const generateSinglePrompt = (categoryName, mediaType, promptLength, styleChoice
   }
   else if (targetModel === 'recraft') {
     const typeText = mediaType === 'isolated_white' ? 'isolated white background' : mediaType;
-    const isGraphic = mediaType === 'vector' || mediaType === 'illustration';
+    const isGraphic = mediaType === 'vector' || mediaType === 'illustration' || mediaType === '3d';
     const tail = isGraphic
       ? `${pStyle} style, ${typeText}, ${selectedModifiers}. ${safety}${custom}.`
       : `${pStyle} style, ${pLighting}, ${pCamera}, ${typeText}, ${selectedModifiers}. ${safety}${custom}.`;

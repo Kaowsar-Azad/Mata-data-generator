@@ -113,11 +113,19 @@ Return ONLY a valid JSON array of strings:
 ]
 Do NOT write category labels, section headers, quotes, backticks, or explanation. Just return the raw JSON array.`;
 
+  let mediaTypeLabel = mediaType;
+  if (mediaType === 'vector') mediaTypeLabel = 'Vector Graphics';
+  else if (mediaType === 'illustration') mediaTypeLabel = 'Digital Illustration';
+  else if (mediaType === '3d') mediaTypeLabel = '3D Render';
+  else if (mediaType === 'photo') mediaTypeLabel = 'Stock Photo';
+  else if (mediaType === 'video') mediaTypeLabel = 'Stock Video';
+  else if (mediaType === 'isolated_white') mediaTypeLabel = 'Isolated on a pure white seamless background';
+
   // Build specifications list for user prompt
   const specsListText = promptSpecs.map((spec, index) => {
     return `Prompt ${index + 1}:
 - Category/Subject: ${spec.category}
-- Media Type: ${mediaType === 'isolated_white' ? 'Isolated on a pure white seamless background' : mediaType}
+- Media Type: ${mediaTypeLabel}
 - Style: ${spec.style}
 - Lighting: ${spec.lighting}
 - Camera Perspective: ${spec.camera}
@@ -135,7 +143,18 @@ CRITICAL RULES:
 1. COMMERCIAL VIABILITY: Every prompt MUST describe a highly premium, commercially viable scene. Ensure subjects, compositions, and lighting are top-tier and highly desirable for stock photography/vector buyers.
 2. GRAMMAR DIVERSITY: Vary the sentence structures and starting words! Do NOT start all prompts with "A" or "An". For example, start one prompt with the subject, another with the environment, another with the camera angle, etc.
 3. LENGTH: If the requested length is "detailed", write a rich, long description (40-70 words). If "short", write 1-2 concise sentences.
-4. MEDIA ACCURACY: If the Media Type is "Vector Graphics" or "Digital Illustration", DO NOT use photographic terms like "shot on 35mm lens", "drone photography", "shallow depth of field", or "camera setup". Describe it strictly as a piece of graphic art (e.g., flat design, scalable curves, clean lines, or digital painting).
+4. MEDIA ACCURACY: If the Media Type is "Vector Graphics" or "Digital Illustration", DO NOT use photographic terms like "shot on 35mm lens", "drone photography", "shallow depth of field", or "camera setup". Describe it strictly as a piece of graphic art (e.g., flat design, scalable curves, clean lines, or digital painting). If the Media Type is "3D Render", use premium 3D terminology like "Octane Render", "Unreal Engine 5", "volumetric lighting", and "ray tracing".
+5. ICONS BACKGROUND: If the Category involves "Icons", you MUST explicitly describe the background as pure white and non-transparent (e.g. "isolated on a pristine pure white background, completely opaque"). NEVER describe a transparent background.
+6. ICONS SPECIFICITY: If the Category involves "Icons", the prompt MUST explicitly describe "a set of minimalist icons", "a collection of UI icons", or "flat design graphic icons" arranged in a grid or isolated layout. Do NOT describe a general illustration, a dashboard, or a complex scene.
+7. UNIVERSAL VECTOR ENFORCEMENT: If the Media Type is "Vector Graphics", you MUST format the subject as a pure vector (e.g. "A flat vector illustration of..."). You MUST explicitly forbid 3D elements. Describe it as "strictly 2D flat art, zero 3D elements, no isometric, solid fills only".
+8. MIXED VECTOR CHARACTERS: If generating "Vector Graphics" for human categories (e.g., "People", "Business", "Healthcare"), alternate your character styles across the batch. Describe some as "faceless minimalist corporate characters" and others as "expressive characters with detailed facial features". Both styles MUST remain 100% flat 2D vectors.
+9. DIGITAL ILLUSTRATION ROUTING: If Media Type is "Digital Illustration", you MUST match the art style to the category:
+   - For Technology, Architecture, Environment: Use "cyberpunk, glowing neon, digital network nodes, glassmorphism".
+   - For Nature, Food, Animals, Beauty: Use "delicate watercolor, floral aesthetic, soft pastel, clean digital painting".
+   - For People, Lifestyle, Healthcare, Sports: Use "expressive digital painting, minimalist line art, clean boho aesthetic".
+   - For Business, Finance: Use "claymorphism, clean abstract gradients, holographic textures".
+   Ensure the artwork is described as polished and flawless. NEVER use messy abstract styles for humans, and NEVER use photographic terms.
+10. 3D RENDERS: If the Media Type is "3D Render", the prompt MUST explicitly describe a high-end 3D rendering. Use terms like "Cinema 4D", "stunning 3D graphics", "Octane Render", and "soft studio lighting". CRITICAL: For human subjects, you MUST use stylized 3D terms like "stylized 3D character design", "3D claymorphism", "Pixar style 3D animation", or "smooth plastic textures" to ensure they look like 3D models and not photographs. DO NOT use 2D vector or flat illustration terms.
 
 Ensure each prompt is creative, visually rich, and highly distinct from the others in the batch.`;
 

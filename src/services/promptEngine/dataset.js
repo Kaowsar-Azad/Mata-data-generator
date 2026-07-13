@@ -335,8 +335,10 @@ const generateData = (name, parentGroup) => {
       return {
         subjects: [
           `a authentic candid portrait of ${nameL}`,
+          `a faceless minimalist character representing ${nameL}`,
           `a diverse group of people showing ${nameL}`,
           `a professional individual depicting ${nameL}`,
+          `a highly expressive character illustrating ${nameL}`,
           `a high-end editorial representation of ${nameL}`
         ],
         environments: [
@@ -377,9 +379,10 @@ const generateData = (name, parentGroup) => {
       return {
         subjects: [
           `a professional scene representing ${nameL}`,
+          `a faceless corporate minimalist character showing ${nameL}`,
           `a corporate concept of ${nameL}`,
           `diverse coworkers engaged in ${nameL}`,
-          `a confident modern team demonstrating ${nameL}`
+          `a confident expressive modern team demonstrating ${nameL}`
         ],
         environments: [
           "in a sleek glass-walled corporate office",
@@ -730,10 +733,10 @@ const generateData = (name, parentGroup) => {
           `flat design graphic icons depicting ${nameL}`
         ],
         environments: [
-          "against a solid, clean flat color background",
-          "isolated on a pristine white background",
-          "presented with generous and balanced spacing between each icon",
-          "arranged on a minimal, invisible grid structure"
+          "against a solid, completely opaque pure white background",
+          "isolated on a pristine white background, non-transparent",
+          "presented on a flat white background with generous spacing",
+          "arranged on a clean, solid white background without transparency"
         ],
         actions: [
           "designed with clean vector precision",
@@ -899,10 +902,11 @@ export function addCustomSubCategory(mainCat, subCat) {
 
 export const mediaTypes = [
   { id: "photo", label: "Stock Photo" },
-  { id: "video", label: "Stock Video (Footage)" },
-  { id: "vector", label: "Vector Graphics" },
   { id: "illustration", label: "Digital Illustration" },
-  { id: "isolated_white", label: "Isolated on White (Cutout)" }
+  { id: "vector", label: "Vector Graphics" },
+  { id: "3d", label: "3D Render" },
+  { id: "video", label: "Stock Video" },
+  { id: "isolated_white", label: "Isolated on White" }
 ];
 
 export const styles = [
@@ -1005,27 +1009,62 @@ export const globalModifiers = [
 ];
 
 export const vectorModifiers = [
-  "pure flat 2D vector, NO drop shadows, NO 3D rendering",
-  "clean crisp lines, solid colors only, zero gradients",
-  "smooth scalable curves, strict 2D illustration",
-  "flawless flat design, no lighting effects, completely flat",
-  "high-end commercial vector art, UI icon style",
-  "isolated clean elements, perfectly flat shapes",
-  "modern minimalist graphics, zero depth, zero shadow"
+  "strictly 2D flat vector, zero 3D elements, no isometric",
+  "clean crisp lines, solid colors only, zero gradients, no shadows",
+  "smooth scalable curves, strict 2D illustration, perfectly flat",
+  "flawless flat design, no lighting effects, completely opaque",
+  "high-end commercial flat vector art, no realistic textures",
+  "isolated clean 2D elements, perfectly flat shapes, zero depth",
+  "modern minimalist 2D graphics, zero depth, zero shadow, no isometric"
 ];
 
-export const illustrationModifiers = [
-  "rich artistic details",
-  "expressive digital painting",
-  "vibrant illustrative style",
-  "beautifully composed artwork",
-  "creative visual storytelling",
-  "highly detailed drawing",
-  "stylized digital illustration"
+export const techIllustrationModifiers = [
+  "vibrant glowing neon digital art, futuristic cyberpunk aesthetic",
+  "clean abstract glassmorphism, floating geometric shapes",
+  "high-end digital network nodes illustration, tech concept",
+  "clean architectural digital render, futuristic composition",
+  "modern tech illustration, holographic gradients and lighting",
+  "polished geometric digital art, premium commercial aesthetic"
+];
+
+export const natureIllustrationModifiers = [
+  "delicate watercolor painting, soft pastel color palette",
+  "beautiful floral aesthetic, clean organic digital painting",
+  "vibrant digital illustration of nature, soft atmospheric lighting",
+  "elegant botanical watercolor illustration, high-quality art",
+  "rich polished digital painting, warm organic textures",
+  "clean stylized nature illustration, flawless composition"
+];
+
+export const lifestyleIllustrationModifiers = [
+  "expressive digital painting, beautiful lighting and shadows",
+  "minimalist continuous line art, clean boho aesthetic",
+  "clean warm digital illustration, lifestyle concept art",
+  "polished stylized 2D digital painting, striking artistic aesthetic",
+  "beautifully composed digital portrait, vibrant and clean",
+  "soft editorial illustration style, premium digital art"
+];
+
+export const generalIllustrationModifiers = [
+  "vibrant isometric illustration, high-end commercial art",
+  "modern claymorphism style, soft gradients and depth",
+  "rich polished details, stylized digital art, cinematic lighting",
+  "clean abstract holographic gradients, smooth flowing waves",
+  "beautifully composed digital illustration, vibrant colors",
+  "high-quality polished digital art, soft volumetric lighting"
 ];
 
 export const safetyModifiers = [
   "no logos, no trademarks, no copyrighted characters, brand-safe",
   "clear of any branded elements, commercial-safe",
   "generic designs only, no recognizable brands, safe for stock"
+];
+
+export const threeDModifiers = [
+  "stylized 3D character design, Pixar style 3D animation, Octane Render",
+  "stunning 3D claymorphism graphics, Unreal Engine 5, smooth plastic textures",
+  "flawless stylized 3D rendering, Cinema 4D, soft volumetric lighting",
+  "high-end commercial 3D art, smooth 3D materials, perfectly modeled",
+  "premium 3D render, pristine cartoon textures, Redshift render",
+  "highly detailed 3D illustration, smooth 3D surfaces, perfect composition"
 ];

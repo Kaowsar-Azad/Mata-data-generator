@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeBgLocal: (filePath) => ipcRenderer.invoke('remove-bg-local', filePath),
   removeBgApi: (filePath, apiKey) => ipcRenderer.invoke('remove-bg-api', filePath, apiKey),
   removeBgHf: (filePath, token) => ipcRenderer.invoke('remove-bg-hf', filePath, token),
+  removeBgRecraft: (filePath, token) => ipcRenderer.invoke('remove-bg-recraft', filePath, token),
   saveKey: (provider, key, index) => ipcRenderer.invoke('save-key', provider, key, index),
   getKey: (provider, index) => ipcRenderer.invoke('get-key', provider, index),
   deleteKey: (provider, index) => ipcRenderer.invoke('delete-key', provider, index),

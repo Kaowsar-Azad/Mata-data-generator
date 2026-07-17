@@ -9,6 +9,7 @@ export function PromptEngineSettings({ activeMode, onModeChange }) {
       {/* Header Toggle */}
       <button 
         type="button"
+        aria-label={isOpen ? "Collapse settings" : "Expand settings"}
         className="ps-header" 
         onClick={() => setIsOpen(o => !o)}
         style={{
@@ -57,6 +58,7 @@ export function PromptEngineSettings({ activeMode, onModeChange }) {
             }}>
               <button
                 type="button"
+                aria-label="Select Standard Mode"
                 onClick={() => onModeChange('local')}
                 style={{
                   flex: 1,
@@ -82,6 +84,7 @@ export function PromptEngineSettings({ activeMode, onModeChange }) {
               </button>
               <button
                 type="button"
+                aria-label="Select AI Mode"
                 onClick={() => onModeChange('ai')}
                 style={{
                   flex: 1,

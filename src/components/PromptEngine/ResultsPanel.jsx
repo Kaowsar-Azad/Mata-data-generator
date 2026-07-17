@@ -49,6 +49,7 @@ export const ResultsPanel = ({ prompts, onClear, isGenerating, statusText }) => 
     const [hov, setHov] = React.useState(false);
     return (
       <button
+        aria-label={label}
         onClick={onClick} disabled={disabled}
         onMouseOver={() => setHov(true)} onMouseOut={() => setHov(false)}
         style={{
@@ -199,6 +200,7 @@ export const ResultsPanel = ({ prompts, onClear, isGenerating, statusText }) => 
                     <button
                       onClick={() => handleCopySingle(prompt)}
                       title="Copy prompt"
+                      aria-label="Copy prompt"
                       style={{
                         padding: '4px 10px', borderRadius: '6px',
                         width: '76px',

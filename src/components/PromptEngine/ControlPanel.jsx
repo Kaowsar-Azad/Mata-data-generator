@@ -99,6 +99,8 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
     lightingChoice: 'auto',
     cameraAngleChoice: 'auto',
     customInstruction: '',
+    iconLayout: 'set',
+    iconStyle: 'colorful',
   });
   const [focus, setFocus] = useState(null);
 
@@ -330,6 +332,28 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
           </>
         )}
       </div>
+
+      {/* ── Icon Configurations (Only show if Icons category is selected) ── */}
+      {(config.mainCategory === 'Icons' || config.categoryName === '3D Icons') && (
+        <>
+          <div style={{ flexShrink: 0 }}>
+            <Label>Icon Layout</Label>
+            <Sel value={config.iconLayout} onChange={v => set('iconLayout', v)} focused={focus==='iconLayout'} onFocus={foc('iconLayout')} onBlur={blur}>
+              <option value="set">Icon Set (Grid)</option>
+              <option value="single">Single Icon</option>
+            </Sel>
+          </div>
+          {config.mainCategory === 'Icons' && (
+            <div style={{ flexShrink: 0 }}>
+              <Label>Icon Color Style</Label>
+              <Sel value={config.iconStyle} onChange={v => set('iconStyle', v)} focused={focus==='iconStyle'} onFocus={foc('iconStyle')} onBlur={blur}>
+                <option value="colorful">Colorful Flat Design</option>
+                <option value="monochrome">Monochrome / Line Art</option>
+              </Sel>
+            </div>
+          )}
+        </>
+      )}
 
       {/* ── Type ── */}
       <div style={{ flexShrink: 0 }}>
@@ -620,6 +644,7 @@ export const ControlPanel = ({ onGenerate, isGenerating }) => {
       {/* ── Generate button ── */}
       <button
         type="submit"
+        aria-label="Generate Prompts"
         disabled={isGenerating}
         style={{
           marginTop: 'auto',

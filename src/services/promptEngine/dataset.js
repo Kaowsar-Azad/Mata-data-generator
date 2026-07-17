@@ -324,6 +324,13 @@ export const mainCategories = {
     "Neural Network",
     "Big Data",
     "Automation"
+  ],
+  "3D": [
+    "3D Illustration",
+    "3D Icons",
+    "3D Objects",
+    "3D Product Mockups",
+    "3D Abstract"
   ]
 };
 
@@ -809,6 +816,27 @@ const generateData = (name, parentGroup) => {
           "focusing on food production and harvesting",
           "operating modern smart machinery",
           "captured in a professional industrial composition"
+        ]
+      };
+    case "3D":
+      return {
+        subjects: [
+          `a premium concept of ${nameL}`,
+          `a stunning visual design of ${nameL}`,
+          `a polished representation of ${nameL}`,
+          `beautiful graphic elements showing ${nameL}`
+        ],
+        environments: [
+          "on a clean studio background with soft lighting",
+          "against a smooth, colorful minimal backdrop",
+          "isolated on a pristine pastel surface",
+          "floating in a soft ambient 3D environment"
+        ],
+        actions: [
+          "rendered with exquisite materials and details",
+          "showcasing perfect lighting and soft shadows",
+          "styled with modern claymorphism or sleek textures",
+          "optimized for premium commercial digital use"
         ]
       };
     default:

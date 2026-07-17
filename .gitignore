@@ -35,13 +35,23 @@ colab_temp.json
 free_models.json
 free_models_utf8.json
 
-# Scratch and Test Scripts
+# Scratch and Debug Scripts
 brain.md
 mock_server.cjs
 npm
 scratch_download_icons.js
-test_groq_llama.cjs
-update_groq_scoring.cjs
+kill-ports.js
+check-mask.js
+check-transparency.js
+mask-debug.png
+
+# All test files (root level)
+test-*.js
+test-*.png
+test_*.js
+test_*.cjs
+
+# Server test files
 server/test_hf.js
 server/test_median.js
 
@@ -50,3 +60,13 @@ bin/test_extract/
 bin/test.zip
 bin/upscayl/output_*.jpg
 bin/upscayl/test_out.jpg
+
+# Build helper scripts
+update_groq_scoring.cjs
+download_gs.cjs
+download_models.cjs
+copy-gs.cjs
+list_gemini_models.js
+
+# ML/AI Models
+.models/

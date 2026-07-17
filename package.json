@@ -50,6 +50,7 @@
     "@google/generative-ai": "^0.24.1",
     "@gradio/client": "^2.2.0",
     "@huggingface/transformers": "^4.2.0",
+    "@imgly/background-removal": "^1.7.0",
     "@imgly/background-removal-node": "^1.4.5",
     "@neplex/vectorizer": "^0.0.5",
     "basic-ftp": "^6.0.1",

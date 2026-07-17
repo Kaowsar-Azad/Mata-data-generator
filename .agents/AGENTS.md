@@ -41,3 +41,8 @@ The app must be protected against reverse engineering and common vulnerabilities
 - **Rule:** Do NOT modify the **Gemini Route** block (where `GoogleGenerativeAI` is instantiated and `generateContentWithTimeout` is called with the image and prompt) inside the `generatePromptFromImage` function.
 - **Exception:** The OpenAI, Groq, OpenRouter, and Mistral routing blocks inside `generatePromptFromImage` are EXEMPT from this rule and can be modified.
 - **Action:** The AI may only modify the Gemini prompts and Gemini routing logic if the user explicitly grants permission in the direct chat transcript.
+
+## STRICT POLICY: Prompt Engine Frozen Guard
+- **Rule:** Do NOT modify, rewrite, delete, or append to any file within the `src/components/PromptEngine/` or `src/services/promptEngine/` directories under any circumstances.
+- **Exception:** You may only modify these files if the user explicitly grants permission in the direct chat transcript (e.g., "I permit you to modify the prompt engine" or "Unlock the prompt engine section").
+- **Action:** If changes are needed in this section, you MUST ask the user for permission in the chat first. Do not modify speculatively.

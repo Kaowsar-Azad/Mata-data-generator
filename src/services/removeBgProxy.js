@@ -76,6 +76,9 @@ export async function removeBackgroundViaRemoveBgProxy(file, apiKey) {
  * @returns {Promise<Blob>}
  */
 export async function removeBackgroundViaLocalServer(file) {
+  // Bypass Electron IPC for local removal because ONNX runtime crashes Electron Main Process.
+  // We will let it fallback to the external Node.js Express server running on port 3001.
+  /*
   if (window.electronAPI && window.electronAPI.removeBgLocal) {
     console.log('[removeBg] Running in Electron. Using Native IPC removeBgLocal...');
     if (!file.path) {
@@ -92,6 +95,8 @@ export async function removeBackgroundViaLocalServer(file) {
     }
     return new Blob([ab], { type: res.mimeType || 'image/png' });
   }
+  */
+
 
   const base = getRemoveBgProxyBase();
   const fd = new FormData();
@@ -128,57 +133,3 @@ export async function removeBackgroundViaLocalServer(file) {
   return res.blob();
 }
 
-/**
- * High-fidelity premium removal via Hugging Face Free Space (briaai/BRIA-RMBG-1.4)
- * @param {File} file
- * @returns {Promise<Blob>}
- */
-export async function removeBackgroundViaHfSpace(file, token) {
-  if (window.electronAPI && window.electronAPI.removeBgHf) {
-    console.log('[removeBg] Running in Electron. Using Native IPC removeBgHf...');
-    if (!file.path) {
-      throw new Error("File path is missing. Drag and drop the file directly.");
-    }
-    const res = await window.electronAPI.removeBgHf(file.path, token);
-    if (!res.success) {
-      throw new Error(res.error || "Hugging Face background removal failed in Electron");
-    }
-    const byteString = atob(res.base64);
-    const ab = new Uint8Array(byteString.length);
-    for (let i = 0; i < byteString.length; i++) {
-      ab[i] = byteString.charCodeAt(i);
-    }
-    return new Blob([ab], { type: res.mimeType || 'image/png' });
-  }
-
-  const base = getRemoveBgProxyBase();
-  const fd = new FormData();
-  fd.append('file', file, file.name || 'upload.png');
-
-  let res;
-  try {
-    res = await fetch(`${base}/api/removebg-hf-space`, {
-      method: 'POST',
-      headers: { 'X-HF-Token': token },
-      body: fd,
-    });
-  } catch (err) {
-    if (err?.message?.includes('Failed to fetch')) {
-      throw new Error("সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না (Failed to fetch)। অনুগ্রহ করে নিশ্চিত করুন যে আপনার PC-তে ব্যাকএন্ড সার্ভারটি চালু আছে।");
-    }
-    throw err;
-  }
-
-  if (!res.ok) {
-    let msg = res.statusText;
-    try {
-      const j = await res.json();
-      if (j.error) msg = j.error;
-    } catch {
-      try { msg = await res.text(); } catch {}
-    }
-    throw new Error(msg || `Request failed (${res.status})`);
-  }
-
-  return res.blob();
-}

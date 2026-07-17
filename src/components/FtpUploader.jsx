@@ -4,7 +4,7 @@ import {
   ExternalLink, Info, RefreshCw, Zap, AlertCircle, AlertTriangle, CloudUpload, Link,
   ChevronDown, ChevronUp, Key, Globe
 } from "lucide-react";
-
+import { processEpsFile, isEpsFile } from "../services/epsService";
 
 const POPULAR_AGENCIES = [
   {
@@ -86,7 +86,11 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
       if (saved) {
         return JSON.parse(saved).map(f => ({
           ...f,
-          previewUrl: f.path ? `file://${f.path.replace(/\\/g, '/')}` : null
+          previewUrl: f.path 
+            ? (f.path.toLowerCase().endsWith('.eps') || f.path.toLowerCase().endsWith('.epsf') || f.path.toLowerCase().endsWith('.epsi')
+                ? null
+                : `file://${f.path.replace(/\\/g, '/')}`)
+            : null
         }));
       }
     } catch (e) {
@@ -168,6 +172,54 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
       // If we cancel here, we kill active uploads when the laptop sleeps.
     };
   }, [currentJobId]);
+
+  // Handle EPS previews asynchronously
+  useEffect(() => {
+    const processPreviews = async () => {
+      const epsFilesWithoutPreview = files.filter(
+        f => (isEpsFile(f.file) || (f.path && (f.path.toLowerCase().endsWith('.eps') || f.path.toLowerCase().endsWith('.epsf') || f.path.toLowerCase().endsWith('.epsi')))) && !f.previewUrl && !f.isProcessingPreview
+      );
+      if (epsFilesWithoutPreview.length === 0) return;
+
+      // Mark selected files as processing preview
+      setFiles(prev =>
+        prev.map(f =>
+          epsFilesWithoutPreview.some(ep => ep.id === f.id)
+            ? { ...f, isProcessingPreview: true }
+            : f
+        )
+      );
+
+      for (const f of epsFilesWithoutPreview) {
+        try {
+          const fileObj = f.file || { path: f.path, name: f.name };
+          const epsData = await processEpsFile(fileObj);
+          if (epsData && epsData.dataUrl) {
+            setFiles(prev =>
+              prev.map(p =>
+                p.id === f.id ? { ...p, previewUrl: epsData.dataUrl, isProcessingPreview: false } : p
+              )
+            );
+          } else {
+            // Processing returned nothing or failed, clear flag
+            setFiles(prev =>
+              prev.map(p =>
+                p.id === f.id ? { ...p, isProcessingPreview: false } : p
+              )
+            );
+          }
+        } catch (err) {
+          console.error("Failed to generate EPS preview for FTP upload", err);
+          setFiles(prev =>
+            prev.map(p =>
+              p.id === f.id ? { ...p, isProcessingPreview: false } : p
+            )
+          );
+        }
+      }
+    };
+    processPreviews();
+  }, [files]);
 
   useEffect(() => {
     if (window.electronAPI?.onFtpProgress) {

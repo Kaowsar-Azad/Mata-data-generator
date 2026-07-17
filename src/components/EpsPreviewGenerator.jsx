@@ -1,5 +1,6 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Image as ImageIcon, Upload, Loader2, CheckCircle, AlertCircle, Play, Trash2 } from "lucide-react";
+import { processEpsFile, isEpsFile } from "../services/epsService";
 
 export function EpsPreviewGenerator() {
   const [files, setFiles] = useState([]);
@@ -33,23 +34,83 @@ export function EpsPreviewGenerator() {
     setFiles(prev => {
       const existingPaths = new Set(prev.map(f => f.path));
       const uniqueFiles = newFiles.filter(f => !existingPaths.has(f.path));
-      const fileObjects = uniqueFiles.map(f => ({
-        name: f.name,
-        path: f.path,
-        status: 'idle', // 'idle' | 'processing' | 'success' | 'error'
-        errorMsg: ''
-      }));
+      const fileObjects = uniqueFiles.map(f => {
+        const isPng = f.name.toLowerCase().endsWith('.png');
+        return {
+          name: f.name,
+          path: f.path,
+          file: f,
+          previewUrl: isPng ? URL.createObjectURL(f) : null,
+          isProcessingPreview: false,
+          status: 'idle', // 'idle' | 'processing' | 'success' | 'error'
+          errorMsg: ''
+        };
+      });
       return [...prev, ...fileObjects];
     });
   };
 
   const removeFile = (pathToRemove) => {
+    const fileToRemove = files.find(f => f.path === pathToRemove);
+    if (fileToRemove?.previewUrl && fileToRemove.previewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(fileToRemove.previewUrl);
+    }
     setFiles(prev => prev.filter(f => f.path !== pathToRemove));
   };
 
   const clearAll = () => {
+    files.forEach(f => {
+      if (f.previewUrl && f.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(f.previewUrl);
+      }
+    });
     setFiles([]);
   };
+
+  // Handle EPS previews asynchronously
+  useEffect(() => {
+    const processPreviews = async () => {
+      const epsFilesWithoutPreview = files.filter(
+        f => isEpsFile(f.file) && !f.previewUrl && !f.isProcessingPreview
+      );
+      if (epsFilesWithoutPreview.length === 0) return;
+
+      setFiles(prev =>
+        prev.map(f =>
+          epsFilesWithoutPreview.some(ep => ep.path === f.path)
+            ? { ...f, isProcessingPreview: true }
+            : f
+        )
+      );
+
+      for (const f of epsFilesWithoutPreview) {
+        try {
+          const epsData = await processEpsFile(f.file);
+          if (epsData && epsData.dataUrl) {
+            setFiles(prev =>
+              prev.map(p =>
+                p.path === f.path ? { ...p, previewUrl: epsData.dataUrl, isProcessingPreview: false } : p
+              )
+            );
+          } else {
+            setFiles(prev =>
+              prev.map(p =>
+                p.path === f.path ? { ...p, isProcessingPreview: false } : p
+              )
+            );
+          }
+        } catch (err) {
+          console.error("Failed to generate EPS preview in Auto EPS Preview", err);
+          setFiles(prev =>
+            prev.map(p =>
+              p.path === f.path ? { ...p, isProcessingPreview: false } : p
+            )
+          );
+        }
+      }
+    };
+    processPreviews();
+  }, [files]);
 
   const generatePreviews = async () => {
     setIsProcessing(true);
@@ -186,7 +247,17 @@ export function EpsPreviewGenerator() {
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", overflow: "hidden" }}>
-                    <ImageIcon style={{ width: "1.2rem", height: "1.2rem", color: "var(--primary-light)", flexShrink: 0 }} />
+                    {/* Thumbnail */}
+                    <div style={{ width: '2.25rem', height: '2.25rem', flexShrink: 0, borderRadius: '0.4rem', overflow: 'hidden', background: 'var(--surface-2)', border: '1px solid var(--glass-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {file.previewUrl
+                        ? <img src={file.previewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : (file.isProcessingPreview 
+                            ? <Loader2 style={{ width: '1rem', height: '1rem', animation: 'spin 1s linear infinite' }} />
+                            : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-3)', fontSize: '0.65rem', fontWeight: 700 }}>
+                                {file.name.toLowerCase().endsWith('.png') ? 'PNG' : 'EPS'}
+                              </div>)
+                      }
+                    </div>
                     <div style={{ overflow: "hidden" }}>
                       <p style={{ margin: 0, fontSize: "0.85rem", fontWeight: 600, color: "var(--text-1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {file.name}

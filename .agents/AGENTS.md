@@ -46,3 +46,8 @@ The app must be protected against reverse engineering and common vulnerabilities
 - **Rule:** Do NOT modify, rewrite, delete, or append to any file within the `src/components/PromptEngine/` or `src/services/promptEngine/` directories under any circumstances.
 - **Exception:** You may only modify these files if the user explicitly grants permission in the direct chat transcript (e.g., "I permit you to modify the prompt engine" or "Unlock the prompt engine section").
 - **Action:** If changes are needed in this section, you MUST ask the user for permission in the chat first. Do not modify speculatively.
+
+## STRICT POLICY: Ghostscript (win_graphics_proc) Frozen Guard
+- **Rule:** Do NOT modify, rewrite, delete, or append to any file within the `bin/win_graphics_proc/` directory, or edit setup scripts `copy-gs.cjs` and `download_gs.cjs`, or change files containing Ghostscript runner logic (`electron/main.cjs`, `electron/main.js`, `server/index.js`) under any circumstances.
+- **Exception:** You may only modify these files if the user explicitly grants permission in the direct chat transcript (e.g., "I permit you to modify Ghostscript files" or "Unlock the Ghostscript section").
+- **Action:** If changes are needed in this section, you MUST ask the user for permission in the chat first. Do not modify speculatively.

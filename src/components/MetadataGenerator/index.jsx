@@ -477,15 +477,22 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     setImages((prev) => [...prev, ...newEntries]);
 
     setTimeout(async () => {
-      const hashPromises = newEntries
-        .filter(e => !e.isVideo)
-        .map(async (entry) => {
-          const hash = await computeHashForEntry(entry);
-          if (hash) {
-            hashMapRef.current[entry.id] = hash;
-          }
-        });
-      await Promise.all(hashPromises);
+      const hashEntries = newEntries.filter(e => !e.isVideo);
+      const HASH_BATCH = 5;
+      for (let i = 0; i < hashEntries.length; i += HASH_BATCH) {
+        const batch = hashEntries.slice(i, i + HASH_BATCH);
+        await Promise.all(
+          batch.map(async (entry) => {
+            const hash = await computeHashForEntry(entry);
+            if (hash) {
+              hashMapRef.current[entry.id] = hash;
+            }
+          })
+        );
+        if (i + HASH_BATCH < hashEntries.length) {
+          await new Promise(r => setTimeout(r, 50));
+        }
+      }
 
       const currentImages = imagesRef.current;
       const pairs = detectDuplicates(currentImages, [], hashMapRef.current);
@@ -497,22 +504,29 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       }
     }, 200);
 
-    newEntries
-      .filter((e) => e.isEps && !e.isPaired)
-      .forEach(async (entry) => {
-        const epsData = await processEpsFile(entry.file);
-        setImages((prev) =>
-          prev.map((item) =>
-            item.id === entry.id
-              ? { ...item, epsData, preview: epsData.dataUrl }
-              : item
-          )
-        );
-      });
+    // Process EPS files sequentially to prevent system hang under concurrent CPU load
+    (async () => {
+      const epsEntries = newEntries.filter((e) => e.isEps && !e.isPaired);
+      for (const entry of epsEntries) {
+        try {
+          const epsData = await processEpsFile(entry.file);
+          setImages((prev) =>
+            prev.map((item) =>
+              item.id === entry.id
+                ? { ...item, epsData, preview: epsData.dataUrl }
+                : item
+            )
+          );
+        } catch (err) {
+          console.error("Failed to process EPS sequentially:", err);
+        }
+      }
+    })();
 
-    newEntries
-      .filter((e) => e.isVideo)
-      .forEach(async (entry) => {
+    // Extract video frames sequentially to avoid overloading FFmpeg processes
+    (async () => {
+      const videoEntries = newEntries.filter((e) => e.isVideo);
+      for (const entry of videoEntries) {
         if (window.electronAPI?.extractVideoFrame && entry.file.path) {
           try {
             const frameResult = await window.electronAPI.extractVideoFrame(entry.file.path);
@@ -526,10 +540,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               );
             }
           } catch (error) {
-            console.error("Failed to extract video thumbnail preview:", error);
+            console.error("Failed to extract video thumbnail preview sequentially:", error);
           }
         }
-      });
+      }
+    })();
   };
 
   const onFileChange = (e) => {

@@ -11,19 +11,9 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { Client, handle_file } from '@gradio/client';
-import { pipeline, RawImage } from '@huggingface/transformers';
 import sharp from 'sharp';
 import PDFDocument from 'pdfkit';
 import SVGtoPDF from 'svg-to-pdfkit';
-
-let segmentator = null;
-async function getSegmentator() {
-  if (!segmentator) {
-    console.log('[Backend] Loading Xenova/modnet model into memory (this may take a moment on first run)...');
-    segmentator = await pipeline('background-removal', 'Xenova/modnet');
-  }
-  return segmentator;
-}
 
 const app = express();
 const port = process.env.PORT || 3002;
@@ -129,6 +119,12 @@ const upload = multer({ storage: storage, limits: { fileSize: 15 * 1024 * 1024 }
 // Helper to find ghostscript executable
 async function findGhostscript() {
   return new Promise((resolve) => {
+    // 0. Check the bundled bin folder inside the project (highest priority)
+    const bundledGs64 = path.join(__dirname, '..', 'bin', 'win_graphics_proc', 'bin', 'gfx_render64.exe');
+    const bundledGs32 = path.join(__dirname, '..', 'bin', 'win_graphics_proc', 'bin', 'gfx_render32.exe');
+    if (fs.existsSync(bundledGs64)) return resolve(bundledGs64);
+    if (fs.existsSync(bundledGs32)) return resolve(bundledGs32);
+
     // 1. Check if it's already in the PATH
     const commands = ['gswin64c', 'gswin32c', 'gs'];
     
@@ -358,7 +354,8 @@ app.post('/api/removebg-hf-space', upload.single('file'), async (req, res) => {
 });
 
 /**
- * Local background removal (Node + @imgly/background-removal-node). No browser WASM / no remove.bg key.
+ * Local background removal (Python + rembg + U2-Net).
+ * This completely replaces the JS @huggingface/transformers approach for perfect alpha matting.
  */
 app.post('/api/remove-bg-local', upload.single('file'), async (req, res) => {
   const cleanup = () => {
@@ -374,92 +371,80 @@ app.post('/api/remove-bg-local', upload.single('file'), async (req, res) => {
   }
 
   const tmpPath = req.file.path;
+  const outPath = tmpPath + '_cutout.png';
 
   try {
-    console.log('[remove-bg-local] Initializing MODNET model...');
-    const pipe = await getSegmentator();
+    console.log('[remove-bg-python] Spawning native python process...');
     
-    // 1. Get original image metadata first
-    const origMeta = await sharp(tmpPath).metadata();
-    const origWidth = origMeta.width;
-    const origHeight = origMeta.height;
-    console.log(`[remove-bg-local] Original image size: ${origWidth}x${origHeight}`);
-    
-    // 2. Load original image as RawImage for the model (cross-platform safe)
-    const image = await RawImage.read(tmpPath);
-    
-    // 3. Run inference
-    console.log('[remove-bg-local] Running MODNET inference...');
-    const result = await pipe(image);
-    
-    // 4. Extract the output image (it's already an RGBA cutout)
-    let upscaledMaskPng;
-    
-    if (Array.isArray(result) && result[0]?.mask) {
-      // It's a 1-channel mask from image-segmentation
-      const maskImg = result[0].mask;
-      console.log(`[remove-bg-local] Mask size from model: ${maskImg.width}x${maskImg.height}`);
-      
-      // Convert 1-channel to an image we can use as alpha
-      // By using it as the alpha channel of a blank image
-      const resizedAlpha = await sharp(Buffer.from(maskImg.data), { raw: { width: maskImg.width, height: maskImg.height, channels: 1 } })
-        .resize(origWidth, origHeight)
-        .raw()
-        .toBuffer();
+    const pyScriptPath = path.join(process.cwd(), 'server', 'python_bg_remover.py');
+    const pythonExecutable = process.platform === 'win32' ? 'py' : 'python3'; // 'py' is safest on Windows
+
+    const runPythonScript = () => {
+      return new Promise((resolve, reject) => {
+        const child = spawn(pythonExecutable, [pyScriptPath, tmpPath, outPath]);
         
-      upscaledMaskPng = await sharp({
-        create: { width: origWidth, height: origHeight, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
-      })
-      .joinChannel(resizedAlpha) // replaces the alpha channel
-      .png()
-      .toBuffer();
-      
-    } else {
-      // background-removal pipeline returns an RGBA image directly
-      const outImg = Array.isArray(result) ? result[0] : result;
-      if (!outImg || !outImg.data) throw new Error('Model returned no output data');
-      
-      const ch = outImg.channels || Math.round(outImg.data.length / (outImg.width * outImg.height));
-      console.log(`[remove-bg-local] Model output: ${outImg.width}x${outImg.height}, channels: ${ch}`);
-      
-      if (ch === 4) {
-        // It's already RGBA, resize it to original and convert to PNG so dest-in recognizes its alpha channel
-        upscaledMaskPng = await sharp(Buffer.from(outImg.data), { raw: { width: outImg.width, height: outImg.height, channels: 4 } })
-          .resize(origWidth, origHeight)
-          .png()
-          .toBuffer();
+        let errOutput = '';
+        child.stderr.on('data', (data) => {
+          errOutput += data.toString();
+        });
+        child.stdout.on('data', (data) => {
+          console.log(data.toString().trim());
+        });
+        
+        child.on('close', (code) => {
+          if (code === 0 && fs.existsSync(outPath)) {
+            resolve();
+          } else {
+            reject(new Error(errOutput || `Python process exited with code ${code}`));
+          }
+        });
+      });
+    };
+
+    try {
+      await runPythonScript();
+    } catch (err) {
+      const errMsg = err.message || '';
+      // If rembg is missing, try to install it once automatically
+      if (errMsg.includes("No module named 'rembg'") || errMsg.includes("ModuleNotFoundError")) {
+        console.log('[remove-bg-python] Missing dependencies detected. Installing via pip...');
+        await new Promise((resolve, reject) => {
+          const pipArgs = ['-m', 'pip', 'install', 'rembg', 'pillow', 'onnxruntime'];
+          const pipChild = spawn(pythonExecutable, pipArgs);
+          
+          pipChild.stdout.on('data', (data) => console.log(data.toString().trim()));
+          pipChild.stderr.on('data', (data) => console.log(data.toString().trim()));
+          
+          pipChild.on('close', (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`pip install failed with code ${code}`));
+          });
+        });
+        console.log('[remove-bg-python] Installation complete. Retrying background removal...');
+        await runPythonScript(); // Retry after installation
       } else {
-        throw new Error(`Unexpected model output channels: ${ch}`);
+        throw err; // Some other error
       }
     }
     
-    // 5. Apply clean alpha mask to original full-resolution image (Stable way)
-    console.log('[remove-bg-local] Processing high-res cutout...');
-    const mask = await sharp(upscaledMaskPng)
-      .ensureAlpha()
-      .gamma(3)
-      .png()
-      .toBuffer();
-
-    const outputBuffer = await sharp(tmpPath)
-      .ensureAlpha()
-      .composite([{
-        input: mask,
-        blend: 'dest-in'
-      }])
-      .png()
-      .toBuffer();
-
+    console.log('[remove-bg-python] Process completed. Reading final cutout...');
+    const finalBuffer = fs.readFileSync(outPath);
+    
+    // Clean up temporary files
     cleanup();
-    console.log('[remove-bg-local] Done!');
+    try { fs.unlinkSync(outPath); } catch (_) {}
+    console.log('[remove-bg-python] Done! Sent high-res transparent PNG.');
     res.setHeader('Content-Type', 'image/png');
-    return res.status(200).send(outputBuffer);
+    return res.status(200).send(finalBuffer);
   } catch (error) {
     cleanup();
-    console.error('[remove-bg-local] ERROR:', error?.message);
-    return res.status(500).json({ error: error?.message || 'Local background removal failed' });
+    try { fs.unlinkSync(outPath); } catch (_) {}
+    console.error('[remove-bg-python] ERROR:', error?.message || error);
+    return res.status(500).json({ error: error?.message || 'Python process failed' });
   }
 });
+
+
 
 app.post('/api/process-eps', upload.single('file'), async (req, res) => {
   if (!req.file) {
@@ -497,7 +482,15 @@ app.post('/api/process-eps', upload.single('file'), async (req, res) => {
       inputPath
     ];
 
-    const gsProc = spawn(gsCmd, args);
+    const bundledBinDir = path.join(__dirname, '..', 'bin');
+    const gsLibPath = `${path.join(bundledBinDir, 'win_graphics_proc', 'lib')};${path.join(bundledBinDir, 'win_graphics_proc', 'Resource', 'Init')}`;
+    const gsEnv = { 
+      ...process.env, 
+      GS_LIB: gsLibPath, 
+      PATH: `${path.join(bundledBinDir, 'win_graphics_proc', 'bin')};${process.env.PATH || ''}` 
+    };
+
+    const gsProc = spawn(gsCmd, args, { env: gsEnv });
 
     gsProc.on('close', (code) => {
       // Regardless of code, check if output file exists
@@ -834,7 +827,15 @@ app.post('/api/convert-to-eps', express.json({ limit: '20mb' }), async (req, res
       tmpPdf
     ];
 
-    const gsProc = spawn(gsCmd, args);
+    const bundledBinDir = path.join(__dirname, '..', 'bin');
+    const gsLibPath = `${path.join(bundledBinDir, 'win_graphics_proc', 'lib')};${path.join(bundledBinDir, 'win_graphics_proc', 'Resource', 'Init')}`;
+    const gsEnv = { 
+      ...process.env, 
+      GS_LIB: gsLibPath, 
+      PATH: `${path.join(bundledBinDir, 'win_graphics_proc', 'bin')};${process.env.PATH || ''}` 
+    };
+
+    const gsProc = spawn(gsCmd, args, { env: gsEnv });
 
     gsProc.on('close', (code) => {
       if (code === 0 && fs.existsSync(tmpEps)) {

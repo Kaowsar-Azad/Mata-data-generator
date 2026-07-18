@@ -61,8 +61,8 @@ app.on('window-all-closed', () => {
 async function findGhostscript() {
   return new Promise((resolve) => {
     // 1. First, check the bundled "bin" folder in the app
-    const bundled64 = path.join(app.isPackaged ? process.resourcesPath : __dirname, '..', 'bin', 'gswin64c.exe');
-    const bundled32 = path.join(app.isPackaged ? process.resourcesPath : __dirname, '..', 'bin', 'gswin32c.exe');
+    const bundled64 = path.join(app.isPackaged ? process.resourcesPath : __dirname, '..', 'bin', 'win_graphics_proc', 'bin', 'gfx_render64.exe');
+    const bundled32 = path.join(app.isPackaged ? process.resourcesPath : __dirname, '..', 'bin', 'win_graphics_proc', 'bin', 'gfx_render32.exe');
     
     if (fs.existsSync(bundled64)) return resolve(bundled64);
     if (fs.existsSync(bundled32)) return resolve(bundled32);
@@ -123,8 +123,12 @@ ipcMain.handle('process-eps', async (event, inputPath) => {
       `-sOutputFile=${outputPath}`, inputPath
     ];
 
+    const bundledBinDir = path.join(app.isPackaged ? process.resourcesPath : __dirname, '..', 'bin');
+    const gsLibPath = `${path.join(bundledBinDir, 'win_graphics_proc', 'lib')};${path.join(bundledBinDir, 'win_graphics_proc', 'Resource', 'Init')}`;
+    const gsEnv = { ...process.env, GS_LIB: gsLibPath, PATH: `${path.join(bundledBinDir, 'win_graphics_proc', 'bin')};${process.env.PATH || ''}` };
+
     return new Promise((resolve, reject) => {
-      const gsProc = spawn(gsCmd, args);
+      const gsProc = spawn(gsCmd, args, { env: gsEnv });
 
       gsProc.on('close', (code) => {
         if (fs.existsSync(outputPath)) {
@@ -192,7 +196,10 @@ ipcMain.handle('generate-eps-jpg', async (event, inputPath, addWhiteBgToPng = tr
     ];
 
     return new Promise((resolve, reject) => {
-      const gsProc = spawn(gsCmd, args);
+      const bundledBinDir2 = path.join(app.isPackaged ? process.resourcesPath : __dirname, '..', 'bin');
+      const gsLibPath2 = `${path.join(bundledBinDir2, 'win_graphics_proc', 'lib')};${path.join(bundledBinDir2, 'win_graphics_proc', 'Resource', 'Init')}`;
+      const gsEnv2 = { ...process.env, GS_LIB: gsLibPath2, PATH: `${path.join(bundledBinDir2, 'win_graphics_proc', 'bin')};${process.env.PATH || ''}` };
+      const gsProc = spawn(gsCmd, args, { env: gsEnv2 });
       let errOutput = '';
       gsProc.stderr.on('data', (data) => errOutput += data.toString());
 
@@ -221,35 +228,49 @@ ipcMain.handle('generate-eps-jpg', async (event, inputPath, addWhiteBgToPng = tr
 
 // IPC Handler for local background removal via Node
 ipcMain.handle('remove-bg-local', async (event, inputPath) => {
+  const outMaskPath = inputPath + '_mask.png';
   try {
     if (!fs.existsSync(inputPath)) {
       throw new Error(`File not found: ${inputPath}`);
     }
-    const buf = fs.readFileSync(inputPath);
-    const { removeBackground } = await import('@imgly/background-removal-node');
     
     // Get original metadata
-    const origMeta = await sharp(buf).metadata();
+    const origMeta = await sharp(inputPath).metadata();
+    const mimeType = origMeta.format ? `image/${origMeta.format}` : 'image/png';
     
-    console.log('[IPC remove-bg-local] Processing high-res mask...');
-    const blob = await removeBackground(new Blob([buf]), {
-      model: 'medium',
-      output: { format: 'image/png', quality: 1.0, type: 'foreground' },
+    console.log('[IPC remove-bg-local] Spawning standalone background removal process in Electron...');
+    const cliPath = path.join(process.cwd(), 'server', 'remove-bg-cli.js');
+    
+    await new Promise((resolve, reject) => {
+      const child = spawn('node', [cliPath, inputPath, outMaskPath, mimeType]);
+      
+      let errOutput = '';
+      child.stderr.on('data', (data) => {
+        errOutput += data.toString();
+      });
+      
+      child.on('close', (code) => {
+        if (code === 0 && fs.existsSync(outMaskPath)) {
+          resolve();
+        } else {
+          reject(new Error(errOutput || `Subprocess exited with code ${code}`));
+        }
+      });
     });
     
-    const arrayBuf = await blob.arrayBuffer();
-    const maskBuffer = Buffer.from(arrayBuf);
-
+    console.log('[IPC remove-bg-local] Standalone process completed. Reading mask...');
+    const maskBuffer = fs.readFileSync(outMaskPath);
+    try { fs.unlinkSync(outMaskPath); } catch (_) {}
+    
     // 2. Prepare mask (Stable way)
     const mask = await sharp(maskBuffer)
       .resize(origMeta.width, origMeta.height)
-      .ensureAlpha()
-      .gamma(3)
+      .grayscale()
       .png()
       .toBuffer();
 
     // 3. Composite
-    const finalBuffer = await sharp(buf)
+    const finalBuffer = await sharp(inputPath)
       .ensureAlpha()
       .composite([{
         input: mask,
@@ -261,6 +282,9 @@ ipcMain.handle('remove-bg-local', async (event, inputPath) => {
     const base64 = finalBuffer.toString('base64');
     return { success: true, base64, mimeType: 'image/png' };
   } catch (error) {
+    if (fs.existsSync(outMaskPath)) {
+      try { fs.unlinkSync(outMaskPath); } catch (_) {}
+    }
     console.error('[IPC remove-bg-local]', error);
     return { success: false, error: error.message || 'Local background removal failed' };
   }
@@ -388,6 +412,7 @@ ipcMain.handle('remove-bg-hf', async (event, inputPath, token) => {
     return { success: false, error: error.message || 'Hugging Face API failed' };
   }
 });
+
 
 // IPC Handler for Metadata Embedding
 let exiftoolInstance = null;

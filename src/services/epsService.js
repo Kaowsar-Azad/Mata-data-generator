@@ -284,7 +284,38 @@ function renderEpsPlaceholder(fileName) {
   };
 }
 
+// Concurrency lock for EPS processing to prevent system hang
+let activeEpsProcesses = 0;
+const MAX_CONCURRENT_EPS = 1;
+const epsQueue = [];
+
+async function acquireEpsLock() {
+  if (activeEpsProcesses < MAX_CONCURRENT_EPS) {
+    activeEpsProcesses++;
+    return Promise.resolve();
+  }
+  return new Promise(resolve => epsQueue.push(resolve));
+}
+
+function releaseEpsLock() {
+  if (epsQueue.length > 0) {
+    const next = epsQueue.shift();
+    next();
+  } else {
+    activeEpsProcesses--;
+  }
+}
+
 export async function processEpsFile(file) {
+  await acquireEpsLock();
+  try {
+    return await _processEpsFile(file);
+  } finally {
+    releaseEpsLock();
+  }
+}
+
+async function _processEpsFile(file) {
   try {
     // 1. Desktop App Mode (Electron) - The Ultimate Solution
     if (window.electronAPI) {
@@ -357,12 +388,13 @@ export async function processEpsFile(file) {
 }
 
 export function isEpsFile(file) {
+  if (!file) return false;
   if (file.type === 'application/postscript' ||
       file.type === 'application/eps' ||
       file.type === 'image/eps' ||
       file.type === 'application/x-eps') {
     return true;
   }
-  const name = file.name.toLowerCase();
+  const name = file.name ? file.name.toLowerCase() : '';
   return name.endsWith('.eps') || name.endsWith('.epsf') || name.endsWith('.epsi');
 }

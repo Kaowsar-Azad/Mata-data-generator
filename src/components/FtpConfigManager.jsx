@@ -8,16 +8,36 @@ function isAdobeConfig(config) {
   return ADOBE_HOSTS.some(k => h.includes(k));
 }
 
-const AGENCY_ICONS = {
-  "Adobe Stock": "🔴",
-  "Shutterstock": "🔶",
-  "Freepik": "🟢",
-  "Vecteezy": "🔵",
-  "Dreamstime": "🟣",
+const getAgencyIcon = (name) => {
+  const domains = {
+    "Adobe Stock": "adobe.com",
+    "Shutterstock": "shutterstock.com",
+    "Freepik": "freepik.com",
+    "Vecteezy": "vecteezy.com",
+    "Dreamstime": "dreamstime.com"
+  };
+  const domain = domains[name];
+  if (domain) {
+    return (
+      <img 
+        src={`https://logo.clearbit.com/${domain}`} 
+        alt={name} 
+        style={{ width: '1.45rem', height: '1.45rem', borderRadius: '4px', objectFit: 'contain' }} 
+        onError={(e) => { 
+          if (!e.target.dataset.fallback) {
+            e.target.dataset.fallback = 'true';
+            e.target.src = `https://icon.horse/icon/${domain}`;
+          } else {
+            e.target.style.display = 'none';
+          }
+        }}
+      />
+    );
+  }
+  return <span style={{ fontSize: '1.2rem' }}>🔘</span>;
 };
 
-export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, setEditingConfig, onStartEdit }) {
-  const [isOpen, setIsOpen] = useState(true); // default open for FTP tab
+export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, setEditingConfig, onStartEdit, isCollapsed, setIsCollapsed }) {
   const [expandedId, setExpandedId] = useState(null);
 
   useEffect(() => {
@@ -100,79 +120,89 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
 
       {/* Header */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => setIsCollapsed(!isCollapsed)}
         style={{
-          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: isCollapsed ? 'center' : 'space-between',
           padding: '0.6rem 0.75rem', background: 'var(--surface-2)',
           border: 'none', cursor: 'pointer', color: 'var(--text-1)', fontSize: '0.8rem', fontWeight: 700,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Server style={{ width: '0.85rem', height: '0.85rem', color: 'var(--accent)' }} />
-          FTP Servers
-          {ftpConfigs.length > 0 && (
-            <span style={{ background: activeCount > 0 ? 'var(--accent)' : 'var(--surface-3)', color: activeCount > 0 ? 'white' : 'var(--text-3)', borderRadius: '1rem', padding: '0.05rem 0.4rem', fontSize: '0.6rem', fontWeight: 700 }}>
-              {activeCount}/{ftpConfigs.length}
-            </span>
-          )}
-          {hasAdobe && (
-            <span style={{ fontSize: '0.65rem', background: 'rgba(232,65,66,0.15)', color: '#ff8a8a', padding: '0.05rem 0.3rem', borderRadius: '0.25rem', border: '1px solid rgba(232,65,66,0.25)', fontWeight: 600 }}>
-              🔴 Adobe
-            </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: isCollapsed ? 'center' : 'flex-start', width: '100%' }}>
+          <Server style={{ width: '0.85rem', height: '0.85rem', color: 'var(--accent)', flexShrink: 0 }} />
+          
+          {!isCollapsed && (
+            <>
+              <span style={{ whiteSpace: 'nowrap' }}>FTP Servers</span>
+              {ftpConfigs.length > 0 && (
+                <span style={{ background: activeCount > 0 ? 'var(--accent)' : 'var(--surface-3)', color: activeCount > 0 ? 'white' : 'var(--text-3)', borderRadius: '1rem', padding: '0.05rem 0.4rem', fontSize: '0.6rem', fontWeight: 700, flexShrink: 0 }}>
+                  {activeCount}/{ftpConfigs.length}
+                </span>
+              )}
+            </>
           )}
         </div>
-        {isOpen
-          ? <ChevronDown style={{ width: '0.9rem', height: '0.9rem', color: 'var(--text-3)' }} />
-          : <ChevronRight style={{ width: '0.9rem', height: '0.9rem', color: 'var(--text-3)' }} />}
+        {!isCollapsed && (
+          isCollapsed 
+            ? <ChevronRight style={{ width: '0.9rem', height: '0.9rem', color: 'var(--text-3)' }} />
+            : <ChevronRight style={{ width: '0.9rem', height: '0.9rem', color: 'var(--text-3)', transform: 'rotate(180deg)' }} />
+        )}
       </button>
 
-      {isOpen && (
-        <div style={{ padding: '0.65rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {/* Add Generic Button (Prominent) */}
-          <button
-            onClick={handleAddNew}
-            style={{
-              width: '100%', padding: '0.65rem',
-              background: 'linear-gradient(135deg, var(--accent), var(--primary))',
-              border: 'none', borderRadius: '0.5rem',
-              color: '#fff', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
-              boxShadow: '0 4px 12px rgba(6,182,212,0.25)',
-              transition: 'transform 0.2s ease, box-shadow 0.2s ease'
-            }}
-            onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(6,182,212,0.35)'; }}
-            onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(6,182,212,0.25)'; }}
-          >
-            <Plus style={{ width: '0.9rem', height: '0.9rem' }} /> Add New FTP/SFTP Server
-          </button>
+      <div style={{ padding: isCollapsed ? '0.65rem 0.3rem' : '0.65rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', overflow: 'hidden' }}>
+        {/* Add Generic Button (Prominent) */}
+        <button
+          onClick={handleAddNew}
+          title="Add New FTP/SFTP Server"
+          style={{
+            width: '100%', padding: '0.65rem',
+            background: 'linear-gradient(135deg, var(--accent), var(--primary))',
+            border: 'none', borderRadius: '0.5rem',
+            color: '#fff', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+            boxShadow: '0 4px 12px rgba(6,182,212,0.25)',
+            transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+            whiteSpace: 'nowrap'
+          }}
+          onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(6,182,212,0.35)'; }}
+          onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(6,182,212,0.25)'; }}
+        >
+          <Plus style={{ width: '0.9rem', height: '0.9rem', flexShrink: 0 }} /> 
+          {!isCollapsed && <span>Add New FTP/SFTP Server</span>}
+        </button>
 
-          {/* Adobe Stock Quick Setup Banner (only if not already added) */}
-          {!hasAdobe && (
-            <button
-              onClick={handleAddAdobe}
-              style={{
-                width: '100%', padding: '0.55rem 0.65rem',
-                background: 'linear-gradient(135deg, rgba(232,65,66,0.12) 0%, rgba(255,100,50,0.07) 100%)',
-                border: '1px dashed rgba(232,65,66,0.4)',
-                borderRadius: '0.45rem', color: '#ff8a8a', fontSize: '0.73rem', fontWeight: 700,
-                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem',
-                transition: 'all 0.15s',
-              }}
-              onMouseOver={e => e.currentTarget.style.background = 'linear-gradient(135deg, rgba(232,65,66,0.2) 0%, rgba(255,100,50,0.12) 100%)'}
-              onMouseOut={e => e.currentTarget.style.background = 'linear-gradient(135deg, rgba(232,65,66,0.12) 0%, rgba(255,100,50,0.07) 100%)'}
-            >
-              <span style={{ fontSize: '0.9rem' }}>🔴</span>
-              <span>Adobe Stock SFTP যোগ করুন</span>
-              <Zap style={{ width: '0.7rem', height: '0.7rem', marginLeft: 'auto' }} />
-            </button>
-          )}
+        {/* Adobe Stock Quick Setup Banner (only if not already added) */}
+        {!hasAdobe && (
+          <button
+            onClick={handleAddAdobe}
+            title="Add Adobe Stock SFTP"
+            style={{
+              width: '100%', padding: isCollapsed ? '0.55rem 0' : '0.55rem 0.65rem',
+              background: 'linear-gradient(135deg, rgba(232,65,66,0.12) 0%, rgba(255,100,50,0.07) 100%)',
+              border: '1px dashed rgba(232,65,66,0.4)',
+              borderRadius: '0.45rem', color: '#ff8a8a', fontSize: '0.73rem', fontWeight: 700,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+              transition: 'all 0.15s',
+              whiteSpace: 'nowrap'
+            }}
+            onMouseOver={e => e.currentTarget.style.background = 'linear-gradient(135deg, rgba(232,65,66,0.2) 0%, rgba(255,100,50,0.12) 100%)'}
+            onMouseOut={e => e.currentTarget.style.background = 'linear-gradient(135deg, rgba(232,65,66,0.12) 0%, rgba(255,100,50,0.07) 100%)'}
+          >
+            <span style={{ fontSize: '0.9rem', flexShrink: 0 }}>🔴</span>
+            {!isCollapsed && (
+              <>
+                <span>Add Adobe Stock SFTP</span>
+                <Zap style={{ width: '0.7rem', height: '0.7rem', marginLeft: 'auto' }} />
+              </>
+            )}
+          </button>
+        )}
 
           {/* Config List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
             {ftpConfigs.map(config => {
               const isBeingEdited = editingConfig && editingConfig.id === config.id;
               const isAdobe = isAdobeConfig(config);
-              const icon = AGENCY_ICONS[config.websiteName] || '🔘';
+              const icon = getAgencyIcon(config.websiteName);
               const protocol = parseInt(config.port) === 22 ? 'SFTP' : (config.secure ? 'FTPS' : 'FTP');
 
               return (
@@ -183,6 +213,9 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
                     border: isBeingEdited
                       ? `1px solid ${isAdobe ? 'rgba(232,65,66,0.6)' : 'var(--accent)'}`
                       : `1px solid ${isAdobe ? 'rgba(232,65,66,0.2)' : 'var(--glass-border)'}`,
+                    borderLeft: isBeingEdited
+                      ? `4px solid ${isAdobe ? '#e84142' : 'var(--accent)'}`
+                      : undefined,
                     borderRadius: '0.5rem', overflow: 'hidden',
                     transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                     background: isBeingEdited 
@@ -204,87 +237,106 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
                     }
                   }}
                 >
-                  {/* Row */}
                   <div style={{
-                    display: 'flex', alignItems: 'center',
-                    padding: '0.4rem 0.5rem',
+                    display: 'flex', alignItems: 'center', justifyContent: isCollapsed ? 'center' : 'space-between',
+                    padding: isCollapsed ? '0.15rem 0' : '0.4rem 0.5rem',
+                    gap: isCollapsed ? '0.25rem' : '0',
                     background: isBeingEdited
                       ? (isAdobe ? 'rgba(232,65,66,0.1)' : 'rgba(6,182,212,0.12)')
                       : (config.enabled && isAdobe ? 'rgba(232,65,66,0.05)' : config.enabled ? 'rgba(6,182,212,0.04)' : 'var(--surface-1)'),
                   }}>
                     {/* Enable Toggle */}
-                    <input
-                      type="checkbox"
-                      checked={config.enabled}
-                      onChange={e => toggleConfigEnable(config.id, e.target.checked)}
-                      style={{ cursor: 'pointer', accentColor: isAdobe ? '#e84142' : 'var(--accent)', marginRight: '0.45rem', width: '0.9rem', height: '0.9rem', flexShrink: 0 }}
-                    />
-
-                    {/* Name + Info */}
-                    <div
-                      onClick={() => handleEdit(config)}
-                      style={{ flex: 1, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '0.05rem', minWidth: 0 }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: config.enabled ? (isAdobe ? '#dc2626' : 'var(--text-1)') : 'var(--text-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {icon} {config.websiteName || config.host || "Unnamed"}
-                        </span>
-                        <span style={{
-                          fontSize: '0.55rem', padding: '0.05rem 0.35rem', borderRadius: '99px', fontWeight: 700, flexShrink: 0,
-                          background: protocol === 'SFTP' ? 'rgba(245,158,11,0.1)' : 'rgba(79,70,229,0.1)',
-                          color: protocol === 'SFTP' ? '#d97706' : '#4f46e5',
-                          border: `1px solid ${protocol === 'SFTP' ? 'rgba(245,158,11,0.2)' : 'rgba(79,70,229,0.2)'}`
-                        }}>
-                          {protocol}
-                        </span>
-                      </div>
-                      {config.user && (
-                        <span style={{ fontSize: '0.62rem', color: 'var(--text-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {config.host ? `${config.host}:${config.port}` : ''}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Adobe Portal Link (inline) */}
-                    {isAdobe && (
-                      <button
-                        onClick={e => { e.stopPropagation(); openPortal('https://contributor.stock.adobe.com/uploads'); }}
-                        title="Adobe Uploads Portal"
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', color: 'rgba(232,65,66,0.6)', display: 'flex', alignItems: 'center', transition: 'color 0.15s' }}
-                        onMouseOver={e => e.currentTarget.style.color = '#e84142'}
-                        onMouseOut={e => e.currentTarget.style.color = 'rgba(232,65,66,0.6)'}
-                      >
-                        <ExternalLink style={{ width: '0.7rem', height: '0.7rem' }} />
-                      </button>
+                    {!isCollapsed && (
+                      <input
+                        type="checkbox"
+                        checked={config.enabled}
+                        title={config.enabled ? "Disable" : "Enable"}
+                        onChange={e => toggleConfigEnable(config.id, e.target.checked)}
+                        style={{ 
+                          cursor: 'pointer', accentColor: isAdobe ? '#e84142' : 'var(--accent)', 
+                          marginRight: '0.45rem', width: '0.9rem', height: '0.9rem', flexShrink: 0 
+                        }}
+                      />
                     )}
 
-                    {/* Delete */}
-                    <button
-                      onClick={e => { e.stopPropagation(); handleDelete(config.id); }}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', color: 'var(--danger)', opacity: 0.55, display: 'flex', alignItems: 'center', transition: 'opacity 0.15s' }}
-                      onMouseOver={e => e.currentTarget.style.opacity = '1'}
-                      onMouseOut={e => e.currentTarget.style.opacity = '0.55'}
-                    >
-                      <Trash2 style={{ width: '0.75rem', height: '0.75rem' }} />
-                    </button>
+                    {isCollapsed && (
+                      <span 
+                        onClick={() => toggleConfigEnable(config.id, !config.enabled)}
+                        title={`Click to ${config.enabled ? 'disable' : 'enable'} ${config.websiteName || config.host || "Unnamed"}`}
+                        style={{ 
+                          fontSize: '1.25rem', 
+                          cursor: 'pointer', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          opacity: 1,
+                          transition: 'all 0.2s ease',
+                          padding: '0.1rem',
+                          borderRadius: '0.25rem'
+                        }}
+                        onMouseOver={e => { e.currentTarget.style.transform = 'scale(1.25)'; }}
+                        onMouseOut={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+                      >
+                        {icon}
+                      </span>
+                    )}
 
-                    {/* Expand Arrow */}
-                    <button
-                      onClick={() => handleEdit(config)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', color: 'var(--text-3)', display: 'flex', alignItems: 'center' }}
-                    >
-                      {expandedId === config.id
-                        ? <ChevronDown style={{ width: '0.85rem', height: '0.85rem' }} />
-                        : <ChevronRight style={{ width: '0.85rem', height: '0.85rem' }} />}
-                    </button>
+                    {!isCollapsed && (
+                      <>
+                        <div
+                          onClick={() => handleEdit(config)}
+                          style={{ flex: 1, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '0.05rem', minWidth: 0 }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: config.enabled ? (isAdobe ? '#dc2626' : 'var(--text-1)') : 'var(--text-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {icon} {config.websiteName || config.host || "Unnamed"}
+                            </span>
+                            <span style={{
+                              fontSize: '0.55rem', padding: '0.05rem 0.35rem', borderRadius: '99px', fontWeight: 700, flexShrink: 0,
+                              background: protocol === 'SFTP' ? 'rgba(245,158,11,0.1)' : 'rgba(79,70,229,0.1)',
+                              color: protocol === 'SFTP' ? '#d97706' : '#4f46e5',
+                              border: `1px solid ${protocol === 'SFTP' ? 'rgba(245,158,11,0.2)' : 'rgba(79,70,229,0.2)'}`
+                            }}>
+                              {protocol}
+                            </span>
+                          </div>
+                          {config.user && (
+                            <span style={{ fontSize: '0.62rem', color: 'var(--text-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {config.host ? `${config.host}:${config.port}` : ''}
+                            </span>
+                          )}
+                        </div>
+
+                        {isAdobe && (
+                          <button
+                            title="Open Portal"
+                            onClick={() => openPortal("https://contributor.stock.adobe.com/uploads")}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', color: '#e84142', display: 'flex' }}
+                          >
+                            <ExternalLink style={{ width: '0.8rem', height: '0.8rem' }} />
+                          </button>
+                        )}
+
+                        <button
+                          title="Delete Server"
+                          onClick={() => handleDelete(config.id)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', color: 'rgba(239,68,68,0.7)', display: 'flex', marginLeft: isAdobe ? '0' : 'auto' }}
+                          onMouseOver={e => e.currentTarget.style.color = '#ef4444'}
+                          onMouseOut={e => e.currentTarget.style.color = 'rgba(239,68,68,0.7)'}
+                        >
+                          <Trash2 style={{ width: '0.85rem', height: '0.85rem' }} />
+                        </button>
+                        
+                        <ChevronRight style={{ width: '1rem', height: '1rem', color: 'var(--glass-border)', marginLeft: '0.2rem', flexShrink: 0 }} />
+                      </>
+                    )}
                   </div>
                 </div>
               );
             })}
           </div>
-
         </div>
-      )}
     </div>
   );
 }

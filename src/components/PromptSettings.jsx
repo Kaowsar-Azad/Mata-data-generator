@@ -264,12 +264,6 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
   const update = (key, val) => setSettings((p) => ({ ...p, [key]: val }));
 
   useEffect(() => {
-    if (settings.smartMode) {
-      update('smartMode', false);
-    }
-  }, [settings.smartMode]);
-
-  useEffect(() => {
     if (settings.concurrentLimit > 3) {
       update('concurrentLimit', 3);
     }
@@ -406,7 +400,7 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
               onChange={(v) => update("concurrentLimit", v)}
             />
 
-            {activeTab !== 'prompt' && !settings.smartMode && (
+            {activeTab !== 'prompt' && (
               <>
                 <RangeSlider
                   label="TITLE LENGTH"
@@ -432,24 +426,22 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
                   onChange={(v) => update("descMaxChars", v)}
                 />
 
-                {!settings.smartMode && (
-                  <RangeSlider
-                    label="KEYWORDS COUNT"
-                    icon={Hash}
-                    value={settings.keywordCount}
-                    min={5}
-                    max={50}
-                    step={1}
-                    unit="keywords"
-                    color="var(--primary)"
-                    onChange={(v) => update("keywordCount", v)}
-                  />
-                )}
+                <RangeSlider
+                  label="KEYWORDS COUNT"
+                  icon={Hash}
+                  value={settings.keywordCount}
+                  min={5}
+                  max={50}
+                  step={1}
+                  unit="keywords"
+                  color="var(--primary)"
+                  onChange={(v) => update("keywordCount", v)}
+                />
               </>
             )}
           </div>
 
-          {activeTab !== 'prompt' && !settings.smartMode && (
+          {activeTab !== 'prompt' && (
             <>
               {/* ── Toggles ── */}
               <div className="ps-section-label" style={{ marginTop: '0.75rem' }}>OPTIONS</div>
@@ -547,7 +539,7 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
             </>
           )}
 
-          {activeTab !== 'prompt' && !settings.smartMode && (
+          {activeTab !== 'prompt' && (
             <>
 
               {/* ── Custom Instruction ── */}

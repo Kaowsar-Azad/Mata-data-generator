@@ -70,3 +70,10 @@ list_gemini_models.js
 
 # ML/AI Models
 .models/
+
+# Sensitive App Logic & Prompts
+src/services/apis/
+src/services/promptEngine/
+src/services/geminiService.js
+src/services/trademarks.json
+src/services/apiUsageTracker.js

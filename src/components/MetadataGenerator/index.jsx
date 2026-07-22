@@ -997,6 +997,12 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       if (activePromises.size >= limit) {
         await Promise.race(activePromises);
       }
+      if (cancelRef.current) break;
+
+      // Small pacing delay (1.2s) between batch image requests to avoid breaching 15 RPM API limit
+      if (toProcess.length > 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+      }
       
       await new Promise((resolve) => setTimeout(resolve, 800));
     }

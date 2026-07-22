@@ -1908,6 +1908,7 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
           try {
             if (type === 'sftp') {
               // We use fastPut for SFTP to gain speed and get native progress tracking
+              let lastProgress = 0;
               await slot.client.fastPut(filePath, `/${attemptName}`, {
                 concurrency: 64,
                 chunkSize: 64 * 1024,
@@ -1917,8 +1918,11 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
                   }
                   total_transferred = transferred;
                   const p = Math.round((transferred / total) * 100);
-                  if (event && !event.sender.isDestroyed()) {
-                    event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
+                  if (p !== lastProgress) {
+                    lastProgress = p;
+                    if (event && !event.sender.isDestroyed()) {
+                      event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
+                    }
                   }
                 }
               });

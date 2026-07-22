@@ -134,6 +134,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
   const [isSaving, setIsSaving] = useState(false);
   const [testingStatus, setTestingStatus] = useState({});
   const [toasts, setToasts] = useState([]);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const showToast = (message, type = "success") => {
     const id = Date.now();
@@ -230,28 +231,47 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
           const fPath = f.path.replace(/\\/g, '/');
           const pPath = filePath.replace(/\\/g, '/');
           if (fPath === pPath) {
+            const currentProgressMap = typeof f.progress === 'object' && f.progress !== null ? { ...f.progress } : {};
+            const currentStatusMap = typeof f.serverStatus === 'object' && f.serverStatus !== null ? { ...f.serverStatus } : {};
+            const currentErrors = typeof f.serverErrors === 'object' && f.serverErrors !== null ? { ...f.serverErrors } : {};
+
             if (error) {
-              return {
-                ...f,
-                status: 'error',
-                error: `${host} error: ${error}`
-              };
-            }
-            
-            const currentProgressMap = typeof f.progress === 'object' && f.progress !== null
-              ? { ...f.progress }
-              : {};
-            currentProgressMap[host] = progress;
-            
-            let isAll100 = activeConfigs.length > 0;
-            for (const conf of activeConfigs) {
-              if (currentProgressMap[conf.host] !== 100) {
-                isAll100 = false;
-                break;
+              currentStatusMap[host] = 'error';
+              currentErrors[host] = error;
+            } else {
+              currentProgressMap[host] = progress;
+              if (progress === 100) {
+                currentStatusMap[host] = 'success';
+              } else {
+                currentStatusMap[host] = 'uploading';
               }
             }
+
+            let successC = 0;
+            let errorC = 0;
+            let pendingC = 0;
             
-            return { ...f, progress: currentProgressMap, status: isAll100 ? 'success' : f.status };
+            for (const conf of activeConfigs) {
+              const st = currentStatusMap[conf.host];
+              if (st === 'success') successC++;
+              else if (st === 'error') errorC++;
+              else pendingC++;
+            }
+
+            let newGlobalStatus = f.status;
+            if (pendingC === 0) {
+              if (successC === activeConfigs.length) newGlobalStatus = 'success';
+              else if (errorC === activeConfigs.length) newGlobalStatus = 'error';
+              else newGlobalStatus = 'partial';
+            }
+
+            return { 
+              ...f, 
+              progress: currentProgressMap, 
+              serverStatus: currentStatusMap,
+              serverErrors: currentErrors,
+              status: newGlobalStatus 
+            };
           }
           return f;
         }));
@@ -482,7 +502,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
 
     if (filePaths.length === 0) {
       setIsUploading(false);
-      if (rejectedFiles.length > 0) showToast("সবগুলো ফাইল ভ্যালিডেশন ফেইল করেছে!", "error");
+      if (rejectedFiles.length > 0) showToast("All files failed validation!", "error");
       return;
     }
 
@@ -500,12 +520,25 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
 
     try {
       const uploadPromises = activeConfigs.map(async (conf) => {
-        const res = await window.electronAPI.uploadFtp(conf, filePaths, newJobId);
+        // Filter out files that already succeeded on this specific server
+        const hostFiles = validatedFiles.filter(f => {
+          return !(f.serverStatus && f.serverStatus[conf.host] === 'success');
+        }).map(f => f.path).filter(Boolean);
+
+        if (hostFiles.length === 0) {
+          return { host: conf.host, websiteName: conf.websiteName || conf.host, fileErrors: {}, renamedFiles: {}, csvPath: null };
+        }
+
+        const res = await window.electronAPI.uploadFtp(conf, hostFiles, newJobId);
         if (!res.success) {
-          throw new Error(`Failed on ${conf.websiteName || conf.host}: ${res.error}`);
+          // Instead of failing the entire batch, mark all these files as failed for this specific server
+          const errs = {};
+          hostFiles.forEach(hf => { errs[hf] = res.error; });
+          return { host: conf.host, websiteName: conf.websiteName || conf.host, fileErrors: errs, renamedFiles: {}, csvPath: null };
         }
         return { 
-          host: conf.websiteName || conf.host, 
+          host: conf.host, 
+          websiteName: conf.websiteName || conf.host,
           fileErrors: res.fileErrors || {},
           renamedFiles: res.renamedFiles || {},
           csvPath: res.csvPath || null
@@ -548,25 +581,60 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
       }
 
       if (generatedCsvPaths.length > 0) {
-        showToast(`অ্যাডোবি স্টকের জন্য CSV ফাইল তৈরি হয়েছে:\n${generatedCsvPaths[0]}`, 'success');
+        showToast(`Adobe Stock CSV file generated:\n${generatedCsvPaths[0]}`, 'success');
       }
 
       setFiles(prev => prev.map(item => {
         if (!pendingFiles.some(pf => pf.id === item.id)) return item;
         
-        // Find errors for this file
         const fPath = item.path.replace(/\\/g, '/');
-        const errorsForFile = fileErrorsMap[fPath];
+        const errorsForFile = fileErrorsMap[fPath] || {};
         
-        if (errorsForFile && Object.keys(errorsForFile).length > 0) {
-          const errMsg = Object.entries(errorsForFile).map(([h, err]) => `${h}: ${err}`).join(', ');
-          return { ...item, status: 'error', error: errMsg };
-        } else {
-          return { ...item, status: 'success', error: null };
+        const newServerStatus = { ...(item.serverStatus || {}) };
+        const newServerErrors = { ...(item.serverErrors || {}) };
+        
+        let hasSuccess = false;
+        let hasError = false;
+        
+        activeConfigs.forEach(conf => {
+          if (errorsForFile[conf.host]) {
+             newServerStatus[conf.host] = 'error';
+             newServerErrors[conf.host] = errorsForFile[conf.host];
+             hasError = true;
+          } else if (newServerStatus[conf.host] === 'success') {
+             hasSuccess = true;
+          } else {
+             // If no error was reported this run, and it was attempted, consider it a success.
+             // If it was skipped because it was already success, the condition above handles it.
+             if (validatedFiles.some(vf => vf.id === item.id)) {
+                newServerStatus[conf.host] = 'success';
+                delete newServerErrors[conf.host];
+                hasSuccess = true;
+             }
+          }
+        });
+        
+        let finalStatus = item.status;
+        let finalError = null;
+        
+        if (hasError && !hasSuccess) {
+           finalStatus = 'error';
+           finalError = Object.values(newServerErrors).join(', ');
+        } else if (hasSuccess && !hasError) {
+           finalStatus = 'success';
+        } else if (hasSuccess && hasError) {
+           finalStatus = 'partial';
         }
+        
+        return { 
+          ...item, 
+          status: finalStatus, 
+          error: finalError,
+          serverStatus: newServerStatus,
+          serverErrors: newServerErrors
+        };
       }));
 
-      // Calculate how many failed
       let batchFailed = 0;
       filePaths.forEach(fPath => {
          const normalizedPath = fPath.replace(/\\/g, '/');
@@ -597,6 +665,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
 
   const successCount = files.filter(f => f.status === 'success').length;
   const failedCount = files.filter(f => f.status === 'error').length;
+  const partialCount = files.filter(f => f.status === 'partial').length;
   const totalSize = files.reduce((a, f) => a + (f.size || 0), 0);
 
   return (
@@ -662,7 +731,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                       onMouseOut={e => e.currentTarget.style.background = 'rgba(6,182,212,0.08)'}
                     >
                       <ExternalLink style={{ width: '0.75rem', height: '0.75rem' }} />
-                      {activeAgencyInfo.name} Portal খুলুন
+                      Open {activeAgencyInfo.name} Portal
                     </button>
                   )}
                 </div>
@@ -765,20 +834,21 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
             </div>
           </div>
         ) : (
-          <div className="animate-fade-in" style={{ width: '260px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div className="card glass" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: 'var(--surface-1)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.65rem' }}>
-                <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Server style={{ width: '1rem', height: '1rem', color: 'var(--accent)' }} />
-                  Configured Servers
-                </h3>
-              </div>
-              <FtpConfigManager 
-                ftpConfigs={ftpConfigs} setFtpConfigs={setFtpConfigs}
-                editingConfig={editingConfig} setEditingConfig={setEditingConfig}
-                onStartEdit={(config) => { setEditingConfig(config); }}
-              />
-            </div>
+          <div className="animate-fade-in" style={{ 
+            width: isSidebarCollapsed ? '72px' : '260px', 
+            transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1rem',
+            position: 'relative', zIndex: 10,
+            pointerEvents: isUploading ? 'none' : 'auto',
+            opacity: isUploading ? 0.6 : 1
+          }}>
+            <FtpConfigManager 
+              ftpConfigs={ftpConfigs} setFtpConfigs={setFtpConfigs}
+              editingConfig={editingConfig} setEditingConfig={setEditingConfig}
+              onStartEdit={(config) => { setEditingConfig(config); }}
+              isCollapsed={isSidebarCollapsed}
+              setIsCollapsed={setIsSidebarCollapsed}
+            />
           </div>
         )}
 
@@ -891,7 +961,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
               <p style={{ fontSize: '0.85rem', color: 'var(--text-2)', margin: 0, fontWeight: 500 }}>
                 {activeConfigs.length > 0
                   ? `${activeConfigs.length} server(s) active — JPG, EPS, AI, SVG, PNG supported`
-                  : 'বাম পাশের তালিকা থেকে একটি FTP connection চালু করুন'}
+                  : 'Enable an FTP connection from the list'}
               </p>
               
               <button 
@@ -929,21 +999,57 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                 </span>
               )}
               {files.length > 0 && (
-                <span style={{ fontSize: '0.78rem', color: 'var(--success)', fontWeight: 700 }}>
-                  ✓ {successCount} / {files.length} ({Math.round((successCount / files.length) * 100)}%) Uploaded
-                </span>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '0.4rem',
+                  background: successCount === files.length ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+                  border: `1px solid ${successCount === files.length ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)'}`,
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '99px',
+                  color: successCount === files.length ? 'var(--success)' : '#3b82f6',
+                  fontSize: '0.75rem',
+                  fontWeight: 700
+                }}>
+                  {successCount === files.length ? (
+                    <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem' }} />
+                  ) : (
+                    <CloudUpload style={{ width: '0.9rem', height: '0.9rem' }} />
+                  )}
+                  <span>
+                    {successCount} / {files.length} ({Math.round((successCount / files.length) * 100)}%) Uploaded
+                  </span>
+                </div>
               )}
               {failedCount > 0 && (
-                <span style={{ fontSize: '0.78rem', color: 'var(--danger)', fontWeight: 700 }}>
-                  ✖ {failedCount} Failed
-                </span>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '0.4rem',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '99px',
+                  color: 'var(--danger)',
+                  fontSize: '0.75rem',
+                  fontWeight: 700
+                }}>
+                  <AlertCircle style={{ width: '0.9rem', height: '0.9rem' }} />
+                  <span>{failedCount} Failed</span>
+                </div>
               )}
-              {uploadSpeed && (
-                <span style={{ fontSize: '0.72rem', color: '#7dd3fc', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  <Zap style={{ width: '0.7rem', height: '0.7rem' }} />
-                  {formatBytes(uploadSpeed)}/s
-                </span>
+              {partialCount > 0 && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '0.4rem',
+                  background: 'rgba(245, 158, 11, 0.1)',
+                  border: '1px solid rgba(245, 158, 11, 0.2)',
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '99px',
+                  color: '#f59e0b',
+                  fontSize: '0.75rem',
+                  fontWeight: 700
+                }}>
+                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem' }} />
+                  <span>{partialCount} Partial</span>
+                </div>
               )}
+
               {files.length > 0 && (
                 <button
                   onClick={clearAll}
@@ -1041,16 +1147,17 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                 if (f.status === 'uploading') return 0;
                 if (f.status === 'pending') return 1;
                 if (f.status === 'error') return 2;
-                if (f.status === 'success') return 3;
-                return 4;
+                if (f.status === 'partial') return 3;
+                if (f.status === 'success') return 4;
+                return 5;
               };
               return getScore(a) - getScore(b);
             }).map(file => (
               <div key={file.id} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: file.status === 'success' ? 'rgba(16,185,129,0.04)' : file.status === 'error' ? 'rgba(239,68,68,0.04)' : 'var(--surface-1)',
+                background: file.status === 'success' ? 'rgba(16,185,129,0.04)' : file.status === 'error' ? 'rgba(239,68,68,0.04)' : file.status === 'partial' ? 'rgba(245,158,11,0.04)' : 'var(--surface-1)',
                 padding: '0.65rem 0.9rem', borderRadius: '0.65rem',
-                border: `1px solid ${file.status === 'success' ? 'rgba(16,185,129,0.2)' : file.status === 'error' ? 'rgba(239,68,68,0.2)' : 'var(--glass-border)'}`,
+                border: `1px solid ${file.status === 'success' ? 'rgba(16,185,129,0.2)' : file.status === 'error' ? 'rgba(239,68,68,0.2)' : file.status === 'partial' ? 'rgba(245,158,11,0.2)' : 'var(--glass-border)'}`,
                 transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
               }}
               onMouseOver={e => {
@@ -1061,7 +1168,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                 e.currentTarget.style.transform = 'translateY(0)';
                 e.currentTarget.style.boxShadow = 'none';
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', overflow: 'hidden', flex: 1 }}>
                   {/* Thumbnail */}
                   <div style={{ width: '2.25rem', height: '2.25rem', flexShrink: 0, borderRadius: '0.4rem', overflow: 'hidden', background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
                     {file.previewUrl
@@ -1072,14 +1179,15 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
 
                   {/* Status Icon */}
                   <div style={{
-                    padding: '0.35rem', borderRadius: '0.4rem',
-                    background: file.status === 'success' ? 'rgba(16,185,129,0.1)' : file.status === 'error' ? 'rgba(239,68,68,0.1)' : file.status === 'uploading' ? 'var(--primary-glow)' : 'var(--surface-2)',
-                    color: file.status === 'success' ? 'var(--success)' : file.status === 'error' ? 'var(--danger)' : file.status === 'uploading' ? 'var(--primary)' : 'var(--text-3)'
+                    padding: '0.35rem', borderRadius: '0.4rem', flexShrink: 0,
+                    background: file.status === 'success' ? 'rgba(16,185,129,0.1)' : file.status === 'error' ? 'rgba(239,68,68,0.1)' : file.status === 'partial' ? 'rgba(245,158,11,0.1)' : file.status === 'uploading' ? 'var(--primary-glow)' : 'var(--surface-2)',
+                    color: file.status === 'success' ? 'var(--success)' : file.status === 'error' ? 'var(--danger)' : file.status === 'partial' ? '#f59e0b' : file.status === 'uploading' ? 'var(--primary)' : 'var(--text-3)'
                   }}>
                     {file.status === 'success' ? <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem' }} /> :
                       file.status === 'error' ? <X style={{ width: '0.9rem', height: '0.9rem' }} /> :
-                        file.status === 'uploading' ? <Loader2 style={{ width: '0.9rem', height: '0.9rem', animation: 'spin 1s linear infinite' }} /> :
-                          <Upload style={{ width: '0.9rem', height: '0.9rem' }} />}
+                        file.status === 'partial' ? <AlertTriangle style={{ width: '0.9rem', height: '0.9rem' }} /> :
+                          file.status === 'uploading' ? <Loader2 style={{ width: '0.9rem', height: '0.9rem', animation: 'spin 1s linear infinite' }} /> :
+                            <Upload style={{ width: '0.9rem', height: '0.9rem' }} />}
                   </div>
 
                   {/* File Info */}
@@ -1112,7 +1220,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                       );
                     })()}
 
-                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.1rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.2rem', flexWrap: 'wrap' }}>
                       {file.size > 0 && <span style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>{formatBytes(file.size)}</span>}
                       {file.status === 'uploading' && (() => {
                         const displayProgress = (() => {
@@ -1131,7 +1239,41 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                         );
                       })()}
                       {file.status === 'success' && <span style={{ fontSize: '0.65rem', color: 'var(--success)', fontWeight: 600 }}>✓ Uploaded</span>}
-                      {file.error && <span style={{ fontSize: '0.65rem', color: 'var(--danger)', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.error}</span>}
+                      
+                      {/* Detailed per-server status badges */}
+                      {file.serverStatus && activeConfigs.length > 1 && (file.status === 'partial' || file.status === 'error' || file.status === 'success') && (
+                        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', marginLeft: '0.25rem', flexWrap: 'wrap' }}>
+                          {activeConfigs.map(conf => {
+                            const st = file.serverStatus[conf.host];
+                            if (!st) return null;
+                            const isSucc = st === 'success';
+                            const isErr = st === 'error';
+                            const name = conf.websiteName || conf.host;
+                            let cleanErrText = '';
+                            if (isErr && file.serverErrors && file.serverErrors[conf.host]) {
+                              cleanErrText = file.serverErrors[conf.host].replace(/^upload to .*? failed:\s*/i, '').replace(/^Error:\s*/i, '');
+                              cleanErrText = cleanErrText.charAt(0).toUpperCase() + cleanErrText.slice(1);
+                            }
+                            
+                            return (
+                              <span key={conf.host} title={cleanErrText ? `Error: ${cleanErrText}` : ''} style={{ 
+                                fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 600,
+                                background: isSucc ? 'rgba(16,185,129,0.1)' : isErr ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
+                                color: isSucc ? 'var(--success)' : isErr ? 'var(--danger)' : '#f59e0b',
+                                border: `1px solid ${isSucc ? 'rgba(16,185,129,0.2)' : isErr ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'}`,
+                                cursor: isErr ? 'help' : 'default', display: 'flex', alignItems: 'center', gap: '0.2rem'
+                              }}>
+                                {isSucc ? '✅' : isErr ? '❌' : '⏳'} {name}
+                                {isErr && cleanErrText && (
+                                  <span style={{ fontWeight: 400, opacity: 0.85 }}>({cleanErrText})</span>
+                                )}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                      
+                      {file.error && !file.serverStatus && <span style={{ fontSize: '0.65rem', color: 'var(--danger)', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.error}</span>}
                     </div>
                   </div>
                 </div>
@@ -1149,8 +1291,8 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
             {files.length === 0 && (
               <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-3)' }}>
                 <Upload style={{ width: '2rem', height: '2rem', margin: '0 auto 0.75rem', opacity: 0.3 }} />
-                <p style={{ fontSize: '0.85rem', margin: 0 }}>ছবি নির্বাচন করুন বা drop zone-এ ছেড়ে দিন</p>
-                <p style={{ fontSize: '0.72rem', margin: '0.25rem 0 0', color: 'var(--text-3)', opacity: 0.7 }}>JPG, EPS, AI, SVG, PNG সব ধরণের ফাইল সাপোর্ট করে</p>
+                <p style={{ fontSize: '0.85rem', margin: 0 }}>Select files or drop them in the drop zone</p>
+                <p style={{ fontSize: '0.72rem', margin: '0.25rem 0 0', color: 'var(--text-3)', opacity: 0.7 }}>Supports JPG, EPS, AI, SVG, PNG formats</p>
               </div>
             )}
           </div>

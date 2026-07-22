@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Server, ChevronDown, ChevronRight, Plus, Trash2, ExternalLink, Zap } from "lucide-react";
+import { Server, ChevronDown, ChevronRight, Plus, Trash2, ExternalLink, Zap, CheckCircle2 } from "lucide-react";
 
 const ADOBE_HOSTS = ['adobe', 'adobestock', 'contributor.stock'];
 
@@ -213,14 +213,16 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
                     border: isBeingEdited
                       ? `1px solid ${isAdobe ? 'rgba(232,65,66,0.6)' : 'var(--accent)'}`
                       : `1px solid ${isAdobe ? 'rgba(232,65,66,0.2)' : 'var(--glass-border)'}`,
-                    borderLeft: isBeingEdited
-                      ? `4px solid ${isAdobe ? '#e84142' : 'var(--accent)'}`
-                      : undefined,
+                    borderLeft: isCollapsed
+                      ? (config.enabled ? `4px solid ${isAdobe ? '#e84142' : 'var(--accent)'}` : '4px solid transparent')
+                      : (isBeingEdited ? `4px solid ${isAdobe ? '#e84142' : 'var(--accent)'}` : '1px solid transparent'),
                     borderRadius: '0.5rem', overflow: 'hidden',
                     transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                    background: isBeingEdited 
-                      ? (isAdobe ? 'rgba(232,65,66,0.05)' : 'rgba(6,182,212,0.05)') 
-                      : (isAdobe ? 'rgba(232,65,66,0.02)' : 'var(--surface-1)'),
+                    background: isCollapsed
+                      ? (config.enabled ? (isAdobe ? 'rgba(232,65,66,0.08)' : 'rgba(6,182,212,0.08)') : 'var(--surface-1)')
+                      : (isBeingEdited 
+                          ? (isAdobe ? 'rgba(232,65,66,0.05)' : 'rgba(6,182,212,0.05)') 
+                          : (isAdobe ? 'rgba(232,65,66,0.02)' : 'var(--surface-1)')),
                     boxShadow: isBeingEdited ? '0 4px 15px rgba(0,0,0,0.1)' : '0 1px 3px rgba(0,0,0,0.05)',
                     transform: isBeingEdited ? 'translateY(-2px)' : 'translateY(0)'
                   }}
@@ -260,26 +262,33 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
                     )}
 
                     {isCollapsed && (
-                      <span 
-                        onClick={() => toggleConfigEnable(config.id, !config.enabled)}
-                        title={`Click to ${config.enabled ? 'disable' : 'enable'} ${config.websiteName || config.host || "Unnamed"}`}
-                        style={{ 
-                          fontSize: '1.25rem', 
-                          cursor: 'pointer', 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                          opacity: 1,
-                          transition: 'all 0.2s ease',
-                          padding: '0.1rem',
-                          borderRadius: '0.25rem'
-                        }}
-                        onMouseOver={e => { e.currentTarget.style.transform = 'scale(1.25)'; }}
-                        onMouseOut={e => { e.currentTarget.style.transform = 'scale(1)'; }}
-                      >
-                        {icon}
-                      </span>
+                      <div style={{ position: 'relative', display: 'flex' }}>
+                        <span 
+                          onClick={() => toggleConfigEnable(config.id, !config.enabled)}
+                          title={`Click to ${config.enabled ? 'disable' : 'enable'} ${config.websiteName || config.host || "Unnamed"}`}
+                          style={{ 
+                            fontSize: '1.25rem', 
+                            cursor: 'pointer', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                            opacity: 1,
+                            transition: 'all 0.2s ease',
+                            padding: '0.1rem',
+                            borderRadius: '0.25rem'
+                          }}
+                          onMouseOver={e => { e.currentTarget.style.transform = 'scale(1.25)'; }}
+                          onMouseOut={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+                        >
+                          {icon}
+                        </span>
+                        {config.enabled && (
+                          <div style={{ position: 'absolute', bottom: '-3px', right: '-5px', background: 'var(--surface-1)', borderRadius: '50%', padding: '1px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <CheckCircle2 style={{ width: '12px', height: '12px', color: 'rgba(16, 185, 129, 0.75)' }} />
+                          </div>
+                        )}
+                      </div>
                     )}
 
                     {!isCollapsed && (
@@ -288,9 +297,12 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
                           onClick={() => handleEdit(config)}
                           style={{ flex: 1, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '0.05rem', minWidth: 0 }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              {icon}
+                            </div>
                             <span style={{ fontSize: '0.8rem', fontWeight: 700, color: config.enabled ? (isAdobe ? '#dc2626' : 'var(--text-1)') : 'var(--text-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {icon} {config.websiteName || config.host || "Unnamed"}
+                              {config.websiteName || config.host || "Unnamed"}
                             </span>
                             <span style={{
                               fontSize: '0.55rem', padding: '0.05rem 0.35rem', borderRadius: '99px', fontWeight: 700, flexShrink: 0,

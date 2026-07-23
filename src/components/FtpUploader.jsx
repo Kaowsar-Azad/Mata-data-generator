@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import {
   Server, ShieldCheck, Loader2, Save, Upload, Trash2, CheckCircle2, X,
   ExternalLink, Info, RefreshCw, Zap, AlertCircle, AlertTriangle, CloudUpload, Link,
-  ChevronDown, ChevronUp, Key, Globe
+  ChevronDown, ChevronUp, Key, Globe, Eye, EyeOff
 } from "lucide-react";
 import { processEpsFile, isEpsFile } from "../services/epsService";
 import { FtpConfigManager } from "./FtpConfigManager";
@@ -137,6 +137,11 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
   const [toasts, setToasts] = useState([]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    setShowPassword(false);
+  }, [editingConfig?.id]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -700,6 +705,14 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
     return count + (isAdobeSuccess ? 1 : 0);
   }, 0);
 
+  const successfulServerNames = activeConfigs
+    .filter(conf => files.some(f => f.serverStatus && f.serverStatus[conf.host] === 'success'))
+    .map(conf => conf.websiteName || conf.host);
+    
+  const successServerStr = successfulServerNames.length > 1 
+    ? successfulServerNames.slice(0, -1).join(', ') + ' and ' + successfulServerNames[successfulServerNames.length - 1]
+    : successfulServerNames[0] || '';
+
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', height: '100%', overflowY: 'auto', paddingRight: '0.5rem', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '1.5rem', alignItems: isMobile ? 'stretch' : 'flex-start', minHeight: 0 }}>
@@ -799,7 +812,9 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.35rem' }}>Username / Contributor ID</label>
+              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.35rem' }}>
+                {editingConfig.host?.toLowerCase().includes('shutterstock') ? 'Account Email / Display Name' : 'Username / Contributor ID'}
+              </label>
               <input
                 type="text"
                 placeholder="Your contributor ID"
@@ -810,12 +825,29 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
 
             <div>
               <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.35rem' }}>Password (SFTP-generated)</label>
-              <input
-                type="password"
-                placeholder="Generate from Contributor Portal"
-                value={editingConfig.password || ''}
-                onChange={e => setEditingConfig({ ...editingConfig, password: e.target.value })}
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Generate from Contributor Portal"
+                  value={editingConfig.password || ''}
+                  onChange={e => setEditingConfig({ ...editingConfig, password: e.target.value })}
+                  style={{ paddingRight: '2.2rem' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  title={showPassword ? "Hide password" : "Show password"}
+                  style={{
+                    position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)',
+                    padding: '0.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  }}
+                  onMouseOver={e => e.currentTarget.style.color = 'var(--text-1)'}
+                  onMouseOut={e => e.currentTarget.style.color = 'var(--text-3)'}
+                >
+                  {showPassword ? <Eye size={16} /> : <EyeOff size={16} />}
+                </button>
+              </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -1160,15 +1192,15 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
             </div>
           </div>
 
-          {/* Upload success reminder for Adobe */}
-          {adobeActive && adobeSuccessCount > 0 && !isUploading && (
+          {/* Upload success reminder */}
+          {successfulServerNames.length > 0 && !isUploading && (
             <div style={{ display: 'flex', gap: '0.5rem', background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.2)', padding: '0.65rem 0.85rem', borderRadius: '0.55rem', alignItems: 'flex-start' }}>
               <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem', color: 'var(--success)', flexShrink: 0, marginTop: '0.05rem' }} />
               <span style={{ fontSize: '0.75rem', color: 'var(--text-2)', lineHeight: 1.5 }}>
                 <strong style={{ color: 'var(--success)' }}>
-                  {adobeSuccessCount === files.length 
-                    ? 'All files successfully sent to Adobe Stock!' 
-                    : `${adobeSuccessCount} file(s) successfully sent to Adobe Stock!`}
+                  {successCount === files.length 
+                    ? `All files successfully sent to ${successServerStr}!` 
+                    : `Files successfully sent to ${successServerStr}!`}
                 </strong>
                 {failedCount > 0 && <span style={{ color: '#ef4444', fontWeight: 600 }}> However, some files failed to upload to other servers. You can retry them.</span>}
               </span>

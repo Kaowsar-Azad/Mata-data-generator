@@ -153,7 +153,7 @@ function App() {
   return (
     <div className="dashboard-layout">
       {/* ─── LEFT SIDEBAR ─── */}
-      <aside className="dashboard-sidebar" style={{
+      <aside className={`dashboard-sidebar ${activeTab === 'ftp' ? 'sidebar-compact' : ''}`} style={{
         width: sidebarOpen ? undefined : '56px',
         minWidth: sidebarOpen ? undefined : '56px',
         transition: 'width 0.25s ease, min-width 0.25s ease'
@@ -303,7 +303,7 @@ function App() {
                     borderRadius: '0.5rem',
                     cursor: 'pointer',
                     fontWeight: 700,
-                    fontSize: '0.73rem',
+                    fontSize: activeTab === 'ftp' ? '0.8rem' : '0.73rem',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: sidebarOpen ? 'flex-start' : 'center',

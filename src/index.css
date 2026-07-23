@@ -111,6 +111,9 @@ body {
     scrollbar-width: thin;
     scrollbar-color: var(--glass-border) transparent;
   }
+  .dashboard-sidebar.sidebar-compact {
+    width: 250px;
+  }
   .dashboard-sidebar::-webkit-scrollbar {
     width: 5px;
   }

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   Server, ShieldCheck, Loader2, Save, Upload, Trash2, CheckCircle2, X,
   ExternalLink, Info, RefreshCw, Zap, AlertCircle, AlertTriangle, CloudUpload, Link,
@@ -135,6 +136,15 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
   const [testingStatus, setTestingStatus] = useState({});
   const [toasts, setToasts] = useState([]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const showToast = (message, type = "success") => {
     const id = Date.now();
@@ -175,57 +185,47 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
     };
   }, [currentJobId]);
 
-  // Handle EPS previews asynchronously
+  // Ultra-lightweight, non-blocking EPS preview extractor (FTP-specific)
+  // Reads only 32 bytes + small preview chunk. Never reads the full 6MB+ file.
+  // Zero CPU blocking: JPEG → instant blob URL, TIFF → sharp IPC (async).
+  const processedEpsRef = useRef(new Set());
+
   useEffect(() => {
-    const processPreviews = async () => {
-      const epsFilesWithoutPreview = files.filter(
-        f => (isEpsFile(f.file) || (f.path && (f.path.toLowerCase().endsWith('.eps') || f.path.toLowerCase().endsWith('.epsf') || f.path.toLowerCase().endsWith('.epsi')))) && !f.previewUrl && !f.isProcessingPreview
-      );
-      if (epsFilesWithoutPreview.length === 0) return;
+    const epsFiles = files.filter(
+      f => f.file && !f.previewUrl && !processedEpsRef.current.has(f.id) &&
+        (isEpsFile(f.file) || (f.path && /\.(eps|epsf|epsi)$/i.test(f.path)))
+    );
+    if (epsFiles.length === 0) return;
 
-      // Mark selected files as processing preview
-      setFiles(prev =>
-        prev.map(f =>
-          epsFilesWithoutPreview.some(ep => ep.id === f.id)
-            ? { ...f, isProcessingPreview: true }
-            : f
-        )
-      );
+    // Mark immediately so we don't re-process on next render
+    epsFiles.forEach(f => processedEpsRef.current.add(f.id));
 
-      for (const f of epsFilesWithoutPreview) {
+    (async () => {
+      // Yield slightly to let React finish rendering
+      await new Promise(r => setTimeout(r, 50));
+      
+      for (const f of epsFiles) {
         try {
-          const fileObj = f.file || { path: f.path, name: f.name };
-          const epsData = await processEpsFile(fileObj);
-          if (epsData && epsData.dataUrl) {
-            setFiles(prev =>
-              prev.map(p =>
-                p.id === f.id ? { ...p, previewUrl: epsData.dataUrl, isProcessingPreview: false } : p
-              )
-            );
+          console.log(`[FTP EPS] Processing preview for: ${f.file.name}`);
+          const epsData = await processEpsFile(f.file);
+          
+          if (epsData?.dataUrl) {
+            setFiles(prev => prev.map(p => p.id === f.id ? { ...p, previewUrl: epsData.dataUrl } : p));
           } else {
-            // Processing returned nothing or failed, clear flag
-            setFiles(prev =>
-              prev.map(p =>
-                p.id === f.id ? { ...p, isProcessingPreview: false } : p
-              )
-            );
+            console.warn(`[FTP EPS] Failed to extract preview URL for: ${f.file.name}`);
           }
         } catch (err) {
-          console.error("Failed to generate EPS preview for FTP upload", err);
-          setFiles(prev =>
-            prev.map(p =>
-              p.id === f.id ? { ...p, isProcessingPreview: false } : p
-            )
-          );
+          console.error(`[FTP EPS] Error extracting preview:`, err);
         }
       }
-    };
-    processPreviews();
+    })();
   }, [files]);
 
+  const activeHosts = activeConfigs.map(c => c.host).join(',');
   useEffect(() => {
     if (window.electronAPI?.onFtpProgress) {
       const unsubscribe = window.electronAPI.onFtpProgress(({ filePath, progress, host, error }) => {
+        console.log(`[FTP Progress IPC] File: ${filePath}, Progress: ${progress}%, Host: ${host}, Error: ${error || 'none'}`);
         setFiles(prev => prev.map(f => {
           // Normalize paths for windows
           const fPath = f.path.replace(/\\/g, '/');
@@ -278,7 +278,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
       });
       return unsubscribe;
     }
-  }, [activeConfigs]);
+  }, [activeHosts]);
 
   const handleTestSpecificConfig = async (config) => {
     setTestingStatus(prev => ({ ...prev, [config.id]: { isTesting: true, result: null } }));
@@ -430,7 +430,10 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
 
     const t0 = Date.now();
 
-    const pendingFiles = files.filter(f => f.status !== 'success');
+    const pendingFiles = files.filter(f => {
+      // Re-evaluate if there's any active config where the file hasn't succeeded yet
+      return activeConfigs.some(conf => !(f.serverStatus && f.serverStatus[conf.host] === 'success'));
+    });
 
     // --- SMART VALIDATION ENGINE ---
     const validatedFiles = [];
@@ -443,12 +446,12 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
       // Video Validation
       if (ext === '.mp4' || ext === '.mov') {
         if (f.size > 3900 * 1024 * 1024) {
-          errorMsg = "ভিডিওর সাইজ ৩.৯ জিবি এর বেশি হতে পারবে না।";
+          errorMsg = "Video size cannot exceed 3.9 GB.";
         } else if (window.electronAPI && window.electronAPI.checkVideoCodec) {
           try {
             const codec = await window.electronAPI.checkVideoCodec(f.path);
             if (!['h264', 'hevc'].includes(codec)) {
-              errorMsg = `ভিডিও কোডেক সাপোর্ট করে না (${codec})। Adobe Stock এর জন্য H.264 বা H.265 (HEVC) প্রয়োজন।`;
+              errorMsg = `Unsupported video codec (${codec}). H.264 or H.265 (HEVC) is required for Adobe Stock.`;
             }
           } catch(e) {
             console.error("Codec check failed", e);
@@ -458,7 +461,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
       // Image Validation (JPEG/JPG)
       else if (ext === '.jpg' || ext === '.jpeg') {
         if (f.size > 45 * 1024 * 1024) {
-          errorMsg = "ছবির সাইজ ৪৫ মেগাবাইটের বেশি হতে পারবে না।";
+          errorMsg = "Image size cannot exceed 45 MB.";
         } else {
           // Check Resolution
           try {
@@ -470,9 +473,9 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
             });
             const mp = (dims.w * dims.h) / 1000000;
             if (mp > 0 && mp < 4) {
-              errorMsg = `রেজোলিউশন খুব ছোট (${mp.toFixed(1)} MP)। নূন্যতম ৪ মেগাপিক্সেল প্রয়োজন।`;
+              errorMsg = `Resolution too low (${mp.toFixed(1)} MP). Minimum 4 Megapixels required.`;
             } else if (mp > 100) {
-              errorMsg = `রেজোলিউশন খুব বড় (${mp.toFixed(1)} MP)। সর্বোচ্চ ১০০ মেগাপিক্সেল অনুমোদিত।`;
+              errorMsg = `Resolution too high (${mp.toFixed(1)} MP). Maximum 100 Megapixels allowed.`;
             }
           } catch(e) {
             console.error("Resolution check failed", e);
@@ -645,9 +648,9 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
       const batchSuccess = filePaths.length - batchFailed;
 
       if (batchFailed > 0) {
-        showToast(`আপলোড সম্পন্ন! কিন্তু ${batchFailed}টি ফাইল ফেইল করেছে। অনুগ্রহ করে উপরের "Retry Failed" বাটনে ক্লিক করুন।`, "error");
+        showToast(`Upload completed, but ${batchFailed} file(s) failed. Click "Retry Failed" to try again.`, "error");
       } else {
-        showToast(`${batchSuccess}টি ফাইল সফলভাবে সার্ভারে আপলোড হয়েছে!`, "success");
+        showToast(`${batchSuccess} file(s) successfully uploaded to server(s)!`, "success");
       }
 
     } catch (uploadErr) {
@@ -656,25 +659,54 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
           ? { ...item, status: 'error', error: uploadErr.message }
           : item
       ));
-      showToast(`আপলোড করতে সমস্যা হয়েছে: ${uploadErr.message}`, "error");
+      showToast(`Upload failed: ${uploadErr.message}`, "error");
     }
 
     setIsUploading(false);
     setCurrentJobId(null);
   };
 
+  const getCategorizedError = (rawErr, serverName) => {
+    if (!rawErr) return '';
+    const errLower = rawErr.toLowerCase();
+    
+    // Check for network issues
+    const isNetworkError = 
+      errLower.includes('etimedout') ||
+      errLower.includes('econnrefused') ||
+      errLower.includes('enotfound') ||
+      errLower.includes('eai_again') ||
+      errLower.includes('timeout') ||
+      errLower.includes('connect') ||
+      errLower.includes('socket') ||
+      errLower.includes('offline') ||
+      errLower.includes('network');
+      
+    if (isNetworkError) {
+      return `Failed due to network issue`;
+    } else {
+      return `File not eligible for upload to ${serverName || 'server'}`;
+    }
+  };
+
   const successCount = files.filter(f => f.status === 'success').length;
-  const failedCount = files.filter(f => f.status === 'error').length;
+  const completelyFailedCount = files.filter(f => f.status === 'error').length;
   const partialCount = files.filter(f => f.status === 'partial').length;
+  const failedCount = completelyFailedCount + partialCount;
   const totalSize = files.reduce((a, f) => a + (f.size || 0), 0);
+
+  const adobeSuccessCount = files.reduce((count, f) => {
+    const isAdobeSuccess = activeConfigs.filter(isAdobeConfig).some(conf => f.serverStatus && f.serverStatus[conf.host] === 'success');
+    return count + (isAdobeSuccess ? 1 : 0);
+  }, 0);
 
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', height: '100%', overflowY: 'auto', paddingRight: '0.5rem', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start', minHeight: 0 }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '1.5rem', alignItems: isMobile ? 'stretch' : 'flex-start', minHeight: 0 }}>
 
         {/* ─── Left Pane: Config Form or List ─── */}
         {editingConfig ? (
-          <div className="card glass animate-fade-in" style={{ width: '320px', flexShrink: 0, padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div className="card glass animate-fade-in" style={{ width: isMobile ? '100%' : '320px', flexShrink: 0, padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.65rem' }}>
               <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Server style={{ width: '1rem', height: '1rem', color: 'var(--accent)' }} />
@@ -835,12 +867,10 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
           </div>
         ) : (
           <div className="animate-fade-in" style={{ 
-            width: isSidebarCollapsed ? '72px' : '260px', 
+            width: isMobile ? '100%' : (isSidebarCollapsed ? '72px' : '260px'), 
             transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1rem',
-            position: 'relative', zIndex: 10,
-            pointerEvents: isUploading ? 'none' : 'auto',
-            opacity: isUploading ? 0.6 : 1
+            position: 'relative', zIndex: 10
           }}>
             <FtpConfigManager 
               ftpConfigs={ftpConfigs} setFtpConfigs={setFtpConfigs}
@@ -853,7 +883,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
         )}
 
         {/* ─── Right Pane: Upload Area ─── */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%' }}>
 
 
 
@@ -1015,11 +1045,11 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                     <CloudUpload style={{ width: '0.9rem', height: '0.9rem' }} />
                   )}
                   <span>
-                    {successCount} / {files.length} ({Math.round((successCount / files.length) * 100)}%) Uploaded
+                    {successCount} / {files.length} ({files.length > 0 ? Math.round((successCount / files.length) * 100) : 0}%) Uploaded
                   </span>
                 </div>
               )}
-              {failedCount > 0 && (
+              {completelyFailedCount > 0 && (
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: '0.4rem',
                   background: 'rgba(239, 68, 68, 0.1)',
@@ -1031,7 +1061,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                   fontWeight: 700
                 }}>
                   <AlertCircle style={{ width: '0.9rem', height: '0.9rem' }} />
-                  <span>{failedCount} Failed</span>
+                  <span>{completelyFailedCount} Failed</span>
                 </div>
               )}
               {partialCount > 0 && (
@@ -1094,8 +1124,8 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                   disabled={isUploading || activeConfigs.length === 0}
                   style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', borderColor: 'rgba(239,68,68,0.4)', color: 'var(--danger)', padding: '0.45rem 1rem', background: 'rgba(239,68,68,0.05)', fontSize: '0.8rem' }}
                 >
+                  <span>Retry {failedCount} Failed {failedCount === 1 ? 'File' : 'Files'}</span>
                   {isUploading ? <Loader2 style={{ width: '0.9rem', height: '0.9rem', animation: 'spin 1s linear infinite' }} /> : <RefreshCw style={{ width: '0.9rem', height: '0.9rem' }} />}
-                  Retry Failed
                 </button>
               )}
               <button
@@ -1131,11 +1161,16 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
           </div>
 
           {/* Upload success reminder for Adobe */}
-          {adobeActive && successCount > 0 && !isUploading && (
+          {adobeActive && adobeSuccessCount > 0 && !isUploading && (
             <div style={{ display: 'flex', gap: '0.5rem', background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.2)', padding: '0.65rem 0.85rem', borderRadius: '0.55rem', alignItems: 'flex-start' }}>
               <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem', color: 'var(--success)', flexShrink: 0, marginTop: '0.05rem' }} />
               <span style={{ fontSize: '0.75rem', color: 'var(--text-2)', lineHeight: 1.5 }}>
-                <strong style={{ color: 'var(--success)' }}>{successCount} file(s) Adobe Stock-এ পাঠানো হয়েছে!</strong> এখন Contributor Portal-এ গিয়ে Uploads ট্যাবে metadata (title, keywords, category) যোগ করুন এবং Submit করুন।
+                <strong style={{ color: 'var(--success)' }}>
+                  {adobeSuccessCount === files.length 
+                    ? 'All files successfully sent to Adobe Stock!' 
+                    : `${adobeSuccessCount} file(s) successfully sent to Adobe Stock!`}
+                </strong>
+                {failedCount > 0 && <span style={{ color: '#ef4444', fontWeight: 600 }}> However, some files failed to upload to other servers. You can retry them.</span>}
               </span>
             </div>
           )}
@@ -1234,7 +1269,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                         })();
                         return (
                           <span style={{ fontSize: '0.65rem', color: 'var(--primary)', fontWeight: 600 }}>
-                            Uploading... {displayProgress}%
+                            {displayProgress === 0 ? 'Connecting & preparing...' : `Uploading... ${displayProgress}%`}
                           </span>
                         );
                       })()}
@@ -1251,8 +1286,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                             const name = conf.websiteName || conf.host;
                             let cleanErrText = '';
                             if (isErr && file.serverErrors && file.serverErrors[conf.host]) {
-                              cleanErrText = file.serverErrors[conf.host].replace(/^upload to .*? failed:\s*/i, '').replace(/^Error:\s*/i, '');
-                              cleanErrText = cleanErrText.charAt(0).toUpperCase() + cleanErrText.slice(1);
+                              cleanErrText = getCategorizedError(file.serverErrors[conf.host], name);
                             }
                             
                             return (
@@ -1273,7 +1307,17 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                         </div>
                       )}
                       
-                      {file.error && !file.serverStatus && <span style={{ fontSize: '0.65rem', color: 'var(--danger)', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.error}</span>}
+                      {file.error && (activeConfigs.length === 1 || !file.serverStatus) && (() => {
+                        const activeConf = activeConfigs[0];
+                        const serverName = activeConf ? (activeConf.websiteName || activeConf.host) : '';
+                        const hasServerError = file.serverErrors && activeConf && file.serverErrors[activeConf.host];
+                        const displayErr = hasServerError ? getCategorizedError(file.error, serverName) : file.error;
+                        return (
+                          <span style={{ fontSize: '0.65rem', color: 'var(--danger)', maxWidth: '350px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={file.error}>
+                            {displayErr}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -1300,59 +1344,75 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
       </div>
 
       {/* Premium Floating Toast Notifications Stack */}
-      <div style={{
-        position: 'fixed',
-        bottom: '2rem',
-        right: '2rem',
-        zIndex: 9999,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.75rem',
-        pointerEvents: 'none'
-      }}>
-        {toasts.map((t) => (
-          <div 
-            key={t.id}
-            style={{
-              pointerEvents: 'auto',
-              background: t.type === 'success' ? 'rgba(16,185,129,0.95)' : 'rgba(239,68,68,0.95)',
-              color: '#fff',
-              padding: '1rem 1.5rem',
-              borderRadius: '0.75rem',
-              boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-              backdropFilter: 'blur(10px)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.75rem',
-              animation: 'slideIn 0.3s ease-out',
-              border: '1px solid rgba(255,255,255,0.1)',
-              width: '350px',
-              boxSizing: 'border-box'
-            }}
-          >
-            {t.type === 'success' ? (
-              <CheckCircle2 style={{ width: '1.25rem', height: '1.25rem', flexShrink: 0 }} />
-            ) : (
-              <AlertTriangle style={{ width: '1.25rem', height: '1.25rem', flexShrink: 0 }} />
-            )}
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, flexGrow: 1, wordBreak: 'break-word', lineHeight: '1.3', whiteSpace: 'pre-wrap' }}>{t.message}</span>
-            <button 
-              onClick={() => setToasts(prev => prev.filter(item => item.id !== t.id))}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'rgba(255,255,255,0.7)',
-                cursor: 'pointer',
-                marginLeft: '0.5rem',
-                display: 'flex',
-                flexShrink: 0
-              }}
-            >
-              <X style={{ width: '0.9rem', height: '0.9rem' }} />
-            </button>
-          </div>
-        ))}
-      </div>
+      {createPortal(
+        <div style={{
+          position: 'fixed',
+          bottom: '2rem',
+          right: '2rem',
+          zIndex: 9999,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.75rem',
+          pointerEvents: 'none'
+        }}>
+          {toasts.map((t) => {
+            const isSuccess = t.type === 'success';
+            
+            let iconColor = isSuccess ? '#10b981' : '#ef4444';
+            let IconComponent = isSuccess ? CheckCircle2 : AlertCircle;
+            let title = isSuccess ? 'Upload Successful' : 'Upload Alert';
+
+            return (
+              <div 
+                key={t.id}
+                style={{
+                  pointerEvents: 'auto',
+                  background: 'rgba(15, 23, 42, 0.95)',
+                  color: '#fff',
+                  padding: '0.95rem 1.15rem',
+                  borderRadius: '0.75rem',
+                  boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.3)',
+                  backdropFilter: 'blur(12px)',
+                  WebkitBackdropFilter: 'blur(12px)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.8rem',
+                  animation: 'slideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  width: '340px',
+                  boxSizing: 'border-box'
+                }}
+              >
+                <IconComponent style={{ width: '1.25rem', height: '1.25rem', color: iconColor, flexShrink: 0, marginTop: '0.1rem' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', flexGrow: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, letterSpacing: '-0.01em' }}>{title}</span>
+                  <span style={{ fontSize: '0.76rem', color: 'rgba(255, 255, 255, 0.75)', fontWeight: 500, lineHeight: '1.4', wordBreak: 'break-word' }}>
+                    {t.message}
+                  </span>
+                </div>
+                <button 
+                  onClick={() => setToasts(prev => prev.filter(item => item.id !== t.id))}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'rgba(255, 255, 255, 0.4)',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    display: 'flex',
+                    flexShrink: 0,
+                    transition: 'color 0.15s'
+                  }}
+                  onMouseOver={e => e.currentTarget.style.color = '#fff'}
+                  onMouseOut={e => e.currentTarget.style.color = 'rgba(255, 255, 255, 0.4)'}
+                >
+                  <X style={{ width: '0.85rem', height: '0.85rem' }} />
+                </button>
+              </div>
+            );
+          })}
+        </div>,
+        document.body
+      )}
       <style>{`
         @keyframes slideIn {
           from { transform: translateY(100%) scale(0.9); opacity: 0; }

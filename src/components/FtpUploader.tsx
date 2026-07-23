@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronUp, Key, Globe, Eye, EyeOff
 } from "lucide-react";
 import { processEpsFile, isEpsFile } from "../services/epsService";
-import { FtpConfigManager } from "./FtpConfigManager";
+import { FtpConfigManager, FtpConfig } from "./FtpConfigManager";
 
 const POPULAR_AGENCIES = [
   {
@@ -81,7 +81,14 @@ function formatBytes(bytes) {
 
 
 
-export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, setEditingConfig }) {
+interface FtpUploaderProps {
+  ftpConfigs?: FtpConfig[];
+  setFtpConfigs: (configs: FtpConfig[]) => void;
+  editingConfig?: FtpConfig | null;
+  setEditingConfig: (config: FtpConfig | null) => void;
+}
+
+export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = null, setEditingConfig }: FtpUploaderProps) {
   const [files, setFiles] = useState(() => {
     try {
       const saved = sessionStorage.getItem('ftp_upload_state');
@@ -706,7 +713,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
   }, 0);
 
   const successfulServerNames = activeConfigs
-    .filter(conf => files.some(f => f.serverStatus && f.serverStatus[conf.host] === 'success'))
+    .filter(conf => files.length > 0 && files.every(f => f.serverStatus && f.serverStatus[conf.host] === 'success'))
     .map(conf => conf.websiteName || conf.host);
     
   const successServerStr = successfulServerNames.length > 1 
@@ -1112,39 +1119,41 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                 </div>
               )}
 
-              {files.length > 0 && (
-                <button
-                  onClick={clearAll}
-                  className="btn-outline"
-                  style={{ padding: '0.25rem 0.55rem', fontSize: '0.72rem', color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.2)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                >
-                  <Trash2 style={{ width: '0.75rem', height: '0.75rem' }} /> Clear
-                </button>
-              )}
-
-              {/* Concurrency Selector */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginLeft: '0.5rem', padding: '0.2rem 0.5rem', background: 'var(--surface-2)', borderRadius: '0.5rem', border: '1px solid var(--glass-border)' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', fontWeight: 600 }}>Threads:</span>
-                {[1, 2].map(val => (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}>
+                {files.length > 0 && (
                   <button
-                    key={val}
-                    onClick={() => setConcurrency(val)}
-                    style={{
-                      padding: '0.15rem 0.45rem',
-                      fontSize: '0.7rem',
-                      fontWeight: 800,
-                      border: 'none',
-                      borderRadius: '0.25rem',
-                      background: concurrency === val ? 'var(--primary)' : 'transparent',
-                      color: concurrency === val ? '#fff' : 'var(--text-2)',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s'
-                    }}
-                    title={`Upload up to ${val} file(s) in parallel`}
+                    onClick={clearAll}
+                    className="btn-outline"
+                    style={{ padding: '0.25rem 0.55rem', fontSize: '0.72rem', color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.2)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
                   >
-                    {val}
+                    <Trash2 style={{ width: '0.75rem', height: '0.75rem' }} /> Clear
                   </button>
-                ))}
+                )}
+
+                {/* Concurrency Selector */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.2rem 0.5rem', background: 'var(--surface-2)', borderRadius: '0.5rem', border: '1px solid var(--glass-border)' }}>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', fontWeight: 600 }}>Parallel Uploads:</span>
+                  {[1, 2].map(val => (
+                    <button
+                      key={val}
+                      onClick={() => setConcurrency(val)}
+                      style={{
+                        padding: '0.15rem 0.45rem',
+                        fontSize: '0.7rem',
+                        fontWeight: 800,
+                        border: 'none',
+                        borderRadius: '0.25rem',
+                        background: concurrency === val ? 'var(--primary)' : 'transparent',
+                        color: concurrency === val ? '#fff' : 'var(--text-2)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s'
+                      }}
+                      title={`Upload up to ${val} file(s) in parallel`}
+                    >
+                      {val}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -1171,24 +1180,6 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                   : <><Upload style={{ width: '0.9rem', height: '0.9rem' }} /> Start Upload</>}
               </button>
 
-              {/* After upload: show Adobe portal link */}
-              {adobeActive && successCount > 0 && !isUploading && (
-                <button
-                  onClick={() => handleOpenHelpUrl("https://contributor.stock.adobe.com/uploads")}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '0.4rem',
-                    padding: '0.45rem 1rem', borderRadius: '0.55rem',
-                    background: 'linear-gradient(135deg, rgba(232,65,66,0.8), rgba(255,100,50,0.8))',
-                    border: 'none', color: '#fff', fontSize: '0.8rem', fontWeight: 700,
-                    cursor: 'pointer', transition: 'all 0.15s', boxShadow: '0 2px 10px rgba(232,65,66,0.3)'
-                  }}
-                  onMouseOver={e => e.currentTarget.style.transform = 'translateY(-1px)'}
-                  onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}
-                >
-                  <ExternalLink style={{ width: '0.85rem', height: '0.85rem' }} />
-                  Submit on Adobe →
-                </button>
-              )}
             </div>
           </div>
 

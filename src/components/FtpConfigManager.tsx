@@ -56,7 +56,27 @@ const getAgencyIcon = (name) => {
   return <span style={{ fontSize: '1.2rem' }}>🔘</span>;
 };
 
-export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, setEditingConfig, onStartEdit, isCollapsed, setIsCollapsed }) {
+export interface FtpConfig {
+  id?: string;
+  websiteName?: string;
+  host?: string;
+  port?: number;
+  user?: string;
+  password?: string;
+  secure?: boolean;
+}
+
+interface FtpConfigManagerProps {
+  ftpConfigs: FtpConfig[];
+  setFtpConfigs: (configs: FtpConfig[]) => void;
+  editingConfig: FtpConfig | null;
+  setEditingConfig: (config: FtpConfig | null) => void;
+  onStartEdit: (config: FtpConfig) => void;
+  isCollapsed: boolean;
+  setIsCollapsed: (collapsed: boolean) => void;
+}
+
+export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, setEditingConfig, onStartEdit, isCollapsed, setIsCollapsed }: FtpConfigManagerProps) {
   const [expandedId, setExpandedId] = useState(null);
 
   useEffect(() => {

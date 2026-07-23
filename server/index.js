@@ -4,6 +4,7 @@ import multer from 'multer';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import Category from './models/Category.js';
+import PromptVocabulary from './models/PromptVocabulary.js';
 
 dotenv.config();
 import { spawn } from 'child_process';
@@ -57,6 +58,23 @@ app.post('/api/debug-log', express.json(), (req, res) => {
 
 // Enable CORS for Vite frontend
 app.use(cors());
+
+// Fetch vocabulary grouped by category
+app.get('/api/prompt-vocabulary', async (req, res) => {
+  try {
+    const vocab = await PromptVocabulary.find({});
+    // Group by category
+    const grouped = vocab.reduce((acc, item) => {
+      if (!acc[item.category]) acc[item.category] = [];
+      acc[item.category].push(item.word);
+      return acc;
+    }, {});
+    res.json(grouped);
+  } catch (error) {
+    console.error('Error fetching vocabulary:', error);
+    res.status(500).json({ error: 'Failed to fetch vocabulary' });
+  }
+});
 
 // Universal Proxy for ComfyUI (Bypasses CORS & Cloudflare browser blocks)
 app.post('/api/comfy-proxy', express.json({ limit: '50mb' }), async (req, res) => {

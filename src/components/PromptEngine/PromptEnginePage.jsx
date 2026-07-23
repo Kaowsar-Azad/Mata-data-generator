@@ -1,15 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Helmet, HelmetProvider } from 'react-helmet-async';
 import { ControlPanel } from './ControlPanel';
 import { ResultsPanel } from './ResultsPanel';
 import { generatePrompts } from '../../services/promptEngine/generator';
 import { generateAIPrompts } from '../../services/promptEngine/aiGenerator';
+import { fetchVocabularyFromDB } from '../../services/promptEngine/dataset';
 import { motion } from 'framer-motion';
 
 export const PromptEnginePage = ({ apiKeys, apiProvider, promptGenMode }) => {
   const [prompts, setPrompts] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusText, setStatusText] = useState('');
+
+  useEffect(() => {
+    fetchVocabularyFromDB();
+  }, []);
 
   const handleGenerate = async (config) => {
     setIsGenerating(true);

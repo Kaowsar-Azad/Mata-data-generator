@@ -51,3 +51,8 @@ The app must be protected against reverse engineering and common vulnerabilities
 - **Rule:** Do NOT modify, rewrite, delete, or append to any file within the `bin/win_graphics_proc/` directory, or edit setup scripts `copy-gs.cjs` and `download_gs.cjs`, or change files containing Ghostscript runner logic (`electron/main.cjs`, `electron/main.js`, `server/index.js`) under any circumstances.
 - **Exception:** You may only modify these files if the user explicitly grants permission in the direct chat transcript (e.g., "I permit you to modify Ghostscript files" or "Unlock the Ghostscript section").
 - **Action:** If changes are needed in this section, you MUST ask the user for permission in the chat first. Do not modify speculatively.
+
+## STRICT POLICY: Microstock Uploader (FTP) Frozen Guard
+- **Rule:** Do NOT modify, rewrite, delete, or append to any file within the Microstock Uploader (FTP) section, specifically `src/components/FtpUploader.jsx`, `src/components/FtpConfigManager.jsx`, or related FTP upload logic under any circumstances.
+- **Exception:** You may only modify these files if the user explicitly grants permission in the direct chat transcript (e.g., "I permit you to modify the FTP uploader" or "Unlock the Microstock Uploader").
+- **Action:** If changes are needed in this section, you MUST ask the user for permission in the chat first. Do not modify speculatively.

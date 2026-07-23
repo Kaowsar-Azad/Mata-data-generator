@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Server, ChevronDown, ChevronRight, Plus, Trash2, ExternalLink, Zap, CheckCircle2 } from "lucide-react";
+import { Server, ChevronDown, ChevronRight, Plus, Trash2, ExternalLink, Zap, CheckCircle2, Edit3 } from "lucide-react";
 
 const ADOBE_HOSTS = ['adobe', 'adobestock', 'contributor.stock'];
 
@@ -7,6 +7,25 @@ function isAdobeConfig(config) {
   const h = (config?.host || '').toLowerCase();
   return ADOBE_HOSTS.some(k => h.includes(k));
 }
+
+const getAgencyColor = (name) => {
+  if (!name) return "#06b6d4";
+  const nameLower = name.toLowerCase();
+  if (nameLower.includes('adobe')) return "#e84142";
+  if (nameLower.includes('shutterstock')) return "#e1251b";
+  if (nameLower.includes('freepik')) return "#1273e9";
+  if (nameLower.includes('vecteezy')) return "#ff9100";
+  if (nameLower.includes('dreamstime')) return "#2c2c2c";
+  return "#06b6d4";
+};
+
+const hexToRgba = (hexColor, opacity) => {
+  const hex = hexColor.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16) || 6;
+  const g = parseInt(hex.substring(2, 4), 16) || 182;
+  const b = parseInt(hex.substring(4, 6), 16) || 212;
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+};
 
 const getAgencyIcon = (name) => {
   const domains = {
@@ -204,6 +223,8 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
               const isAdobe = isAdobeConfig(config);
               const icon = getAgencyIcon(config.websiteName);
               const protocol = parseInt(config.port) === 22 ? 'SFTP' : (config.secure ? 'FTPS' : 'FTP');
+              const brandColor = getAgencyColor(config.websiteName);
+              const brandRgba = (opacity) => hexToRgba(brandColor, opacity);
 
               return (
                 <div
@@ -211,18 +232,18 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
                   style={{
                     display: 'flex', flexDirection: 'column',
                     border: isBeingEdited
-                      ? `1px solid ${isAdobe ? 'rgba(232,65,66,0.6)' : 'var(--accent)'}`
-                      : `1px solid ${isAdobe ? 'rgba(232,65,66,0.2)' : 'var(--glass-border)'}`,
+                      ? `1px solid ${brandRgba(0.6)}`
+                      : `1px solid ${config.enabled ? brandRgba(0.2) : 'var(--glass-border)'}`,
                     borderLeft: isCollapsed
-                      ? (config.enabled ? `4px solid ${isAdobe ? '#e84142' : 'var(--accent)'}` : '4px solid transparent')
-                      : (isBeingEdited ? `4px solid ${isAdobe ? '#e84142' : 'var(--accent)'}` : '1px solid transparent'),
+                      ? (config.enabled ? `4px solid ${brandColor}` : '4px solid transparent')
+                      : (isBeingEdited ? `4px solid ${brandColor}` : '1px solid transparent'),
                     borderRadius: '0.5rem', overflow: 'hidden',
                     transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                     background: isCollapsed
-                      ? (config.enabled ? (isAdobe ? 'rgba(232,65,66,0.08)' : 'rgba(6,182,212,0.08)') : 'var(--surface-1)')
+                      ? (config.enabled ? brandRgba(0.08) : 'var(--surface-1)')
                       : (isBeingEdited 
-                          ? (isAdobe ? 'rgba(232,65,66,0.05)' : 'rgba(6,182,212,0.05)') 
-                          : (isAdobe ? 'rgba(232,65,66,0.02)' : 'var(--surface-1)')),
+                          ? brandRgba(0.05) 
+                          : (config.enabled ? brandRgba(0.02) : 'var(--surface-1)')),
                     boxShadow: isBeingEdited ? '0 4px 15px rgba(0,0,0,0.1)' : '0 1px 3px rgba(0,0,0,0.05)',
                     transform: isBeingEdited ? 'translateY(-2px)' : 'translateY(0)'
                   }}
@@ -244,8 +265,8 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
                     padding: isCollapsed ? '0.15rem 0' : '0.4rem 0.5rem',
                     gap: isCollapsed ? '0.25rem' : '0',
                     background: isBeingEdited
-                      ? (isAdobe ? 'rgba(232,65,66,0.1)' : 'rgba(6,182,212,0.12)')
-                      : (config.enabled && isAdobe ? 'rgba(232,65,66,0.05)' : config.enabled ? 'rgba(6,182,212,0.04)' : 'var(--surface-1)'),
+                      ? brandRgba(0.1)
+                      : (config.enabled ? brandRgba(0.04) : 'var(--surface-1)'),
                   }}>
                     {/* Enable Toggle */}
                     {!isCollapsed && (
@@ -255,7 +276,7 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
                         title={config.enabled ? "Disable" : "Enable"}
                         onChange={e => toggleConfigEnable(config.id, e.target.checked)}
                         style={{ 
-                          cursor: 'pointer', accentColor: isAdobe ? '#e84142' : 'var(--accent)', 
+                          cursor: 'pointer', accentColor: brandColor, 
                           marginRight: '0.45rem', width: '0.9rem', height: '0.9rem', flexShrink: 0 
                         }}
                       />
@@ -294,14 +315,14 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
                     {!isCollapsed && (
                       <>
                         <div
-                          onClick={() => handleEdit(config)}
+                          onClick={() => toggleConfigEnable(config.id, !config.enabled)}
                           style={{ flex: 1, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '0.05rem', minWidth: 0 }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                               {icon}
                             </div>
-                            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: config.enabled ? (isAdobe ? '#dc2626' : 'var(--text-1)') : 'var(--text-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: config.enabled ? brandColor : 'var(--text-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {config.websiteName || config.host || "Unnamed"}
                             </span>
                             <span style={{
@@ -320,11 +341,22 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
                           )}
                         </div>
 
+                        {/* Edit Connection Button */}
+                        <button
+                          title="Edit Connection"
+                          onClick={(e) => { e.stopPropagation(); handleEdit(config); }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', color: 'var(--text-3)', display: 'flex', marginLeft: 'auto', marginRight: '0.25rem', transition: 'color 0.15s' }}
+                          onMouseOver={e => e.currentTarget.style.color = 'var(--accent)'}
+                          onMouseOut={e => e.currentTarget.style.color = 'var(--text-3)'}
+                        >
+                          <Edit3 style={{ width: '0.8rem', height: '0.8rem' }} />
+                        </button>
+
                         {isAdobe && (
                           <button
                             title="Open Portal"
                             onClick={() => openPortal("https://contributor.stock.adobe.com/uploads")}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', color: '#e84142', display: 'flex' }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', color: '#e84142', display: 'flex', marginRight: '0.25rem' }}
                           >
                             <ExternalLink style={{ width: '0.8rem', height: '0.8rem' }} />
                           </button>
@@ -333,14 +365,12 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
                         <button
                           title="Delete Server"
                           onClick={() => handleDelete(config.id)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', color: 'rgba(239,68,68,0.7)', display: 'flex', marginLeft: isAdobe ? '0' : 'auto' }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', color: 'rgba(239,68,68,0.7)', display: 'flex' }}
                           onMouseOver={e => e.currentTarget.style.color = '#ef4444'}
                           onMouseOut={e => e.currentTarget.style.color = 'rgba(239,68,68,0.7)'}
                         >
                           <Trash2 style={{ width: '0.85rem', height: '0.85rem' }} />
                         </button>
-                        
-                        <ChevronRight style={{ width: '1rem', height: '1rem', color: 'var(--glass-border)', marginLeft: '0.2rem', flexShrink: 0 }} />
                       </>
                     )}
                   </div>

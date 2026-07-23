@@ -282,7 +282,7 @@ function App() {
                 { id: 'vector', icon: Box, label: 'Vector Magic', color: '#f59e0b' },
                 { id: 'upscale', icon: Maximize, label: 'AI Image Upscaler', color: '#3b82f6' },
                 { id: 'aiimage', icon: Cpu, label: 'Cloud GPU Image Gen', color: '#06b6d4' },
-                { id: 'ftp', icon: Server, label: 'FTP Upload System', color: '#6366f1' },
+                { id: 'ftp', icon: Server, label: 'Microstock Uploader', color: '#6366f1' },
               ].map(tab => {
                 const isActive = activeTab === tab.id;
                 return (

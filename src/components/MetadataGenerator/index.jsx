@@ -506,30 +506,72 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
     // Process EPS files sequentially to prevent system hang under concurrent CPU load
     (async () => {
+      // Yield to let React re-render and populate imagesRef.current with new entries
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      
       const epsEntries = newEntries.filter((e) => e.isEps && !e.isPaired);
       for (const entry of epsEntries) {
+        // CRITICAL FIX: If the image was deleted (e.g., Clear All clicked), skip it!
+        if (!imagesRef.current.some((img) => img.id === entry.id)) continue;
+        
         try {
-          const epsData = await processEpsFile(entry.file);
+          let epsData = await processEpsFile(entry.file);
+          
+          // Check again after processing in case they clicked Clear All during processing
+          if (!imagesRef.current.some((img) => img.id === entry.id)) continue;
+          
+          if (!epsData) {
+            // Fallback to a placeholder if result is empty to stop the loading spinner
+            console.warn(`[EPS] Processing returned empty data for ${entry.file.name}. Falling back to placeholder.`);
+            epsData = {
+              base64: null,
+              mimeType: null,
+              dataUrl: null,
+              isPlaceholder: true,
+              extractedTextContext: "Failed to extract preview or metadata."
+            };
+          }
+          
           setImages((prev) =>
             prev.map((item) =>
               item.id === entry.id
-                ? { ...item, epsData, preview: epsData.dataUrl }
+                ? { ...item, epsData, preview: epsData.dataUrl || 'placeholder-error' }
                 : item
             )
           );
         } catch (err) {
           console.error("Failed to process EPS sequentially:", err);
+          // Stop spinner on error too
+          if (imagesRef.current.some((img) => img.id === entry.id)) {
+            setImages((prev) =>
+              prev.map((item) =>
+                item.id === entry.id
+                  ? { ...item, preview: 'placeholder-error' }
+                  : item
+              )
+            );
+          }
         }
       }
     })();
 
     // Extract video frames sequentially to avoid overloading FFmpeg processes
     (async () => {
+      // Yield to let React re-render and populate imagesRef.current with new entries
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      
       const videoEntries = newEntries.filter((e) => e.isVideo);
       for (const entry of videoEntries) {
+        // Skip if deleted
+        if (!imagesRef.current.some((img) => img.id === entry.id)) continue;
+        
         if (window.electronAPI?.extractVideoFrame && entry.file.path) {
           try {
             const frameResult = await window.electronAPI.extractVideoFrame(entry.file.path);
+            
+            // Skip if deleted during processing
+            if (!imagesRef.current.some((img) => img.id === entry.id)) continue;
+            
             if (frameResult.success) {
               setImages((prev) =>
                 prev.map((item) =>

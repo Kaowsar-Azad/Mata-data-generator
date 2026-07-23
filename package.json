@@ -77,7 +77,8 @@
     "sharp": "^0.34.5",
     "ssh2-sftp-client": "^12.1.1",
     "svg-to-pdfkit": "^0.1.8",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "typescript": "^7.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

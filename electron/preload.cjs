@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  decodeTiff: (tiffBuffer) => ipcRenderer.invoke('decode-tiff', tiffBuffer),
   processEps: (filePath) => ipcRenderer.invoke('process-eps', filePath),
   removeBgLocal: (filePath) => ipcRenderer.invoke('remove-bg-local', filePath),
   removeBgApi: (filePath, apiKey) => ipcRenderer.invoke('remove-bg-api', filePath, apiKey),

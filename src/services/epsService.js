@@ -53,48 +53,92 @@ function extractJpegFromBuffer(buffer) {
   return new Blob([jpegBytes], { type: 'image/jpeg' });
 }
 
-function extractDosBinaryEpsPreview(buffer) {
-  const bytes = new Uint8Array(buffer);
-  const magic = [0xC5, 0xD0, 0xD3, 0xC6];
-  if (bytes[0] !== magic[0] || bytes[1] !== magic[1] ||
-      bytes[2] !== magic[2] || bytes[3] !== magic[3]) {
+async function extractDosBinaryEpsPreview(file) {
+  try {
+    // Read only the first 32 bytes to parse the DOS binary header (Instant, zero memory bloat)
+    const headerBlob = file.slice(0, 32);
+    const headerBuffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(headerBlob);
+    });
+    
+    const bytes = new Uint8Array(headerBuffer);
+    const magic = [0xC5, 0xD0, 0xD3, 0xC6];
+    if (bytes[0] !== magic[0] || bytes[1] !== magic[1] || bytes[2] !== magic[2] || bytes[3] !== magic[3]) {
+      return null;
+    }
+    
+    const readUint32LE = (offset) =>
+      bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24);
+
+    const tiffOffset = readUint32LE(12);
+    const tiffLength = readUint32LE(16);
+
+    if (tiffOffset > 0 && tiffLength > 0 && tiffOffset + tiffLength <= file.size) {
+      // Read ONLY the preview chunk, avoiding reading the 50MB+ vector data
+      const previewBlob = file.slice(tiffOffset, tiffOffset + tiffLength);
+      const previewBuffer = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(previewBlob);
+      });
+      
+      const previewBytes = new Uint8Array(previewBuffer);
+      if (previewBytes[0] === 0xFF && previewBytes[1] === 0xD8) {
+        return { type: 'jpeg', data: previewBuffer }; // Pass pure ArrayBuffer
+      }
+      return { type: 'tiff', data: previewBuffer }; // Pass pure ArrayBuffer
+    }
+    return null;
+  } catch (err) {
+    console.warn("Failed fast extract:", err);
     return null;
   }
-  const readUint32LE = (offset) =>
-    bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24);
-
-  const tiffOffset = readUint32LE(12);
-  const tiffLength = readUint32LE(16);
-
-  if (tiffOffset > 0 && tiffLength > 0 && tiffOffset + tiffLength <= buffer.byteLength) {
-    const previewBytes = bytes.slice(tiffOffset, tiffOffset + tiffLength);
-    if (previewBytes[0] === 0xFF && previewBytes[1] === 0xD8) {
-      return { type: 'jpeg', data: previewBytes };
-    }
-    return { type: 'tiff', data: previewBytes };
-  }
-  return null;
 }
 
 async function convertTiffToPng(tiffBuffer) {
   try {
+    // 1. Desktop App Mode (Electron) - Try Sharp C++ (Fastest)
+    if (window.electronAPI && window.electronAPI.decodeTiff) {
+      console.log("[EPS] Offloading TIFF decode to Main Process (Sharp)...");
+      const result = await window.electronAPI.decodeTiff(tiffBuffer);
+      if (result) {
+        return {
+          ...result,
+          isPlaceholder: false,
+          extractedTextContext: null
+        };
+      }
+    }
+    
+    // 2. Main Thread UTIF.js Decoding (Fast and reliable for embedded EPS TIFFs)
     if (!window.UTIF) {
-      console.warn("[EPS] UTIF library not found for TIFF decoding.");
+      console.warn("[EPS] UTIF library not found on window object.");
       return null;
     }
+
+    // Yield control to the UI event loop for 10ms to keep clicks responsive
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
     const ifds = window.UTIF.decode(tiffBuffer);
+    if (!ifds || ifds.length === 0) {
+      throw new Error("No TIFF image layers found");
+    }
     window.UTIF.decodeImage(tiffBuffer, ifds[0]);
     const rgba = window.UTIF.toRGBA8(ifds[0]);
-    const w = ifds[0].width;
-    const h = ifds[0].height;
+    const width = ifds[0].width;
+    const height = ifds[0].height;
 
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    const imgData = new ImageData(new Uint8ClampedArray(rgba), w, h);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    const imgData = new ImageData(new Uint8ClampedArray(rgba), width, height);
     ctx.putImageData(imgData, 0, 0);
-    
+
     const dataUrl = canvas.toDataURL('image/png');
     return {
       base64: dataUrl.split(',')[1],
@@ -177,6 +221,9 @@ function extractEpsTextContext(epsText) {
   let docTitle = "";
 
   for (let line of lines) {
+    // Skip binary block lines to prevent RegExp catastrophic backtracking (lockup) on massive lines
+    if (line.length > 1000) continue;
+    
     line = line.trim();
     if (!line) continue;
 
@@ -306,39 +353,101 @@ function releaseEpsLock() {
   }
 }
 
-export async function processEpsFile(file) {
+export async function processEpsFile(file, options = {}) {
+  console.log(`[EPS Lock] Attempting to acquire lock for: ${file.name}`);
   await acquireEpsLock();
+  console.log(`[EPS Lock] Lock ACQUIRED for: ${file.name}`);
   try {
-    return await _processEpsFile(file);
+    return await _processEpsFile(file, options);
   } finally {
+    console.log(`[EPS Lock] Releasing lock for: ${file.name}`);
     releaseEpsLock();
   }
 }
 
-async function _processEpsFile(file) {
+async function _processEpsFile(file, options = {}) {
   try {
-    // 1. Desktop App Mode (Electron) - The Ultimate Solution
-    if (window.electronAPI) {
-      console.log('[EPS] Running in Electron Desktop App. Using Native Ghostscript...');
-      
-      // In Electron, File objects have a path property
-      const filePath = file.path; 
-      if (!filePath) throw new Error("File path is missing. Drag and drop the file directly.");
+    console.log(`[EPS] Starting processing of file: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+    
+    // 1. Always extract text context first (fast, first 1MB slice)
+    let textContext = null;
+    try {
+      console.log(`[EPS] Slicing first 1MB for text context...`);
+      const textChunk = file.slice(0, 1048576);
+      const text = await readAsText(textChunk);
+      console.log(`[EPS] Extracting text context from header...`);
+      textContext = extractEpsTextContext(text);
+      console.log(`[EPS] Text context extracted successfully.`);
+    } catch (err) {
+      console.warn('[EPS] Non-fatal: Could not extract deep text context.', err);
+    }
 
-      // CRITICAL: Even if we use Ghostscript for the visual preview, we MUST extract 
-      // the hidden text context (layers, swatches) to help Gemini generate 48+ keywords!
-      let textContext = null;
-      try {
-        const text = await readAsText(file);
-        textContext = extractEpsTextContext(text);
-      } catch (err) {
-        console.warn('[EPS] Non-fatal: Could not extract deep text context.', err);
+    // 2. Attempt super-fast DOS binary preview extraction (TIFF or JPEG) first (milliseconds)
+    try {
+      console.log(`[EPS] Checking if file has built-in DOS binary preview...`);
+      const preview = await extractDosBinaryEpsPreview(file);
+      if (preview) {
+        console.log(`[EPS] Found DOS binary preview of type: ${preview.type}`);
+        if (preview.type === 'jpeg') {
+          console.log(`[EPS] Extracting JPEG preview bytes...`);
+          const blob = new Blob([preview.data], { type: 'image/jpeg' });
+          const base64Data = await blobToPngBase64(blob);
+          if (base64Data) {
+            console.log('[EPS] Successfully extracted built-in JPEG preview.');
+            return {
+              base64: base64Data.base64,
+              mimeType: base64Data.mimeType,
+              dataUrl: base64Data.dataUrl,
+              isPlaceholder: false,
+              extractedTextContext: textContext || "No readable context found inside this EPS."
+            };
+          }
+        } else if (preview.type === 'tiff') {
+          console.log(`[EPS] Converting TIFF preview to PNG...`);
+          const pngResult = await convertTiffToPng(preview.data);
+          if (pngResult) {
+            console.log('[EPS] Successfully extracted and converted built-in TIFF preview.');
+            return {
+              base64: pngResult.base64,
+              mimeType: pngResult.mimeType,
+              dataUrl: pngResult.dataUrl,
+              isPlaceholder: false,
+              extractedTextContext: textContext || "No readable context found inside this EPS."
+            };
+          }
+          console.log(`[EPS] TIFF conversion returned empty result.`);
+        }
+      } else {
+        console.log(`[EPS] File is NOT a DOS binary EPS (No TIFF/JPEG preview found).`);
+      }
+    } catch (err) {
+      console.warn('[EPS] Fast binary preview extraction failed, falling back:', err);
+    }
+
+    // If fastOnly is true, skip Ghostscript and return placeholder immediately!
+    if (options.fastOnly) {
+      console.log('[EPS] fastOnly mode active. Returning placeholder without Ghostscript.');
+      const placeholder = renderEpsPlaceholder(file.name);
+      placeholder.extractedTextContext = textContext || "No readable context found inside this EPS.";
+      return placeholder;
+    }
+
+    // 3. Desktop App Mode (Electron) - Fallback to Ghostscript if binary preview is missing
+    if (window.electronAPI) {
+      console.log('[EPS] Running in Electron. Spawning Native Ghostscript...');
+      
+      const filePath = file.path; 
+      if (!filePath) {
+        console.error('[EPS] filePath is missing on File object!');
+        throw new Error("File path is missing. Drag and drop the file directly.");
       }
 
       try {
+        console.log(`[EPS] Calling window.electronAPI.processEps with path: ${filePath}`);
         const result = await window.electronAPI.processEps(filePath);
+        console.log(`[EPS] Native Ghostscript finished. Success: ${result?.success}`);
         
-        if (result.success) {
+        if (result && result.success) {
           return {
             base64: result.base64,
             mimeType: result.mimeType,
@@ -347,7 +456,7 @@ async function _processEpsFile(file) {
             extractedTextContext: textContext || "No readable context found inside this EPS."
           };
         } else {
-          throw new Error(result.error || 'Electron processing failed');
+          throw new Error(result?.error || 'Electron processing failed');
         }
       } catch (procErr) {
         console.warn('[EPS] Native Ghostscript failed or timed out. Falling back to text-only placeholder.', procErr);
@@ -357,32 +466,14 @@ async function _processEpsFile(file) {
       }
     }
 
-    // 2. Web Browser Mode (Fallback) - Pure Client-Side
-    console.log('[EPS] Running in Web Browser. Starting Pure Client-Side Extraction...');
-    const buffer = await readAsArrayBuffer(file);
-    
-    // Attempt DOS Binary header extraction (TIFF or JPEG)
-    const preview = extractDosBinaryEpsPreview(buffer);
-    if (preview) {
-      if (preview.type === 'jpeg') {
-        const blob = new Blob([preview.data], { type: 'image/jpeg' });
-        return await blobToPngBase64(blob);
-      } else if (preview.type === 'tiff') {
-        const pngResult = await convertTiffToPng(preview.data);
-        if (pngResult) return pngResult;
-      }
-    }
-
-    // Attempt Deep Text Extraction if visual preview fails
-    const text = await readAsText(file);
-    const textContext = extractEpsTextContext(text);
-    
+    // 4. Web Browser Mode (Fallback) - Pure Client-Side Placeholder
+    console.log('[EPS] Web Browser fallback mode. Rendering canvas placeholder...');
     const placeholder = renderEpsPlaceholder(file.name);
     placeholder.extractedTextContext = textContext || "No readable context found inside this EPS.";
     return placeholder;
 
   } catch (err) {
-    console.warn('[EPS] Processing failed:', err);
+    console.error('[EPS] Processing failed critically:', err);
     throw new Error('Failed to process EPS file: ' + err.message);
   }
 }

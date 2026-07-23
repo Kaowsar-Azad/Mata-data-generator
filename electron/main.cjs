@@ -117,6 +117,20 @@ async function findGhostscript() {
 }
 
 // IPC Handler for processing EPS natively
+ipcMain.handle('decode-tiff', async (event, tiffBuffer) => {
+  try {
+    const pngBuffer = await sharp(Buffer.from(tiffBuffer)).png().toBuffer();
+    return {
+      base64: pngBuffer.toString('base64'),
+      mimeType: 'image/png',
+      dataUrl: `data:image/png;base64,${pngBuffer.toString('base64')}`
+    };
+  } catch (err) {
+    console.error('Failed to decode TIFF with sharp:', err);
+    return null;
+  }
+});
+
 ipcMain.handle('process-eps', async (event, inputPath) => {
   try {
     const gsCmd = await findGhostscript();
@@ -129,7 +143,7 @@ ipcMain.handle('process-eps', async (event, inputPath) => {
 
     const args = [
       '-dSAFER', '-dBATCH', '-dNOPAUSE', '-dNOPROMPT', '-dEPSCrop',
-      '-sDEVICE=png16m', '-r100', '-dTextAlphaBits=4', '-dGraphicsAlphaBits=4',
+      '-sDEVICE=png16m', '-r50', 
       `-sOutputFile=${outputPath}`, inputPath
     ];
 

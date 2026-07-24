@@ -321,20 +321,6 @@ function App() {
             </div>
           </div>
 
-          {/* FTP CONFIGURATIONS */}
-          {sidebarOpen && activeTab === 'ftp' && (
-            <FtpConfigManager 
-              ftpConfigs={ftpConfigs}
-              setFtpConfigs={setFtpConfigs}
-              editingConfig={editingFtpConfig}
-              setEditingConfig={setEditingFtpConfig}
-              onStartEdit={(config) => {
-                setActiveTab('ftp');
-                setEditingFtpConfig(config);
-              }}
-            />
-          )}
-
           {/* METADATA SETTINGS */}
           {sidebarOpen && (activeTab === 'metadata' || activeTab === 'prompt') && (
             <PromptSettings 

@@ -605,7 +605,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
 
         {/* ─── Left Pane: Config Form or List ─── */}
         {editingConfig ? (
-          <div className="card glass animate-fade-in" style={{ width: '380px', flexShrink: 0, padding: '1.35rem', display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+          <div className="card glass animate-fade-in" style={{ width: '320px', flexShrink: 0, padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.65rem' }}>
               <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Server style={{ width: '1rem', height: '1rem', color: 'var(--accent)' }} />
@@ -765,8 +765,8 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
             </div>
           </div>
         ) : (
-          <div className="animate-fade-in" style={{ width: '300px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div className="card glass" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: 'var(--surface-1)' }}>
+          <div className="animate-fade-in" style={{ width: '260px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div className="card glass" style={{ padding: '1.1rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: 'var(--surface-1)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.65rem' }}>
                 <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <Server style={{ width: '1rem', height: '1rem', color: 'var(--accent)' }} />
@@ -785,167 +785,135 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
         {/* ─── Right Pane: Upload Area ─── */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
-          {/* Active Server Cards */}
-          {activeConfigs.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
-              {activeConfigs.map(c => {
-                const status = testingStatus[c.id];
-                const isAdobe = isAdobeConfig(c);
-                
-                const agencyInfo = POPULAR_AGENCIES.find(
-                  a => a.name.toLowerCase() === c.websiteName?.trim().toLowerCase() ||
-                       c.host.toLowerCase().includes(a.name.toLowerCase().replace(' ', ''))
-                );
-                const color = agencyInfo?.color || 'var(--primary)';
-                const icon = agencyInfo?.icon || '🌐';
 
-                return (
-                  <div
-                    key={c.id}
-                    style={{
-                      background: 'var(--surface-1)',
-                      border: '1px solid var(--glass-border)',
-                      borderLeft: `3px solid ${color}`,
-                      padding: '0.8rem 1rem',
-                      borderRadius: '0.65rem',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.5rem',
-                      minWidth: '220px',
-                      maxWidth: '260px',
-                      boxShadow: 'var(--glass-shadow)',
-                      transition: 'transform 0.2s, box-shadow 0.2s'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(0,0,0,0.03)', paddingBottom: '0.4rem' }}>
-                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <span style={{ fontSize: '0.9rem' }}>{icon}</span>
-                        {c.websiteName || 'FTP Server'}
-                      </span>
-                      <span style={{
-                        fontSize: '0.58rem',
-                        fontWeight: 700,
-                        padding: '0.15rem 0.45rem',
-                        borderRadius: '99px',
-                        background: 'rgba(16,185,129,0.08)',
-                        color: 'var(--success)',
-                        border: '1px solid rgba(16,185,129,0.15)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '3px'
-                      }}>
-                        <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--success)', display: 'inline-block' }} />
-                        Active
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.72rem', margin: '0.2rem 0' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                        <Globe className="w-3.5 h-3.5" style={{ opacity: 0.6, color }} />
-                        <span style={{ color: 'var(--text-3)', fontWeight: 500 }}>Host:</span>
-                        <strong style={{ fontFamily: 'monospace', color: 'var(--text-1)' }}>{c.host}:{c.port}</strong>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                        <Key className="w-3.5 h-3.5" style={{ opacity: 0.6, color }} />
-                        <span style={{ color: 'var(--text-3)', fontWeight: 500 }}>User:</span>
-                        <strong style={{ color: 'var(--text-1)' }}>{c.user || '—'}</strong>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <Server className="w-3.5 h-3.5" style={{ opacity: 0.6, color }} />
-                        <span style={{ color: 'var(--text-3)', fontWeight: 500 }}>Protocol:</span>
-                        <strong style={{ color: 'var(--text-1)' }}>{parseInt(c.port) === 22 ? 'SFTP' : (c.secure ? 'FTPS' : 'FTP')}</strong>
-                      </div>
-                    </div>
-
-                    {status?.result && (
-                      <div style={{
-                        fontSize: '0.68rem', padding: '0.3rem 0.5rem', borderRadius: '0.4rem',
-                        background: status.result.success ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)',
-                        color: status.result.success ? 'var(--success)' : 'var(--danger)',
-                        border: `1px solid ${status.result.success ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)'}`,
-                        lineHeight: 1.3
-                      }}>
-                        {status.result.msg}
-                      </div>
-                    )}
-
-                    <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.2rem' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleTestSpecificConfig(c)}
-                        disabled={status?.isTesting}
-                        style={{
-                          flex: 1, background: 'var(--surface-2)', border: '1px solid var(--glass-border)',
-                          borderRadius: '0.4rem', padding: '0.35rem 0.5rem', fontSize: '0.68rem',
-                          color: 'var(--text-2)', cursor: 'pointer', display: 'flex',
-                          alignItems: 'center', justifyContent: 'center', gap: '0.3rem',
-                          fontWeight: 700, transition: 'all 0.15s'
-                        }}
-                        onMouseOver={e => e.currentTarget.style.background = 'var(--surface-hover)'}
-                        onMouseOut={e => e.currentTarget.style.background = 'var(--surface-2)'}
-                      >
-                        {status?.isTesting ? <Loader2 className="animate-spin" style={{ width: '0.75rem', height: '0.75rem' }} /> : <RefreshCw style={{ width: '0.75rem', height: '0.75rem' }} />}
-                        Test Connection
-                      </button>
-
-                      {isAdobe && (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenHelpUrl("https://contributor.stock.adobe.com/uploads")}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: '0.3rem',
-                            padding: '0.35rem 0.5rem', borderRadius: '0.4rem',
-                            background: 'rgba(232,65,66,0.1)', border: '1px solid rgba(232,65,66,0.2)',
-                            color: '#e84142', fontSize: '0.68rem', fontWeight: 700, cursor: 'pointer',
-                            transition: 'all 0.15s'
-                          }}
-                          onMouseOver={e => e.currentTarget.style.background = 'rgba(232,65,66,0.2)'}
-                          onMouseOut={e => e.currentTarget.style.background = 'rgba(232,65,66,0.1)'}
-                        >
-                          <ExternalLink style={{ width: '0.65rem', height: '0.65rem' }} />
-                          Portal
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
 
           {/* Drop Zone */}
           <div
             ref={dropZoneRef}
-            className="drop-zone"
+            className="drop-zone glass"
             onClick={() => fileInputRef.current?.click()}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             style={{
-              background: isDragging ? 'rgba(6, 182, 212, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-              border: `2px dashed ${isDragging ? 'var(--primary)' : 'rgba(255,255,255,0.1)'}`,
-              borderRadius: '1.25rem', padding: '2.5rem', textAlign: 'center', cursor: 'pointer',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', minHeight: '180px', justifyContent: 'center',
-              transform: isDragging ? 'scale(1.02)' : 'scale(1)',
-              boxShadow: isDragging ? '0 10px 30px rgba(6, 182, 212, 0.15)' : 'inset 0 2px 15px rgba(0,0,0,0.1)'
+              position: 'relative',
+              overflow: 'hidden',
+              background: isDragging 
+                ? 'rgba(37, 99, 235, 0.06)' 
+                : 'rgba(37, 99, 235, 0.02)',
+              border: `2px dashed ${isDragging ? 'var(--primary)' : 'rgba(37, 99, 235, 0.25)'}`,
+              borderRadius: '1.25rem', 
+              padding: '2.5rem 1.5rem', 
+              textAlign: 'center', 
+              cursor: 'pointer',
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              gap: '0.85rem',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', 
+              minHeight: '220px', 
+              justifyContent: 'center',
+              transform: isDragging ? 'scale(1.01)' : 'scale(1)',
+              boxShadow: isDragging 
+                ? '0 10px 30px rgba(37, 99, 235, 0.1)' 
+                : 'var(--glass-shadow)',
+              backdropFilter: 'blur(10px)'
+            }}
+            onMouseOver={e => {
+              if (!isDragging) {
+                e.currentTarget.style.background = 'rgba(37, 99, 235, 0.04)';
+                e.currentTarget.style.borderColor = 'rgba(37, 99, 235, 0.4)';
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 8px 20px rgba(0,0,0,0.05)';
+              }
+            }}
+            onMouseOut={e => {
+              if (!isDragging) {
+                e.currentTarget.style.background = 'rgba(37, 99, 235, 0.02)';
+                e.currentTarget.style.borderColor = 'rgba(37, 99, 235, 0.25)';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'var(--glass-shadow)';
+              }
             }}
           >
+            {/* Ambient Background Glow for Drop Zone */}
+            <div style={{
+              position: 'absolute',
+              top: '50%', left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '150px', height: '150px',
+              background: 'var(--primary)',
+              filter: 'blur(80px)',
+              opacity: isDragging ? 0.3 : 0.1,
+              transition: 'opacity 0.4s ease',
+              pointerEvents: 'none',
+              borderRadius: '50%'
+            }}></div>
+
             <input type="file" multiple ref={fileInputRef} onChange={onFilesSelected} style={{ display: "none" }} accept="image/*,.eps,.ai,.svg,.pdf" />
-            <div style={{ width: '3rem', height: '3rem', borderRadius: '50%', background: 'var(--primary-glow)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <CloudUpload style={{ width: '1.4rem', height: '1.4rem' }} />
+            
+            {/* Icon Container with Ripple/Pulse Effect */}
+            <div style={{ position: 'relative' }}>
+              {isDragging && (
+                <div style={{
+                  position: 'absolute',
+                  inset: -12,
+                  borderRadius: '50%',
+                  background: 'var(--primary)',
+                  opacity: 0.15,
+                  animation: 'pulse 1.5s infinite ease-out'
+                }}></div>
+              )}
+              <div style={{ 
+                width: '4rem', 
+                height: '4rem', 
+                borderRadius: '50%', 
+                background: isDragging ? 'var(--primary)' : 'var(--bg)',
+                color: isDragging ? '#fff' : 'var(--primary)', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                boxShadow: isDragging ? '0 10px 25px rgba(37,99,235,0.3)' : 'inset 0 2px 4px rgba(0,0,0,0.04), 0 2px 10px rgba(0,0,0,0.02)',
+                transition: 'all 0.3s ease',
+                position: 'relative',
+                zIndex: 2
+              }}>
+                <CloudUpload style={{ width: '2rem', height: '2rem' }} />
+              </div>
             </div>
-            <div>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-1)', margin: '0 0 0.25rem 0' }}>
+
+            <div style={{ position: 'relative', zIndex: 2 }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-1)', margin: '0 0 0.4rem 0', letterSpacing: '-0.02em' }}>
                 {activeConfigs.length > 0
-                  ? <>Upload to <span style={{ color: 'var(--primary)' }}>{activeConfigs.map(c => c.websiteName || c.host).join(', ')}</span></>
-                  : 'Drop Files to Upload via FTP/SFTP'}
+                  ? <>Upload to <span style={{ color: 'var(--primary)', background: 'linear-gradient(90deg, var(--primary), var(--accent))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>{activeConfigs.map(c => c.websiteName || c.host).join(', ')}</span></>
+                  : 'Drag & Drop Files Here'}
               </h3>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-3)', margin: 0 }}>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-2)', margin: 0, fontWeight: 500 }}>
                 {activeConfigs.length > 0
-                  ? `${activeConfigs.length} server(s) — JPG, EPS, AI, SVG, PNG`
-                  : 'Sidebar থেকে একটি FTP connection activate করুন'}
+                  ? `${activeConfigs.length} server(s) active — JPG, EPS, AI, SVG, PNG supported`
+                  : 'বাম পাশের তালিকা থেকে একটি FTP connection চালু করুন'}
               </p>
+              
+              <button 
+                type="button"
+                style={{
+                  marginTop: '1rem',
+                  padding: '0.5rem 1.25rem',
+                  background: 'var(--surface-1)',
+                  border: '1px solid rgba(0,0,0,0.1)',
+                  borderRadius: '99px',
+                  color: 'var(--text-1)',
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+                }}
+                onMouseOver={e => { e.currentTarget.style.background = 'var(--bg)'; e.currentTarget.style.borderColor = 'rgba(0,0,0,0.2)'; }}
+                onMouseOut={e => { e.currentTarget.style.background = 'var(--surface-1)'; e.currentTarget.style.borderColor = 'rgba(0,0,0,0.1)'; }}
+              >
+                Browse Files
+              </button>
             </div>
           </div>
 
@@ -1251,6 +1219,10 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
         @keyframes ftpProgressGlow {
           0% { background-position: 0% 50%; }
           100% { background-position: 200% 50%; }
+        }
+        @keyframes pulse {
+          0% { transform: scale(1); opacity: 0.2; }
+          100% { transform: scale(1.5); opacity: 0; }
         }
       `}</style>
     </div>

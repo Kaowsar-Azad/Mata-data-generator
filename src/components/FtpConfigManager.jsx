@@ -226,14 +226,14 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
                       style={{ flex: 1, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '0.05rem', minWidth: 0 }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 700, color: config.enabled ? (isAdobe ? '#ff8a8a' : 'var(--text-1)') : 'var(--text-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: config.enabled ? (isAdobe ? '#dc2626' : 'var(--text-1)') : 'var(--text-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {icon} {config.websiteName || config.host || "Unnamed"}
                         </span>
                         <span style={{
-                          fontSize: '0.55rem', padding: '0.05rem 0.28rem', borderRadius: '99px', fontWeight: 700, flexShrink: 0,
-                          background: protocol === 'SFTP' ? 'rgba(251,191,36,0.15)' : 'rgba(99,102,241,0.12)',
-                          color: protocol === 'SFTP' ? '#fbbf24' : '#818cf8',
-                          border: `1px solid ${protocol === 'SFTP' ? 'rgba(251,191,36,0.25)' : 'rgba(99,102,241,0.2)'}`
+                          fontSize: '0.55rem', padding: '0.05rem 0.35rem', borderRadius: '99px', fontWeight: 700, flexShrink: 0,
+                          background: protocol === 'SFTP' ? 'rgba(245,158,11,0.1)' : 'rgba(79,70,229,0.1)',
+                          color: protocol === 'SFTP' ? '#d97706' : '#4f46e5',
+                          border: `1px solid ${protocol === 'SFTP' ? 'rgba(245,158,11,0.2)' : 'rgba(79,70,229,0.2)'}`
                         }}>
                           {protocol}
                         </span>

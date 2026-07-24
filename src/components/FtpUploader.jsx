@@ -5,6 +5,7 @@ import {
   ChevronDown, ChevronUp, Key, Globe
 } from "lucide-react";
 import { processEpsFile, isEpsFile } from "../services/epsService";
+import { FtpConfigManager } from "./FtpConfigManager";
 
 const POPULAR_AGENCIES = [
   {
@@ -599,12 +600,11 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
   const totalSize = files.reduce((a, f) => a + (f.size || 0), 0);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', height: '100%' }}>
+    <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', height: '100%', overflowY: 'auto', paddingRight: '0.5rem', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start', minHeight: 0 }}>
 
-      <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start' }}>
-
-        {/* ─── Left Pane: Config Form ─── */}
-        {editingConfig && (
+        {/* ─── Left Pane: Config Form or List ─── */}
+        {editingConfig ? (
           <div className="card glass animate-fade-in" style={{ width: '380px', flexShrink: 0, padding: '1.35rem', display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.65rem' }}>
               <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -764,6 +764,22 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
               </button>
             </div>
           </div>
+        ) : (
+          <div className="animate-fade-in" style={{ width: '300px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div className="card glass" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', background: 'var(--surface-1)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.65rem' }}>
+                <h3 style={{ margin: 0, fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Server style={{ width: '1rem', height: '1rem', color: 'var(--accent)' }} />
+                  Configured Servers
+                </h3>
+              </div>
+              <FtpConfigManager 
+                ftpConfigs={ftpConfigs} setFtpConfigs={setFtpConfigs}
+                editingConfig={editingConfig} setEditingConfig={setEditingConfig}
+                onStartEdit={(config) => { setEditingConfig(config); }}
+              />
+            </div>
+          </div>
         )}
 
         {/* ─── Right Pane: Upload Area ─── */}
@@ -906,12 +922,13 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             style={{
-              background: isDragging ? 'rgba(37,99,235,0.08)' : 'var(--surface-1)',
-              border: `2px dashed ${isDragging ? 'var(--primary)' : 'var(--glass-border)'}`,
-              borderRadius: '1rem', padding: '2rem', textAlign: 'center', cursor: 'pointer',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem',
-              transition: 'all 0.2s ease', minHeight: '160px', justifyContent: 'center',
-              transform: isDragging ? 'scale(1.01)' : 'scale(1)'
+              background: isDragging ? 'rgba(6, 182, 212, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+              border: `2px dashed ${isDragging ? 'var(--primary)' : 'rgba(255,255,255,0.1)'}`,
+              borderRadius: '1.25rem', padding: '2.5rem', textAlign: 'center', cursor: 'pointer',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', minHeight: '180px', justifyContent: 'center',
+              transform: isDragging ? 'scale(1.02)' : 'scale(1)',
+              boxShadow: isDragging ? '0 10px 30px rgba(6, 182, 212, 0.15)' : 'inset 0 2px 15px rgba(0,0,0,0.1)'
             }}
           >
             <input type="file" multiple ref={fileInputRef} onChange={onFilesSelected} style={{ display: "none" }} accept="image/*,.eps,.ai,.svg,.pdf" />
@@ -1066,7 +1083,15 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                 background: file.status === 'success' ? 'rgba(16,185,129,0.04)' : file.status === 'error' ? 'rgba(239,68,68,0.04)' : 'var(--surface-1)',
                 padding: '0.65rem 0.9rem', borderRadius: '0.65rem',
                 border: `1px solid ${file.status === 'success' ? 'rgba(16,185,129,0.2)' : file.status === 'error' ? 'rgba(239,68,68,0.2)' : 'var(--glass-border)'}`,
-                transition: 'all 0.2s'
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+              }}
+              onMouseOver={e => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
+              }}
+              onMouseOut={e => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', overflow: 'hidden' }}>
                   {/* Thumbnail */}
@@ -1108,7 +1133,13 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
                       })();
                       return (
                         <div style={{ marginTop: '0.35rem', marginBottom: '0.2rem', width: '100%', height: '4px', background: 'var(--surface-2)', borderRadius: '2px', overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${displayProgress}%`, background: 'var(--primary)', transition: 'width 0.2s ease' }} />
+                          <div style={{ 
+                            height: '100%', width: `${displayProgress}%`, 
+                            background: 'linear-gradient(90deg, var(--accent), var(--primary), var(--accent))', 
+                            backgroundSize: '200% 100%',
+                            animation: 'ftpProgressGlow 2s linear infinite',
+                            transition: 'width 0.2s ease' 
+                          }} />
                         </div>
                       );
                     })()}
@@ -1216,6 +1247,10 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig, set
         @keyframes slideIn {
           from { transform: translateY(100%) scale(0.9); opacity: 0; }
           to { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        @keyframes ftpProgressGlow {
+          0% { background-position: 0% 50%; }
+          100% { background-position: 200% 50%; }
         }
       `}</style>
     </div>

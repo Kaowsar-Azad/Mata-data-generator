@@ -128,6 +128,23 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
 
       {isOpen && (
         <div style={{ padding: '0.65rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {/* Add Generic Button (Prominent) */}
+          <button
+            onClick={handleAddNew}
+            style={{
+              width: '100%', padding: '0.65rem',
+              background: 'linear-gradient(135deg, var(--accent), var(--primary))',
+              border: 'none', borderRadius: '0.5rem',
+              color: '#fff', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+              boxShadow: '0 4px 12px rgba(6,182,212,0.25)',
+              transition: 'transform 0.2s ease, box-shadow 0.2s ease'
+            }}
+            onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(6,182,212,0.35)'; }}
+            onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(6,182,212,0.25)'; }}
+          >
+            <Plus style={{ width: '0.9rem', height: '0.9rem' }} /> Add New FTP/SFTP Server
+          </button>
 
           {/* Adobe Stock Quick Setup Banner (only if not already added) */}
           {!hasAdobe && (
@@ -166,9 +183,25 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
                     border: isBeingEdited
                       ? `1px solid ${isAdobe ? 'rgba(232,65,66,0.6)' : 'var(--accent)'}`
                       : `1px solid ${isAdobe ? 'rgba(232,65,66,0.2)' : 'var(--glass-border)'}`,
-                    borderRadius: '0.45rem', overflow: 'hidden',
-                    transition: 'border-color 0.2s ease',
-                    background: isAdobe ? 'rgba(232,65,66,0.03)' : 'transparent'
+                    borderRadius: '0.5rem', overflow: 'hidden',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    background: isBeingEdited 
+                      ? (isAdobe ? 'rgba(232,65,66,0.05)' : 'rgba(6,182,212,0.05)') 
+                      : (isAdobe ? 'rgba(232,65,66,0.02)' : 'var(--surface-1)'),
+                    boxShadow: isBeingEdited ? '0 4px 15px rgba(0,0,0,0.1)' : '0 1px 3px rgba(0,0,0,0.05)',
+                    transform: isBeingEdited ? 'translateY(-2px)' : 'translateY(0)'
+                  }}
+                  onMouseOver={e => {
+                    if (!isBeingEdited) {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
+                    }
+                  }}
+                  onMouseOut={e => {
+                    if (!isBeingEdited) {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)';
+                    }
                   }}
                 >
                   {/* Row */}
@@ -250,26 +283,6 @@ export function FtpConfigManager({ ftpConfigs, setFtpConfigs, editingConfig, set
             })}
           </div>
 
-          {/* Divider */}
-          {ftpConfigs.length > 0 && (
-            <div style={{ height: '1px', background: 'var(--glass-border)', margin: '0.1rem 0' }} />
-          )}
-
-          {/* Add Generic */}
-          <button
-            onClick={handleAddNew}
-            style={{
-              width: '100%', padding: '0.45rem', background: 'var(--surface-2)',
-              border: '1px dashed var(--glass-border)', borderRadius: '0.4rem',
-              color: 'var(--text-2)', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem',
-              transition: 'all 0.15s'
-            }}
-            onMouseOver={e => { e.currentTarget.style.color = 'var(--text-1)'; e.currentTarget.style.borderColor = 'var(--text-3)'; }}
-            onMouseOut={e => { e.currentTarget.style.color = 'var(--text-2)'; e.currentTarget.style.borderColor = 'var(--glass-border)'; }}
-          >
-            <Plus style={{ width: '0.75rem', height: '0.75rem' }} /> Add FTP/SFTP Server
-          </button>
         </div>
       )}
     </div>

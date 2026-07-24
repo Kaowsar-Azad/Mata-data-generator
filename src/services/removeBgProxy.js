@@ -133,3 +133,125 @@ export async function removeBackgroundViaLocalServer(file) {
   return res.blob();
 }
 
+/**
+ * Local removal via BRIA RMBG-1.4 (Node server calls python_bria_remover.py)
+ * @param {File} file
+ * @returns {Promise<Blob>}
+ */
+export async function removeBackgroundViaBria(file) {
+  const base = getRemoveBgProxyBase();
+  const fd = new FormData();
+  fd.append('file', file, file.name || 'upload.png');
+
+  let res;
+  try {
+    res = await fetch(`${base}/api/remove-bg-bria`, {
+      method: 'POST',
+      body: fd,
+    });
+  } catch (err) {
+    if (err?.message?.includes('Failed to fetch')) {
+      throw new Error("সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না (Failed to fetch)। অনুগ্রহ করে নিশ্চিত করুন যে আপনার PC-তে ব্যাকএন্ড সার্ভারটি (node server/index.js) পোর্ট 3001-এ চালু আছে।");
+    }
+    throw err;
+  }
+
+  if (!res.ok) {
+    let msg = res.statusText;
+    try {
+      const j = await res.json();
+      if (j.error) msg = j.error;
+    } catch {
+      try {
+        msg = await res.text();
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new Error(msg || `Request failed (${res.status})`);
+  }
+
+  return res.blob();
+}
+
+/**
+ * Local removal via Solid Color Detection (Flood fill color keying)
+ * @param {File} file
+ * @returns {Promise<Blob>}
+ */
+export async function removeBackgroundViaSolid(file) {
+  const base = getRemoveBgProxyBase();
+  const fd = new FormData();
+  fd.append('file', file, file.name || 'upload.png');
+
+  let res;
+  try {
+    res = await fetch(`${base}/api/remove-bg-solid`, {
+      method: 'POST',
+      body: fd,
+    });
+  } catch (err) {
+    if (err?.message?.includes('Failed to fetch')) {
+      throw new Error("সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না (Failed to fetch)। অনুগ্রহ করে নিশ্চিত করুন যে আপনার PC-তে ব্যাকএন্ড সার্ভারটি (node server/index.js) পোর্ট 3001-এ চালু আছে।");
+    }
+    throw err;
+  }
+
+  if (!res.ok) {
+    let msg = res.statusText;
+    try {
+      const j = await res.json();
+      if (j.error) msg = j.error;
+    } catch {
+      try {
+        msg = await res.text();
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new Error(msg || `Request failed (${res.status})`);
+  }
+
+  return res.blob();
+}
+
+/**
+ * Advanced Hybrid removal: AI object detection + Solid edge fill
+ * @param {File} file
+ * @returns {Promise<Blob>}
+ */
+export async function removeBackgroundViaHybrid(file) {
+  const base = getRemoveBgProxyBase();
+  const fd = new FormData();
+  fd.append('file', file, file.name || 'upload.png');
+
+  let res;
+  try {
+    res = await fetch(`${base}/api/remove-bg-hybrid`, {
+      method: 'POST',
+      body: fd,
+    });
+  } catch (err) {
+    if (err?.message?.includes('Failed to fetch')) {
+      throw new Error("সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না (Failed to fetch)। অনুগ্রহ করে নিশ্চিত করুন যে আপনার PC-তে ব্যাকএন্ড সার্ভারটি (node server/index.js) পোর্ট 3001-এ চালু আছে।");
+    }
+    throw err;
+  }
+
+  if (!res.ok) {
+    let msg = res.statusText;
+    try {
+      const j = await res.json();
+      if (j.error) msg = j.error;
+    } catch {
+      try {
+        msg = await res.text();
+      } catch {
+        /* ignore */
+      }
+    }
+    throw new Error(msg || `Request failed (${res.status})`);
+  }
+
+  return res.blob();
+}

@@ -27,7 +27,10 @@ dist-electron
 
 # Jupyter Notebooks & Python Scripts
 *.ipynb
-SDXL_RealESRGAN_Colab_Code.py
+*.py
+server/*.py
+**/__pycache__/
+*.pyc
 
 # Temp JSON Data
 backend_url.json
@@ -44,12 +47,17 @@ kill-ports.js
 check-mask.js
 check-transparency.js
 mask-debug.png
+debug_*.png
+old_*.jsx
+head_index.jsx
 
 # All test files (root level)
 test-*.js
 test-*.png
 test_*.js
 test_*.cjs
+test_*.png
+test_*.jpg
 
 # Server test files
 server/test_hf.js

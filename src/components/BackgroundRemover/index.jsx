@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Helmet, HelmetProvider } from 'react-helmet-async';
-import { Upload, Download, Trash2, Loader2, Sparkles, Image as ImageIcon, KeyRound } from 'lucide-react';
-import { removeBackgroundViaRemoveBgProxy, removeBackgroundViaLocalServer } from '../../services/removeBgProxy.js';
+import { Upload, Download, Trash2, Loader2, Sparkles, Image as ImageIcon, KeyRound, RefreshCw } from 'lucide-react';
+import { removeBackgroundViaRemoveBgProxy, removeBackgroundViaLocalServer, removeBackgroundViaBria, removeBackgroundViaSolid, removeBackgroundViaHybrid } from '../../services/removeBgProxy.js';
 import { saveKeySecurely, getKeySecurely } from '../../services/secureStorage.js';
 
 /* ─── Light Glassmorphism Tokens ──────────────────────────── */
@@ -65,6 +65,7 @@ export const BackgroundRemover = () => {
     if (!originalFile) return;
     setIsProcessing(true);
     setProgress(0);
+    setProcessedUrl(null); // Clear old result to show loading spinner
     
     // Fake progress interval
     const interval = setInterval(() => {
@@ -75,6 +76,10 @@ export const BackgroundRemover = () => {
       let resultBlob;
       if (mode === 'local') {
         resultBlob = await removeBackgroundViaLocalServer(originalFile);
+      } else if (mode === 'bria') {
+        resultBlob = await removeBackgroundViaBria(originalFile);
+      } else if (mode === 'solid') {
+        resultBlob = await removeBackgroundViaHybrid(originalFile);
       } else {
         const trimmed = apiKey.trim();
         if (!trimmed) {
@@ -144,9 +149,39 @@ export const BackgroundRemover = () => {
               transition: 'all 0.2s'
             }}
           >
-            <Sparkles size={14} /> লোকাল প্রিমিয়াম ইঞ্জিন (Recraft Quality - অফলাইন)
+            <Sparkles size={14} /> লোকাল ইঞ্জিন (অফলাইন)
           </button>
           
+          <button
+            onClick={() => setMode('bria')}
+            style={{
+              padding: '6px 14px', borderRadius: '8px',
+              border: mode === 'bria' ? '1px solid var(--primary)' : `1px solid ${FIELD_BORDER}`,
+              background: mode === 'bria' ? 'var(--primary)' : FIELD_BG,
+              color: mode === 'bria' ? 'white' : 'var(--text-1)',
+              fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem',
+              display: 'flex', alignItems: 'center', gap: '6px',
+              transition: 'all 0.2s'
+            }}
+          >
+            <Sparkles size={14} /> BRIA AI (RMBG-1.4)
+          </button>
+
+          <button
+            onClick={() => setMode('solid')}
+            style={{
+              padding: '6px 14px', borderRadius: '8px',
+              border: mode === 'solid' ? '1px solid var(--primary)' : `1px solid ${FIELD_BORDER}`,
+              background: mode === 'solid' ? 'var(--primary)' : FIELD_BG,
+              color: mode === 'solid' ? 'white' : 'var(--text-1)',
+              fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem',
+              display: 'flex', alignItems: 'center', gap: '6px',
+              transition: 'all 0.2s'
+            }}
+          >
+            <Sparkles size={14} /> সলিড কালার (লোগো/আইকন)
+          </button>
+
           <button
             onClick={() => setMode('api')}
             style={{
@@ -307,18 +342,34 @@ export const BackgroundRemover = () => {
                 )}
 
                 {processedUrl && (
-                  <button
-                    aria-label="Download PNG"
-                    onClick={handleDownload}
-                    style={{
-                      padding: '10px 24px', borderRadius: '10px',
-                      border: 'none', background: '#10b981',
-                      color: 'white', fontWeight: 600, cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', gap: '8px'
-                    }}
-                  >
-                    <Download size={16} /> Download PNG
-                  </button>
+                  <>
+                    <button
+                      aria-label="Re-process"
+                      onClick={handleRemoveBackground}
+                      disabled={isProcessing}
+                      style={{
+                        padding: '10px 20px', borderRadius: '10px',
+                        border: 'none', background: 'var(--primary)',
+                        color: 'white', fontWeight: 600, cursor: isProcessing ? 'not-allowed' : 'pointer',
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        opacity: isProcessing ? 0.7 : 1
+                      }}
+                    >
+                      <RefreshCw size={16} /> {isProcessing ? 'Removing...' : 'পুনরায় রিমুভ করুন'}
+                    </button>
+                    <button
+                      aria-label="Download PNG"
+                      onClick={handleDownload}
+                      style={{
+                        padding: '10px 24px', borderRadius: '10px',
+                        border: 'none', background: '#10b981',
+                        color: 'white', fontWeight: 600, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: '8px'
+                      }}
+                    >
+                      <Download size={16} /> Download PNG
+                    </button>
+                  </>
                 )}
               </div>
             )}

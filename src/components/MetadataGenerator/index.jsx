@@ -1125,11 +1125,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               errMsg = res.error || 'Failed to embed';
             } else {
               if (target.type === 'primary') {
-                newPrimaryPath = res.newPath || targetPrimary;
+                newPrimaryPath = res.newPath || target.path;
                 newPrimaryName = res.newFileName || newPrimaryName;
               }
               if (target.type === 'visual') {
-                newVisualPath = res.newPath || targetVisual;
+                newVisualPath = res.newPath || target.path;
               }
             }
           }
@@ -1291,6 +1291,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       }
     } finally {
       setEmbeddingCount(prev => Math.max(0, prev - 1));
+      setUploadBatchIds([]);
     }
   };
   
@@ -1530,6 +1531,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
   const embeddingSuccessCount = images.filter((i) => i.embeddingStatus === "success").length;
   const embeddingErrorCount = images.filter((i) => i.embeddingStatus === "error").length;
+  const localEmbedErrorCount = images.filter((i) => i.embeddingStatus === "error" && (!i.embeddingError || !i.embeddingError.includes(':'))).length;
+  const ftpErrorCount = images.filter((i) => i.embeddingStatus === "error" && i.embeddingError && i.embeddingError.includes(':')).length;
+  const policyViolationCount = images.filter((i) => i.result?.policyWarning || (i.result?.policyReason && i.result.policyReason.trim().length > 0)).length;
 
   return (
     <div className="space-y-6">
@@ -1564,7 +1568,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           }}>
             <MdCloudUpload style={{ width: '2.5rem', height: '2.5rem', color: '#ffffff' }} />
           </div>
-          <h2 style={{ marginBottom: '0.4rem', fontSize: '1.2rem' }}>Upload Media, EPS or Video Files</h2>
+          <h2 style={{ marginBottom: '0.4rem', fontSize: '1.2rem', fontWeight: 600 }}>Upload Media, EPS or Video Files</h2>
           <p className="text-muted" style={{ marginBottom: '1rem' }}>
             Drag & drop or click — JPG, PNG, WebP, GIF, SVG, <span style={{ color: 'var(--accent)', fontWeight: 700 }}>EPS</span> & MP4/MOV
           </p>
@@ -1579,16 +1583,16 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         </div>
       </div>
 
-      {/* ERROR BANNER */}
+      {/* ERROR BANNER 1: GENERATION FAILED (API LIMIT / DISCONNECTED) */}
       {errorCount > 0 && (
         <div className="glass card animate-fade-in" style={{ borderLeft: '4px solid var(--danger)', background: 'rgba(248,113,113,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h3 style={{ color: 'var(--danger)', fontSize: '1.05rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <RefreshCw className="w-4 h-4" /> 
-              {errorCount} File{errorCount !== 1 ? 's' : ''} Failed to Generate
+              {errorCount} File{errorCount !== 1 ? 's' : ''} Failed to Generate Metadata
             </h3>
             <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
-              Some files failed to generate metadata (possibly due to API rate limit or connection issues). You can retry only the failed files.
+              এপিআই ডেলি কোটা লিমিট, রেট লিমিট বা ইন্টারনেট সংযোগ বিচ্ছিন্ন হওয়ার কারণে মেটাডেটা তৈরি হয়নি।
             </p>
           </div>
           <button
@@ -1598,21 +1602,21 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             onClick={() => processBatch(true)}
           >
             {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            {isProcessing ? 'Retrying...' : 'Retry Failed Files'}
+            {isProcessing ? 'Retrying...' : 'Retry Generation'}
           </button>
         </div>
       )}
 
-      {/* UPLOAD ERROR BANNER */}
-      {embeddingErrorCount > 0 && (
+      {/* ERROR BANNER 2: LOCAL EMBEDDING FAILED */}
+      {localEmbedErrorCount > 0 && (
         <div className="glass card animate-fade-in mt-4" style={{ borderLeft: '4px solid var(--danger)', background: 'rgba(248,113,113,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h3 style={{ color: 'var(--danger)', fontSize: '1.05rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <RefreshCw className="w-4 h-4" /> 
-              {embeddingErrorCount} File{embeddingErrorCount !== 1 ? 's' : ''} Failed to Upload/Embed
+              {localEmbedErrorCount} File{localEmbedErrorCount !== 1 ? 's' : ''} Failed to Embed (Local Save)
             </h3>
             <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
-              Some files failed to upload or embed (possibly due to network or server issues). Please retry only the failed files.
+              কম্পিউটারের ফাইলে মেটাডেটা এম্বেড ও সেভ করা সম্ভব হয়নি। পুনরায় চেষ্টা করুন।
             </p>
           </div>
           <button
@@ -1622,8 +1626,47 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             onClick={() => retryEmbedAndUpload()}
           >
             {isEmbedding ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            {isEmbedding ? 'Retrying...' : 'Retry Failed Uploads'}
+            {isEmbedding ? 'Retrying...' : 'Retry Embedding'}
           </button>
+        </div>
+      )}
+
+      {/* ERROR BANNER 3: FTP UPLOAD FAILED */}
+      {ftpErrorCount > 0 && (
+        <div className="glass card animate-fade-in mt-4" style={{ borderLeft: '4px solid var(--danger)', background: 'rgba(248,113,113,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ color: 'var(--danger)', fontSize: '1.05rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <RefreshCw className="w-4 h-4" /> 
+              {ftpErrorCount} File{ftpErrorCount !== 1 ? 's' : ''} Failed to Upload to FTP
+            </h3>
+            <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
+              এফটিপি সার্ভারে ফাইল আপলোড সম্পূর্ণ হয়নি (নেটওয়ার্ক সংযোগ বিচ্ছিন্ন বা সার্ভার ডিসকানেক্ট)।
+            </p>
+          </div>
+          <button
+            className="btn-primary shrink-0"
+            style={{ background: 'var(--danger)', boxShadow: '0 4px 15px rgba(248,113,113,0.3)' }}
+            disabled={isEmbedding}
+            onClick={() => retryEmbedAndUpload()}
+          >
+            {isEmbedding ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {isEmbedding ? 'Retrying...' : 'Retry FTP Upload'}
+          </button>
+        </div>
+      )}
+
+      {/* ERROR BANNER 4: POLICY / COPYRIGHT / TRADEMARK FLAGGED */}
+      {policyViolationCount > 0 && (
+        <div className="glass card animate-fade-in mt-4" style={{ borderLeft: '4px solid #f43f5e', background: 'rgba(244,63,94,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ color: '#f43f5e', fontSize: '1.05rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <AlertTriangle className="w-4 h-4" /> 
+              {policyViolationCount} File{policyViolationCount !== 1 ? 's' : ''} Flagged for Copyright / Policy Issue
+            </h3>
+            <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
+              স্টক মার্কেটপ্লেস ব্র্যান্ড ট্রেডমার্ক বা পলিসি ভায়োলেশনের জন্য সংবেদনশীল ফাইল চিহ্নিত হয়েছে।
+            </p>
+          </div>
         </div>
       )}
 
@@ -1833,9 +1876,21 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 </span>
               )}
 
-              {embeddingErrorCount > 0 && (
-                <span style={{ color: '#f43f5e', flexShrink: 0 }} className="flex items-center gap-1" title="Failed Upload/Embed">
-                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {embeddingErrorCount} Failed Upload
+              {localEmbedErrorCount > 0 && (
+                <span style={{ color: '#f43f5e', flexShrink: 0 }} className="flex items-center gap-1" title="Failed Local Embed">
+                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {localEmbedErrorCount} Failed Embed
+                </span>
+              )}
+
+              {ftpErrorCount > 0 && (
+                <span style={{ color: '#f43f5e', flexShrink: 0 }} className="flex items-center gap-1" title="Failed FTP Upload">
+                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {ftpErrorCount} Failed Upload
+                </span>
+              )}
+
+              {policyViolationCount > 0 && (
+                <span style={{ color: '#f43f5e', flexShrink: 0 }} className="flex items-center gap-1" title="Flagged for Policy/Copyright Issue">
+                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {policyViolationCount} Policy Issue
                 </span>
               )}
 
@@ -2210,54 +2265,6 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         </div>
       )}
 
-      {/* Overall Upload Progress Bar at the Top */}
-      {uploadBatchIds.length > 0 && images.some(img => uploadBatchIds.includes(img.id) && (img.embeddingStatus === 'uploading' || img.embeddingStatus === 'embedding')) && (() => {
-        const batchImages = images.filter(img => uploadBatchIds.includes(img.id));
-        const totalInBatch = batchImages.length;
-        const uploadedCount = batchImages.filter(img => img.embeddingStatus === 'success').length;
-        const averageProgress = totalInBatch > 0 ? Math.round((uploadedCount / totalInBatch) * 100) : 0;
-
-        return (
-          <div className="glass card animate-fade-in p-4" style={{ background: 'rgba(245,158,11,0.03)', borderLeft: '4px solid #f59e0b' }}>
-            <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
-              <div>
-                <h4 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Upload className="w-4 h-4 text-amber-500 animate-bounce" />
-                  FTP Server Upload in Progress
-                </h4>
-                <p className="text-muted" style={{ fontSize: '0.75rem', margin: '2px 0 0 0' }}>
-                  ফাইলগুলো মেটাডেটাসহ এফটিপি সার্ভারে পাঠানো হচ্ছে...
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                {activeJobId && window.electronAPI?.cancelFtp && (
-                  <button
-                    className="btn-outline"
-                    style={{ color: 'var(--danger)', borderColor: 'rgba(239,68,68,0.2)', padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
-                    onClick={async () => {
-                      await window.electronAPI.cancelFtp(activeJobId);
-                      showToast("আপলোড বাতিল করা হয়েছে।", "warning");
-                    }}
-                  >
-                    Cancel Upload
-                  </button>
-                )}
-                <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-1)' }}>
-                    {uploadedCount} / {totalInBatch} Files Completed
-                  </span>
-                  <span className="ml-2 px-2 py-0.5 bg-amber-500/10 text-amber-500 rounded text-xs font-bold">
-                    {averageProgress}%
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div style={{ width: '100%', height: '8px', background: 'rgba(245,158,11,0.15)', borderRadius: '4px', overflow: 'hidden' }}>
-              <div style={{ width: `${averageProgress}%`, height: '100%', background: 'linear-gradient(90deg, #f59e0b, #d97706)', transition: 'width 0.2s ease-out' }} />
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Policy Violation Summary Banner */}
       {images.some(img => img.result?.policyWarning) && (

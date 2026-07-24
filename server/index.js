@@ -233,35 +233,40 @@ app.post('/api/removebg', upload.single('file'), async (req, res) => {
     const arrayBuf = await out.arrayBuffer();
     const removeBgBuffer = Buffer.from(arrayBuf);
     
-    console.log('[removebg] Processing high-fidelity image (stable mode)...');
+    console.log('[removebg] Processing high-fidelity image (local edge cleaner)...');
     
-    // 1. Get original dimensions
-    const origMeta = await sharp(req.file.path).metadata();
+    const maskPath = req.file.path + '_mask.png';
+    const outPath = req.file.path + '_clean.png';
     
-    // 2. Upscale the mask and sharpen the alpha channel safely using gamma
-    // This reduces the white fringe by making semi-transparent pixels more transparent
-    const upscaledMask = await sharp(removeBgBuffer)
-      .resize(origMeta.width, origMeta.height, { fit: 'fill' })
-      .ensureAlpha()
-      .gamma(3) // Push semi-transparent edge pixels toward transparency to hide white background
-      .png()
-      .toBuffer();
-
-    // 3. Composite original with refined mask (stable dest-in method)
-    const finalBuffer = await sharp(req.file.path)
-      .ensureAlpha()
-      .composite([{
-        input: upscaledMask,
-        blend: 'dest-in'
-      }])
-      .png()
-      .toBuffer();
-
+    fs.writeFileSync(maskPath, removeBgBuffer);
+    
+    const pyScriptPath = path.join(process.cwd(), 'server', 'python_edge_cleaner.py');
+    const pythonExecutable = process.platform === 'win32' ? 'py' : 'python3';
+    
+    await new Promise((resolve, reject) => {
+      const child = spawn(pythonExecutable, [pyScriptPath, req.file.path, maskPath, outPath]);
+      let errOutput = '';
+      child.stderr.on('data', (data) => errOutput += data.toString());
+      child.stdout.on('data', (data) => console.log(data.toString().trim()));
+      
+      child.on('close', (code) => {
+        if (code === 0 && fs.existsSync(outPath)) resolve();
+        else reject(new Error(errOutput || `Python process exited with code ${code}`));
+      });
+    });
+    
+    const finalBuffer = fs.readFileSync(outPath);
+    
     cleanupInput();
+    try { fs.unlinkSync(maskPath); } catch (_) {}
+    try { fs.unlinkSync(outPath); } catch (_) {}
+    
     res.setHeader('Content-Type', 'image/png');
     return res.status(200).send(finalBuffer);
   } catch (error) {
     cleanupInput();
+    try { fs.unlinkSync(req.file.path + '_mask.png'); } catch (_) {}
+    try { fs.unlinkSync(req.file.path + '_clean.png'); } catch (_) {}
     return res.status(500).json({ error: error.message || 'remove.bg proxy failed' });
   }
 });
@@ -444,7 +449,226 @@ app.post('/api/remove-bg-local', upload.single('file'), async (req, res) => {
   }
 });
 
+app.post('/api/remove-bg-bria', upload.single('file'), async (req, res) => {
+  const cleanup = () => {
+    if (req.file?.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (_) {}
+    }
+  };
 
+  if (!req.file) {
+    return res.status(400).json({ error: 'No image file uploaded.' });
+  }
+
+  const tmpPath = req.file.path;
+  const outPath = tmpPath + '_bria_cutout.png';
+
+  try {
+    console.log('[remove-bg-bria] Spawning BRIA python process...');
+    
+    const pyScriptPath = path.join(process.cwd(), 'server', 'python_bria_remover.py');
+    const pythonExecutable = process.platform === 'win32' ? 'py' : 'python3';
+
+    const runPythonScript = () => {
+      return new Promise((resolve, reject) => {
+        const child = spawn(pythonExecutable, [pyScriptPath, tmpPath, outPath]);
+        
+        let errOutput = '';
+        child.stderr.on('data', (data) => {
+          errOutput += data.toString();
+        });
+        child.stdout.on('data', (data) => {
+          console.log(data.toString().trim());
+        });
+        
+        child.on('close', (code) => {
+          if (code === 0 && fs.existsSync(outPath)) {
+            resolve();
+          } else {
+            reject(new Error(errOutput || `Python process exited with code ${code}`));
+          }
+        });
+      });
+    };
+
+    await runPythonScript();
+    
+    console.log('[remove-bg-bria] Process completed. Reading final cutout...');
+    const finalBuffer = fs.readFileSync(outPath);
+    
+    // Clean up temporary files
+    cleanup();
+    try { fs.unlinkSync(outPath); } catch (_) {}
+    console.log('[remove-bg-bria] Done! Sent high-res transparent PNG.');
+    res.setHeader('Content-Type', 'image/png');
+    return res.status(200).send(finalBuffer);
+  } catch (error) {
+    cleanup();
+    try { fs.unlinkSync(outPath); } catch (_) {}
+    console.error('[remove-bg-bria] ERROR:', error?.message || error);
+    return res.status(500).json({ error: error?.message || 'Python process failed' });
+  }
+});
+
+app.post('/api/remove-bg-solid', upload.single('file'), async (req, res) => {
+  const cleanup = () => {
+    if (req.file?.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (_) {}
+    }
+  };
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'No image file uploaded.' });
+  }
+
+  const tmpPath = req.file.path;
+  const outPath = tmpPath + '_solid_cutout.png';
+
+  try {
+    console.log('[remove-bg-solid] Spawning SOLID COLOR python process...');
+    
+    const pyScriptPath = path.join(process.cwd(), 'server', 'python_solid_remover.py');
+    const pythonExecutable = process.platform === 'win32' ? 'py' : 'python3';
+
+    const runPythonScript = () => {
+      return new Promise((resolve, reject) => {
+        const child = spawn(pythonExecutable, [pyScriptPath, '--input', tmpPath, '--output', outPath]);
+        
+        let errOutput = '';
+        child.stderr.on('data', (data) => {
+          errOutput += data.toString();
+        });
+        child.stdout.on('data', (data) => {
+          console.log(data.toString().trim());
+        });
+        
+        child.on('close', (code) => {
+          if (code === 0 && fs.existsSync(outPath)) {
+            resolve();
+          } else {
+            reject(new Error(errOutput || `Python process exited with code ${code}`));
+          }
+        });
+      });
+    };
+
+    await runPythonScript();
+    
+    console.log('[remove-bg-solid] Process completed. Reading final cutout...');
+    const finalBuffer = fs.readFileSync(outPath);
+    
+    // Clean up temporary files
+    cleanup();
+    try { fs.unlinkSync(outPath); } catch (_) {}
+    console.log('[remove-bg-solid] Done! Sent transparent PNG.');
+    res.setHeader('Content-Type', 'image/png');
+    return res.status(200).send(finalBuffer);
+  } catch (error) {
+    cleanup();
+    try { fs.unlinkSync(outPath); } catch (_) {}
+    console.error('[remove-bg-solid] ERROR:', error?.message || error);
+    return res.status(500).json({ error: error?.message || 'Python process failed' });
+  }
+});
+
+app.post('/api/remove-bg-hybrid', upload.single('file'), async (req, res) => {
+  const cleanup = () => {
+    if (req.file?.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (_) {}
+    }
+  };
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'No image file uploaded.' });
+  }
+
+  const tmpPath = req.file.path;
+  const outPath = tmpPath + '_hybrid_cutout.png';
+  const tmpMaskPath = tmpPath + '_hf_mask.png';
+
+  let hfSuccess = false;
+
+  try {
+    // Try Hugging Face Space for ultra-fast GPU processing
+    console.log('[remove-bg-hybrid] Attempting ultra-fast HF Space GPU inference...');
+    try {
+      const client = await Client.connect("briaai/BRIA-RMBG-1.4");
+      const result = await client.predict("/predict", [
+        handle_file(tmpPath)
+      ]);
+      const imageUrl = result.data?.[0]?.url || result.data?.[0]?.path;
+      if (!imageUrl) throw new Error("No image URL returned from HF Space");
+
+      console.log('[remove-bg-hybrid] Fetching mask from HF Space...');
+      const imageResponse = await fetch(imageUrl);
+      if (!imageResponse.ok) throw new Error("Failed to download mask from HF Space");
+
+      const arrayBuf = await imageResponse.arrayBuffer();
+      fs.writeFileSync(tmpMaskPath, Buffer.from(arrayBuf));
+      hfSuccess = true;
+      console.log('[remove-bg-hybrid] HF Space inference completed. Running local postprocessing...');
+    } catch (hfErr) {
+      console.warn('[remove-bg-hybrid] HF Space connection failed. Falling back to local CPU execution:', hfErr.message);
+    }
+
+    const runPythonScript = () => {
+      return new Promise((resolve, reject) => {
+        const pythonExecutable = process.platform === 'win32' ? 'py' : 'python3';
+        let child;
+        if (hfSuccess && fs.existsSync(tmpMaskPath)) {
+          // Fast path: use HF mask and do light postprocessing (no torch, no CPU AI inference)
+          const pyScriptPath = path.join(process.cwd(), 'server', 'python_hybrid_postprocess.py');
+          child = spawn(pythonExecutable, [pyScriptPath, tmpPath, tmpMaskPath, outPath]);
+        } else {
+          // Slow fallback: run full local BRIA RMBG-1.4 model on CPU
+          const pyScriptPath = path.join(process.cwd(), 'server', 'python_hybrid_remover.py');
+          child = spawn(pythonExecutable, [pyScriptPath, tmpPath, outPath]);
+        }
+
+        let errOutput = '';
+        child.stderr.on('data', (data) => {
+          errOutput += data.toString();
+        });
+        child.stdout.on('data', (data) => {
+          console.log(data.toString().trim());
+        });
+        
+        child.on('close', (code) => {
+          if (code === 0 && fs.existsSync(outPath)) {
+            resolve();
+          } else {
+            reject(new Error(errOutput || `Python process exited with code ${code}`));
+          }
+        });
+      });
+    };
+
+    await runPythonScript();
+    
+    console.log('[remove-bg-hybrid] Process completed. Reading final cutout...');
+    const finalBuffer = fs.readFileSync(outPath);
+    
+    cleanup();
+    try { fs.unlinkSync(outPath); } catch (_) {}
+    try { if (fs.existsSync(tmpMaskPath)) fs.unlinkSync(tmpMaskPath); } catch (_) {}
+    
+    console.log('[remove-bg-hybrid] Done! Sent transparent PNG.');
+    res.setHeader('Content-Type', 'image/png');
+    return res.status(200).send(finalBuffer);
+  } catch (error) {
+    cleanup();
+    try { fs.unlinkSync(outPath); } catch (_) {}
+    try { if (fs.existsSync(tmpMaskPath)) fs.unlinkSync(tmpMaskPath); } catch (_) {}
+    console.error('[remove-bg-hybrid] ERROR:', error?.message || error);
+    return res.status(500).json({ error: error?.message || 'Python process failed' });
+  }
+});
 
 app.post('/api/process-eps', upload.single('file'), async (req, res) => {
   if (!req.file) {

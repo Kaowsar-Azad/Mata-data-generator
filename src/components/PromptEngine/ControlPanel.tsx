@@ -13,6 +13,7 @@ import {
   addCustomCameraAngle
 } from '../../services/promptEngine/dataset';
 import { Sparkles, ChevronDown } from 'lucide-react';
+import { GeneratePromptsConfig } from '../../services/promptEngine/generator';
 
 /* ─── Light Glassmorphism Tokens ──────────────────────────── */
 const GLASS_BG      = 'rgba(255, 255, 255, 0.62)';
@@ -26,8 +27,13 @@ const LABEL_COLOR   = '#6b7280';
 const TEXT_COLOR     = '#1e293b';
 const TEAL          = '#14b8a6';
 
+interface LabelProps {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}
+
 /* ─── Tiny label ─────────────────────────────────────────── */
-const Label = ({ children, style }) => (
+const Label: React.FC<LabelProps> = ({ children, style }) => (
   <span style={{
     display: 'block',
     fontSize: '0.62rem',
@@ -45,8 +51,17 @@ const Label = ({ children, style }) => (
   </span>
 );
 
+interface SelProps {
+  value: string | number;
+  onChange: (val: string) => void;
+  children: React.ReactNode;
+  focused: boolean;
+  onFocus: () => void;
+  onBlur: () => void;
+}
+
 /* ─── Select wrapper with arrow ─────────────────────────── */
-const Sel = ({ value, onChange, children, focused, onFocus, onBlur }) => (
+const Sel: React.FC<SelProps> = ({ value, onChange, children, focused, onFocus, onBlur }) => (
   <div style={{ position: 'relative' }}>
     <select
       value={value}
@@ -59,18 +74,13 @@ const Sel = ({ value, onChange, children, focused, onFocus, onBlur }) => (
         background: focused ? FOCUS_BG : FIELD_BG,
         border: `1.5px solid ${focused ? FOCUS_BORDER : FIELD_BORDER}`,
         borderRadius: '8px',
-        color: TEXT_COLOR,
         fontSize: '0.78rem',
-        fontWeight: 500,
+        color: TEXT_COLOR,
         outline: 'none',
-        cursor: 'pointer',
         appearance: 'none',
-        WebkitAppearance: 'none',
-        transition: 'border-color .2s, background .2s, box-shadow .2s',
-        boxShadow: focused
-          ? `0 0 0 3px ${FOCUS_RING}, 0 1px 3px rgba(0,0,0,0.04)`
-          : '0 1px 3px rgba(0,0,0,0.04)',
-        fontFamily: 'inherit',
+        cursor: 'pointer',
+        transition: 'all .2s',
+        boxShadow: focused ? `0 0 0 3px ${FOCUS_RING}` : 'none',
       }}
     >
       {children}
@@ -85,9 +95,14 @@ const Sel = ({ value, onChange, children, focused, onFocus, onBlur }) => (
   </div>
 );
 
+export interface ControlPanelProps {
+  onGenerate: (config: GeneratePromptsConfig) => void;
+  isGenerating: boolean;
+}
+
 /* ─── Main Component ─────────────────────────────────────── */
-export const ControlPanel = ({ onGenerate, isGenerating }) => {
-  const [config, setConfig] = useState({
+export const ControlPanel: React.FC<ControlPanelProps> = ({ onGenerate, isGenerating }) => {
+  const [config, setConfig] = useState<GeneratePromptsConfig>({
     targetModel: 'default',
     aspectRatio: '16:9',
     mainCategory: 'auto',

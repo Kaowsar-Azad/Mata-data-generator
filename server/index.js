@@ -34,6 +34,31 @@ app.get('/api/prompt-categories', async (req, res) => {
   }
 });
 
+app.get('/api/prompt-vocabulary', async (req, res) => {
+  try {
+    const records = await PromptVocabulary.find({});
+    // The dataset expects an object like { Subject: [...], Environment: [...], etc }
+    const vocabulary = {
+      Subject: [],
+      Action: [],
+      Environment: [],
+      Concept: [],
+      Style: [],
+      Lighting: [],
+      Camera: []
+    };
+    records.forEach(doc => {
+      if (vocabulary[doc.category]) {
+        vocabulary[doc.category].push(doc.word);
+      }
+    });
+    res.json(vocabulary);
+  } catch (error) {
+    console.error('Error fetching vocabulary:', error);
+    res.status(500).json({ error: 'Failed to fetch vocabulary' });
+  }
+});
+
 app.post('/api/debug-log', express.json(), (req, res) => {
   console.log('\x1b[36m[CLIENT DEBUG]\x1b[0m', req.body);
   try {

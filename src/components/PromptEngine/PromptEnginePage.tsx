@@ -1,14 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { Helmet, HelmetProvider } from 'react-helmet-async';
 import { ControlPanel } from './ControlPanel';
-import { ResultsPanel } from './ResultsPanel';
-import { generatePrompts } from '../../services/promptEngine/generator';
+import { ResultsPanel, PromptItem } from './ResultsPanel';
+import { generatePrompts, GeneratePromptsConfig } from '../../services/promptEngine/generator';
 import { generateAIPrompts } from '../../services/promptEngine/aiGenerator';
 import { fetchVocabularyFromDB } from '../../services/promptEngine/dataset';
 import { motion } from 'framer-motion';
 
-export const PromptEnginePage = ({ apiKeys, apiProvider, promptGenMode }) => {
-  const [prompts, setPrompts] = useState([]);
+export interface PromptEnginePageProps {
+  apiKeys: Record<string, string>;
+  apiProvider: string | string[];
+  promptGenMode: string;
+}
+
+export const PromptEnginePage: React.FC<PromptEnginePageProps> = ({ apiKeys, apiProvider, promptGenMode }) => {
+  const [prompts, setPrompts] = useState<PromptItem[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusText, setStatusText] = useState('');
 
@@ -16,7 +22,7 @@ export const PromptEnginePage = ({ apiKeys, apiProvider, promptGenMode }) => {
     fetchVocabularyFromDB();
   }, []);
 
-  const handleGenerate = async (config) => {
+  const handleGenerate = async (config: GeneratePromptsConfig) => {
     setIsGenerating(true);
     setPrompts([]);
     try {

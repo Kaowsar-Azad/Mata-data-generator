@@ -10,9 +10,10 @@ import { FtpConfigManager } from './components/FtpConfigManager'
 import { EpsPreviewGenerator } from './components/EpsPreviewGenerator'
 import { ImageUpscaler } from './components/ImageUpscaler'
 import { AiImageGenerator } from './components/AiImageGenerator'
+import { TopSellers } from './components/TopSellers'
 import { PromptEnginePage } from './components/PromptEngine/PromptEnginePage'
 import { PromptEngineSettings } from './components/PromptEngine/PromptEngineSettings'
-import { Sparkles, Zap, Image as ImageIcon, Eraser, Box, ChevronLeft, ChevronRight, Server, Key, Camera, Maximize, Cpu, Wand2 } from 'lucide-react'
+import { Sparkles, Zap, Image as ImageIcon, Eraser, Box, ChevronLeft, ChevronRight, Server, Key, Camera, Maximize, Cpu, Wand2, TrendingUp } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 const tabVariants = {
@@ -283,6 +284,7 @@ function App() {
                 { id: 'upscale', icon: Maximize, label: 'AI Image Upscaler', color: '#3b82f6' },
                 { id: 'aiimage', icon: Cpu, label: 'Cloud GPU Image Gen', color: '#06b6d4' },
                 { id: 'ftp', icon: Server, label: 'Microstock Uploader', color: '#6366f1' },
+                { id: 'topsellers', icon: TrendingUp, label: 'Top Sellers', color: '#f59e0b' },
               ].map(tab => {
                 const isActive = activeTab === tab.id;
                 return (
@@ -413,6 +415,10 @@ function App() {
             editingConfig={editingFtpConfig}
             setEditingConfig={setEditingFtpConfig}
           />
+        </TabWrapper>
+
+        <TabWrapper active={activeTab === 'topsellers'}>
+          <TopSellers />
         </TabWrapper>
 
         <TabWrapper active={activeTab === 'vector'}>

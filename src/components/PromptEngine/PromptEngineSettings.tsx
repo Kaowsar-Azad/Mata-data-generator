@@ -1,7 +1,12 @@
 import React, { useState } from 'react';
 import { SlidersHorizontal, ChevronUp, ChevronDown, Zap, Cpu } from 'lucide-react';
 
-export function PromptEngineSettings({ activeMode, onModeChange }) {
+export interface PromptEngineSettingsProps {
+  activeMode: string;
+  onModeChange: (mode: string) => void;
+}
+
+export function PromptEngineSettings({ activeMode, onModeChange }: PromptEngineSettingsProps) {
   const [isOpen, setIsOpen] = useState(true);
 
   return (

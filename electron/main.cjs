@@ -2787,6 +2787,11 @@ ipcMain.handle('fetch-image', async (event, url) => {
   }
 });
 
-
-
+// TopSellers Handler Registration
+try {
+  const { registerTopSellersIPC } = require('../src/components/TopSellers/backend.cjs');
+  registerTopSellersIPC(ipcMain, BrowserWindow);
+} catch (err) {
+  fileLog('Failed to register TopSellers IPC:', err);
+}
 

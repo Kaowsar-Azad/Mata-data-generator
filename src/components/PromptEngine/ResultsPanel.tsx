@@ -9,11 +9,25 @@ const CARD_BG      = 'rgba(255, 255, 255, 0.55)';
 const CARD_BORDER  = 'rgba(0, 0, 0, 0.06)';
 const CARD_HOVER   = 'rgba(0, 0, 0, 0.09)';
 
-export const ResultsPanel = ({ prompts, onClear, isGenerating, statusText }) => {
+export interface PromptItem {
+  id: string;
+  text: string;
+}
+
+export interface ResultsPanelProps {
+  prompts: PromptItem[];
+  onClear: () => void;
+  isGenerating: boolean;
+  statusText?: string;
+  apiKeys?: Record<string, string>;
+  apiProvider?: string | string[];
+}
+
+export const ResultsPanel: React.FC<ResultsPanelProps> = ({ prompts, onClear, isGenerating, statusText }) => {
   const [copiedId, setCopiedId] = React.useState(null);
   const [copiedAll, setCopiedAll] = React.useState(false);
 
-  const handleCopySingle = (prompt) => {
+  const handleCopySingle = (prompt: PromptItem) => {
     navigator.clipboard.writeText(prompt.text).catch(() => {});
     setCopiedId(prompt.id);
   };

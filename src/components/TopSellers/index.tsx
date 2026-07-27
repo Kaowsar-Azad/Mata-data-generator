@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, FormEvent, ChangeEvent } from 'react';
 import { Search, TrendingUp, Camera, Box, Sparkles, MonitorSmartphone, Loader2, AlertCircle, Briefcase, ImageIcon, CheckSquare, Copy, X, BarChart2 } from 'lucide-react';
+import { AdobeSearchOption } from './AdobeSearchOption';
 
 interface ModalProps {
   isOpen: boolean;
@@ -51,8 +52,11 @@ export const TopSellers: React.FC = () => {
 
   const [sortBy, setSortBy] = useState<string>('nb_downloads');
   const [contentType, setContentType] = useState<string>('all');
+  const [platform, setPlatform] = useState<string>('adobe-stock');
+  const [page, setPage] = useState<number>(1);
   const [isSortOpen, setIsSortOpen] = useState<boolean>(false);
   const [isContentOpen, setIsContentOpen] = useState<boolean>(false);
+  const [isPlatformOpen, setIsPlatformOpen] = useState<boolean>(false);
 
   const trendingNiches = [
     { title: 'Business & Finance', icon: Briefcase, query: 'business finance' },
@@ -74,11 +78,13 @@ export const TopSellers: React.FC = () => {
     
     try {
       const api = (window as any).electronAPI;
-      if (api && api.scrapeAdobeStock) {
-        const result = await api.scrapeAdobeStock({
+      if (api && api.scrapeTopSellers) {
+        const result = await api.scrapeTopSellers({
+          platform,
           query: activeQuery,
           order: sortBy,
-          contentType: contentType
+          contentType: contentType,
+          page: page
         });
         if (result.success && result.images) {
           setImages(result.images);
@@ -99,16 +105,41 @@ export const TopSellers: React.FC = () => {
     if (searchQuery.trim()) {
       fetchTopSellers();
     }
-  }, [sortBy, contentType]);
+  }, [sortBy, contentType, page]);
 
   const handleSearch = (e: FormEvent) => {
     e.preventDefault();
+    setPage(1);
     fetchTopSellers(searchQuery);
   };
 
   const handleImageSearch = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Strict Security Validation
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      setError('Security Alert: Only JPG, PNG, WEBP, and GIF images are allowed. Malicious files are blocked.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+    const fileName = file.name.toLowerCase();
+    const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+    if (!hasValidExtension) {
+      setError('Security Alert: Invalid file extension detected. Only image files are allowed.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    const maxSize = 15 * 1024 * 1024; // 15MB strict limit
+    if (file.size > maxSize) {
+      setError('Security Alert: File is too large! Maximum allowed image size is 15MB.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
     
     setIsLoading(true);
     setIsVisualLoading(true);
@@ -116,8 +147,17 @@ export const TopSellers: React.FC = () => {
     setImages([]);
     setSelectedIndices(new Set());
     setSearchQuery("");
+    setPage(1);
     
     try {
+      if (platform !== 'adobe-stock') {
+         setError(`Visual search for ${platform} is coming soon!`);
+         setIsLoading(false);
+         setIsVisualLoading(false);
+         if (fileInputRef.current) fileInputRef.current.value = '';
+         return;
+      }
+
       const filePath = (file as any).path;
       if (!filePath) {
          setError('Real file path not available. Please run the app in Electron.');
@@ -236,127 +276,16 @@ export const TopSellers: React.FC = () => {
       </div>
 
       {/* Search Area */}
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'stretch', gap: '0.75rem', maxWidth: '850px', margin: '0 auto 2rem auto', width: '100%' }}>
-        {/* Search Bar */}
-        <form onSubmit={handleSearch} style={{ 
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          background: 'var(--surface-1)',
-          border: `2px solid ${isFocused ? 'var(--primary)' : 'rgba(0,0,0,0.08)'}`,
-          borderRadius: '999px',
-          padding: '0.25rem',
-          boxShadow: isFocused ? '0 8px 24px rgba(37, 99, 235, 0.15)' : '0 4px 12px rgba(0,0,0,0.05)',
-          transition: 'all 0.2s',
-          position: 'relative',
-          zIndex: 1
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '1rem' }}>
-            <Search style={{ width: '1.25rem', height: '1.25rem', color: isFocused ? 'var(--primary)' : 'var(--text-3)' }} />
-          </div>
-          <input
-            type="text"
-            placeholder={isVisualLoading ? "Uploading & searching image on Adobe Stock..." : (isLoading ? "Searching..." : "Search keywords, niches, or styles...")}
-            value={searchQuery}
-            disabled={isLoading}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
-            style={{
-              flex: 1,
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              padding: '0.75rem 1rem',
-              fontSize: '1rem',
-              color: 'var(--text-1)',
-              fontWeight: 500
-            }}
-          />
-          <button 
-            type="submit"
-            disabled={isLoading}
-            style={{
-              background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '999px',
-              padding: '0.75rem 1.75rem',
-              fontSize: '0.95rem',
-              fontWeight: 700,
-              cursor: isLoading ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
-              opacity: isLoading ? 0.7 : 1,
-              transition: 'transform 0.15s, box-shadow 0.15s'
-            }}
-          >
-            {isLoading && !isVisualLoading ? (
-              <><Loader2 className="animate-spin" size={16} /> Fetching...</>
-            ) : (
-              <><Search size={16} /> Search</>
-            )}
-          </button>
-        </form>
-
-        {/* Search by Image Button */}
-        <div style={{ display: 'flex', alignItems: 'stretch' }}>
-          <input 
-            type="file" 
-            accept="image/*" 
-            ref={fileInputRef} 
-            onChange={handleImageSearch} 
-            style={{ display: 'none' }} 
-          />
-          <button 
-            type="button"
-            disabled={isLoading}
-            onClick={() => fileInputRef.current?.click()}
-            style={{
-              background: 'var(--surface-1)',
-              color: 'var(--text-1)',
-              border: '2px solid rgba(0,0,0,0.08)',
-              borderRadius: '999px',
-              padding: '0 1.5rem',
-              fontSize: '0.95rem',
-              fontWeight: 700,
-              cursor: isLoading ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              transition: 'all 0.2s',
-              opacity: isLoading ? 0.7 : 1,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-              whiteSpace: 'nowrap'
-            }}
-            onMouseOver={(e) => {
-              if(!isLoading) {
-                e.currentTarget.style.border = '2px solid var(--primary)';
-                e.currentTarget.style.boxShadow = '0 8px 24px rgba(37, 99, 235, 0.15)';
-              }
-            }}
-            onMouseOut={(e) => {
-              if(!isLoading) {
-                e.currentTarget.style.border = '2px solid rgba(0,0,0,0.08)';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
-              }
-            }}
-          >
-            {isVisualLoading ? (
-              <>
-                <Loader2 className="animate-spin" size={18} color="var(--primary)" />
-                Analyzing...
-              </>
-            ) : (
-              <>
-                <Camera size={18} color="var(--primary)" /> Search by Image
-              </>
-            )}
-          </button>
-        </div>
-      </div>
+      <AdobeSearchOption
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        isLoading={isLoading}
+        isVisualLoading={isVisualLoading}
+        handleSearch={handleSearch}
+        handleImageSearch={handleImageSearch}
+        fileInputRef={fileInputRef}
+        platform={platform}
+      />
   
       {/* Filters Bar - Premium Sleek Style */}
       <div style={{
@@ -372,6 +301,101 @@ export const TopSellers: React.FC = () => {
         width: 'fit-content',
         margin: '0 auto 2.5rem auto'
       }}>
+        {/* Platform Custom Dropdown */}
+        <div 
+          style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0 0.25rem' }}
+          onMouseLeave={() => setIsPlatformOpen(false)}
+        >
+          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Platform:</span>
+          <div 
+            onClick={() => !isLoading && setIsPlatformOpen(!isPlatformOpen)}
+            style={{
+              position: 'relative',
+              background: 'transparent',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              height: '32px',
+              padding: '0 0.25rem'
+            }}
+          >
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-1)' }}>
+              {platform === 'adobe-stock' ? 'Adobe Stock' : 
+               platform === 'shutterstock' ? 'Shutterstock' : 
+               platform === 'freepik' ? 'Freepik' : 
+               platform === 'getty' ? 'Getty Images' : 'Adobe Stock'}
+            </span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: '0.85rem', height: '0.85rem', color: 'var(--text-2)', marginLeft: '0.35rem', transform: isPlatformOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }}>
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+
+            {/* Custom Premium Dropdown Menu */}
+            {isPlatformOpen && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                paddingTop: '12px',
+                zIndex: 50,
+              }}>
+                <div style={{
+                  width: '200px',
+                  background: 'var(--surface-1)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '16px',
+                  boxShadow: '0 10px 40px rgba(0, 0, 0, 0.08)',
+                  padding: '0.5rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.25rem',
+                }}>
+                  {[
+                    { value: 'adobe-stock', label: 'Adobe Stock' },
+                    { value: 'shutterstock', label: 'Shutterstock' },
+                    { value: 'freepik', label: 'Freepik' },
+                    { value: 'getty', label: 'Getty Images' }
+                  ].map((option) => (
+                    <div
+                      key={option.value}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPlatform(option.value);
+                        setIsPlatformOpen(false);
+                        setPage(1); // Reset page on platform change
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-2)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                      style={{
+                        padding: '0.65rem 0.85rem',
+                        borderRadius: '10px',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        fontWeight: platform === option.value ? 700 : 500,
+                        color: platform === option.value ? 'var(--primary)' : 'var(--text-1)',
+                        background: 'transparent',
+                        transition: 'background 0.2s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}
+                    >
+                      {option.label}
+                      {platform === option.value && (
+                        <CheckSquare size={16} color="var(--primary)" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div style={{ width: '1px', height: '16px', background: 'var(--border-color)', margin: '0 0.25rem' }}></div>
+
         {/* Sort By Custom Dropdown */}
         <div 
           style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0 0.25rem' }}
@@ -661,14 +685,6 @@ export const TopSellers: React.FC = () => {
                     }}>
                     <div style={{ width: '100%', paddingBottom: '75%', position: 'relative', background: 'var(--surface-2)' }}>
                       <img src={img.src} alt={img.alt} style={{ position: 'absolute', width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
-                      <div style={{
-                        position: 'absolute', top: '0.5rem', left: '0.5rem',
-                        background: isSelected ? 'var(--primary)' : 'rgba(0,0,0,0.65)', 
-                        color: '#fff', padding: '0.15rem 0.5rem', borderRadius: '4px',
-                        fontSize: '0.65rem', fontWeight: 700, backdropFilter: 'blur(4px)'
-                      }}>
-                        #{idx + 1}
-                      </div>
                       {isSelected && (
                         <div style={{
                           position: 'absolute', top: '0.5rem', right: '0.5rem',
@@ -687,6 +703,47 @@ export const TopSellers: React.FC = () => {
                   </div>
                 );
               })}
+            </div>
+
+            {/* Pagination Controls */}
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: '2rem', gap: '1rem' }}>
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1 || isLoading}
+                style={{
+                  padding: '0.6rem 1.2rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  background: page === 1 ? 'rgba(0,0,0,0.05)' : 'var(--surface-1)',
+                  color: page === 1 ? 'var(--text-3)' : 'var(--text-1)',
+                  cursor: page === 1 || isLoading ? 'not-allowed' : 'pointer',
+                  fontWeight: 600,
+                  transition: 'all 0.2s'
+                }}
+              >
+                Previous Page
+              </button>
+              
+              <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-2)' }}>
+                Page {page}
+              </span>
+              
+              <button
+                onClick={() => setPage(p => p + 1)}
+                disabled={isLoading || images.length < 30}
+                style={{
+                  padding: '0.6rem 1.2rem',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  background: 'var(--surface-1)',
+                  color: 'var(--text-1)',
+                  cursor: isLoading || images.length < 30 ? 'not-allowed' : 'pointer',
+                  fontWeight: 600,
+                  transition: 'all 0.2s'
+                }}
+              >
+                Next Page
+              </button>
             </div>
           </>
         )}

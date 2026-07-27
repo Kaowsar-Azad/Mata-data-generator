@@ -1,117 +1,33 @@
 function registerTopSellersIPC(ipcMain, BrowserWindow) {
-  ipcMain.handle('scrape-adobe-stock', async (event, payload) => {
-    return new Promise((resolve) => {
-      const { fileLog } = require('../../../electron/main.cjs') || { fileLog: console.log };
-      
-      // Support both object payload and legacy query string
-      const { query, order, contentType, gentech } = typeof payload === 'object' ? payload : { query: payload };
-      
-      fileLog(`[Search Scraper] Starting search. Query: "${query}", Order: "${order || 'default'}", ContentType: "${contentType || 'default'}", GenTech: "${gentech || 'default'}"`);
-      
-      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-      let scraperWindow = new BrowserWindow({
-        show: false,
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-        }
-      });
+  ipcMain.handle('scrape-top-sellers', async (event, payload) => {
+    const mainModule = require('../../../electron/main.cjs') || {};
+    const fileLog = mainModule.fileLog || console.log;
 
-      // Construct Adobe Stock URL with filters
-      let url = `https://stock.adobe.com/search?k=${encodeURIComponent(query)}`;
-      
-      if (order && order !== 'default') {
-        url += `&order=${order}`;
+    const { platform, query, order, contentType, gentech, page } = typeof payload === 'object' ? payload : { query: payload, platform: 'adobe-stock', page: 1 };
+    
+    try {
+      if (platform === 'adobe-stock') {
+        const { scrapeTextSearch } = require('./scrapers/adobeStock.cjs');
+        return await scrapeTextSearch({ query, order, contentType, gentech, page }, BrowserWindow, fileLog);
+      } else if (platform === 'shutterstock') {
+        const { scrapeTextSearch } = require('./scrapers/shutterstock.cjs');
+        return await scrapeTextSearch({ query, order, contentType, gentech, page }, BrowserWindow, fileLog);
+      } else if (platform === 'freepik') {
+        const { scrapeTextSearch } = require('./scrapers/freepik.cjs');
+        return await scrapeTextSearch({ query, order, contentType, gentech, page }, BrowserWindow, fileLog);
+      } else if (platform === 'getty') {
+        const { scrapeTextSearch } = require('./scrapers/gettyImages.cjs');
+        return await scrapeTextSearch({ query, order, contentType, gentech, page }, BrowserWindow, fileLog);
+      } else if (platform === 'dreamstime') {
+        const { scrapeTextSearch } = require('./scrapers/dreamstime.cjs');
+        return await scrapeTextSearch({ query, order, contentType, gentech, page }, BrowserWindow, fileLog);
       } else {
-        url += `&order=nb_downloads`; // Default to most downloaded
+        return { success: false, error: 'Platform not supported yet.' };
       }
-
-      if (contentType && contentType !== 'all') {
-        // Handle vector type specifically
-        const resolvedType = contentType === 'vector' ? 'zip_vector' : contentType;
-        url += `&filters[content_type:${resolvedType}]=1`;
-      }
-
-      if (gentech && gentech !== 'all') {
-        url += `&filters[gentech]=${gentech}`;
-      }
-
-      fileLog(`[Search Scraper] Loading URL: ${url}`);
-      scraperWindow.loadURL(url, { userAgent });
-
-      scraperWindow.webContents.on('dom-ready', () => {
-        setTimeout(async () => {
-          try {
-            const debugInfo = await scraperWindow.webContents.executeJavaScript(`
-              (async () => {
-                // Scroll down smoothly to trigger all lazy loaded images
-                for (let i = 1; i <= 10; i++) {
-                  window.scrollTo(0, i * 600);
-                  await new Promise(r => setTimeout(r, 300));
-                }
-                
-                const uniqueImages = new Map();
-                
-                // 1. Get all picture sources (most reliable for Adobe Stock)
-                document.querySelectorAll('picture source').forEach(source => {
-                  if (source.srcset && source.srcset.includes('ftcdn.net')) {
-                    const src = source.srcset.split(' ')[0];
-                    if (src && !src.endsWith('.svg')) {
-                      const img = source.parentElement ? source.parentElement.querySelector('img') : null;
-                      // Find parent link to get detail page URL
-                      const link = source.closest('a');
-                      const detailUrl = link ? link.href : '';
-                      uniqueImages.set(src, { src, alt: img ? img.alt : 'Premium Stock Image', detailUrl });
-                    }
-                  }
-                });
-
-                // 2. Fallback to normal imgs if we don't have enough
-                document.querySelectorAll('img').forEach(img => {
-                  const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || '';
-                  if (src && src.includes('ftcdn.net') && !src.endsWith('.svg')) {
-                    const link = img.closest('a');
-                    const detailUrl = link ? link.href : '';
-                    uniqueImages.set(src, { src, alt: img.alt || 'Premium Stock Image', detailUrl });
-                  }
-                });
-
-                const finalImages = Array.from(uniqueImages.values()).filter(img => {
-                  // Filter out Adobe logos or UI elements
-                  const lowerAlt = img.alt.toLowerCase();
-                  return !lowerAlt.includes('adobe stock') && !lowerAlt.includes('homepage');
-                });
-                
-                return {
-                  title: document.title,
-                  filteredCount: finalImages.length,
-                  images: finalImages.slice(0, 30)
-                };
-              })();
-            `);
-            const { fileLog } = require('../../../electron/main.cjs') || { fileLog: console.log };
-            console.log("Scraper Debug Info:", debugInfo.title, debugInfo.filteredCount);
-            
-            resolve({ success: true, images: debugInfo.images });
-          } catch (err) {
-            console.error("Scraper Error:", err);
-            resolve({ success: false, error: err.message });
-          } finally {
-            if (scraperWindow && !scraperWindow.isDestroyed()) {
-              scraperWindow.destroy();
-            }
-          }
-        }, 5000); // Increased wait time to 5 seconds
-      });
-
-      // Safety timeout
-      setTimeout(() => {
-        if (scraperWindow && !scraperWindow.isDestroyed()) {
-          scraperWindow.destroy();
-          resolve({ success: false, error: 'Timeout waiting for Adobe Stock to load.' });
-        }
-      }, 20000);
-    });
+    } catch (err) {
+      fileLog(`[Scraper Router] Error: ${err.message}`);
+      return { success: false, error: err.message };
+    }
   });
 
   ipcMain.handle('scrape-adobe-stock-by-image', async (event, filePath) => {

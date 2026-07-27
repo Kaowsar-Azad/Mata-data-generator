@@ -56,6 +56,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   setUploadConcurrency: (concurrency) => ipcRenderer.invoke('set-upload-concurrency', concurrency),
   upscaleLocalNcnn: (filePath, scale, modelName, format, saveDir) => ipcRenderer.invoke('upscale-local-ncnn', filePath, scale, modelName, format, saveDir),
-  scrapeAdobeStock: (query) => ipcRenderer.invoke('scrape-adobe-stock', query)
+  scrapeAdobeStock: (query) => ipcRenderer.invoke('scrape-adobe-stock', query),
+  getAdobeStockDetails: (url) => ipcRenderer.invoke('adobe-stock-details', url),
+  scrapeAdobeStockByImage: (url) => ipcRenderer.invoke('scrape-adobe-stock-by-image', url)
 });
 

@@ -2789,8 +2789,11 @@ ipcMain.handle('fetch-image', async (event, url) => {
 
 // TopSellers Handler Registration
 try {
-  const { registerTopSellersIPC } = require('../src/components/TopSellers/backend.cjs');
+  const backendPath = path.join(__dirname, '..', 'src', 'components', 'TopSellers', 'backend.cjs');
+  fileLog('Attempting to load TopSellers backend from:', backendPath);
+  const { registerTopSellersIPC } = require(backendPath);
   registerTopSellersIPC(ipcMain, BrowserWindow);
+  fileLog('Successfully registered TopSellers IPC handler.');
 } catch (err) {
   fileLog('Failed to register TopSellers IPC:', err);
 }

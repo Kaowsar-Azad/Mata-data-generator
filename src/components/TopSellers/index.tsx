@@ -1,8 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, FormEvent, ChangeEvent } from 'react';
 import { Search, TrendingUp, Camera, Box, Sparkles, MonitorSmartphone, Loader2, AlertCircle, Briefcase, ImageIcon, CheckSquare, Copy, X, BarChart2 } from 'lucide-react';
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const Modal = ({ isOpen, onClose, title, children }) => {
+interface ModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}
+
+const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, backdropFilter: 'blur(4px)' }}>
@@ -17,23 +23,36 @@ const Modal = ({ isOpen, onClose, title, children }) => {
   );
 };
 
-export const TopSellers = () => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isFocused, setIsFocused] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isVisualLoading, setIsVisualLoading] = useState(false);
-  const [images, setImages] = useState([]);
-  const [error, setError] = useState(null);
-  const fileInputRef = React.useRef(null);
+interface ImageItem {
+  src: string;
+  alt: string;
+  detailUrl?: string;
+}
 
-  const [selectedIndices, setSelectedIndices] = useState(new Set());
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [extractionProgress, setExtractionProgress] = useState(0);
-  const [showModal, setShowModal] = useState(false);
-  const [extractedData, setExtractedData] = useState(null);
+interface ExtractedData {
+  keywords: string[];
+  titles: string[];
+}
 
-  const [sortBy, setSortBy] = useState('nb_downloads');
-  const [contentType, setContentType] = useState('all');
+export const TopSellers: React.FC = () => {
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isFocused, setIsFocused] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isVisualLoading, setIsVisualLoading] = useState<boolean>(false);
+  const [images, setImages] = useState<ImageItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
+  const [isExtracting, setIsExtracting] = useState<boolean>(false);
+  const [extractionProgress, setExtractionProgress] = useState<number>(0);
+  const [showModal, setShowModal] = useState<boolean>(false);
+  const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
+
+  const [sortBy, setSortBy] = useState<string>('nb_downloads');
+  const [contentType, setContentType] = useState<string>('all');
+  const [isSortOpen, setIsSortOpen] = useState<boolean>(false);
+  const [isContentOpen, setIsContentOpen] = useState<boolean>(false);
 
   const trendingNiches = [
     { title: 'Business & Finance', icon: Briefcase, query: 'business finance' },
@@ -44,7 +63,7 @@ export const TopSellers = () => {
     { title: 'Lifestyle & People', icon: ImageIcon, query: 'lifestyle people' },
   ];
 
-  const fetchTopSellers = async (queryOverride) => {
+  const fetchTopSellers = async (queryOverride?: string) => {
     const activeQuery = typeof queryOverride === 'string' ? queryOverride : searchQuery;
     if (!activeQuery.trim()) return;
     
@@ -54,8 +73,9 @@ export const TopSellers = () => {
     setSelectedIndices(new Set());
     
     try {
-      if (window.electronAPI && window.electronAPI.scrapeAdobeStock) {
-        const result = await window.electronAPI.scrapeAdobeStock({
+      const api = (window as any).electronAPI;
+      if (api && api.scrapeAdobeStock) {
+        const result = await api.scrapeAdobeStock({
           query: activeQuery,
           order: sortBy,
           contentType: contentType
@@ -68,52 +88,26 @@ export const TopSellers = () => {
       } else {
         setError('electronAPI not available. Please run in Electron.');
       }
-    } catch (err) {
+    } catch (err: any) {
       setError(err.message || 'An error occurred while fetching.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (searchQuery.trim()) {
       fetchTopSellers();
     }
   }, [sortBy, contentType]);
 
-  const handleSearch = (e) => {
+  const handleSearch = (e: FormEvent) => {
     e.preventDefault();
     fetchTopSellers(searchQuery);
   };
 
-  const loadApiKeys = () => {
-    try {
-      const saved = localStorage.getItem("all_api_keys");
-      const providerSaved = localStorage.getItem("selected_api_providers");
-      if (saved) {
-        const allKeys = JSON.parse(saved);
-        const activeProviders = providerSaved ? JSON.parse(providerSaved) : ['gemini'];
-        const combinedKeys = [];
-        activeProviders.forEach(p => {
-          (allKeys[p] || []).forEach(k => {
-            combinedKeys.push({ provider: p, key: k });
-          });
-        });
-        if (combinedKeys.length > 0) return combinedKeys;
-        
-        const firstProviderWithKeys = Object.keys(allKeys).find(p => allKeys[p] && allKeys[p].length > 0);
-        if (firstProviderWithKeys) {
-          return allKeys[firstProviderWithKeys].map(k => ({ provider: firstProviderWithKeys, key: k }));
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load apiKeys in TopSellers:", e);
-    }
-    return [];
-  };
-
-  const handleImageSearch = async (e) => {
-    const file = e.target.files[0];
+  const handleImageSearch = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
     
     setIsLoading(true);
@@ -124,7 +118,7 @@ export const TopSellers = () => {
     setSearchQuery("");
     
     try {
-      const filePath = file.path;
+      const filePath = (file as any).path;
       if (!filePath) {
          setError('Real file path not available. Please run the app in Electron.');
          setIsLoading(false);
@@ -133,8 +127,9 @@ export const TopSellers = () => {
          return;
       }
 
-      if (window.electronAPI && window.electronAPI.scrapeAdobeStockByImage) {
-         const result = await window.electronAPI.scrapeAdobeStockByImage(filePath);
+      const api = (window as any).electronAPI;
+      if (api && api.scrapeAdobeStockByImage) {
+         const result = await api.scrapeAdobeStockByImage(filePath);
          if (result.success && result.images) {
             setImages(result.images);
          } else {
@@ -144,17 +139,16 @@ export const TopSellers = () => {
          setError('electronAPI not available. Please run in Electron.');
       }
 
-    } catch (err) {
+    } catch (err: any) {
       setError(err.message || 'An error occurred during visual search.');
     } finally {
       setIsLoading(false);
       setIsVisualLoading(false);
-      // Reset input
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const toggleSelection = (idx) => {
+  const toggleSelection = (idx: number) => {
     const newSelection = new Set(selectedIndices);
     if (newSelection.has(idx)) {
       newSelection.delete(idx);
@@ -178,14 +172,15 @@ export const TopSellers = () => {
     setExtractionProgress(0);
     
     const selectedImages = Array.from(selectedIndices).map(idx => images[idx]);
-    let allKeywords = [];
-    let titles = [];
+    const allKeywords: string[] = [];
+    const titles: string[] = [];
 
     for (let i = 0; i < selectedImages.length; i++) {
       const img = selectedImages[i];
-      if (img.detailUrl && window.electronAPI && window.electronAPI.getAdobeStockDetails) {
+      const api = (window as any).electronAPI;
+      if (img.detailUrl && api && api.getAdobeStockDetails) {
         try {
-          const res = await window.electronAPI.getAdobeStockDetails(img.detailUrl);
+          const res = await api.getAdobeStockDetails(img.detailUrl);
           if (res.success && res.data) {
              if (res.data.keywords) allKeywords.push(...res.data.keywords);
              if (res.data.title) titles.push(res.data.title);
@@ -197,7 +192,7 @@ export const TopSellers = () => {
       setExtractionProgress(Math.round(((i + 1) / selectedImages.length) * 100));
     }
 
-    const keywordCounts = {};
+    const keywordCounts: Record<string, number> = {};
     allKeywords.forEach(k => {
       const lower = k.toLowerCase();
       keywordCounts[lower] = (keywordCounts[lower] || 0) + 1;
@@ -216,7 +211,7 @@ export const TopSellers = () => {
     setShowModal(true);
   };
 
-  const copyToClipboard = (text) => {
+  const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
   };
 
@@ -231,182 +226,267 @@ export const TopSellers = () => {
       overflowY: 'auto',
       position: 'relative'
     }}>
-      {/* Header */}
-      <div style={{ textAlign: 'center', marginBottom: '2.5rem', marginTop: '1rem' }}>
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          padding: '0.4rem 1rem',
-          background: 'rgba(37, 99, 235, 0.08)',
-          borderRadius: '999px',
-          border: '1px solid rgba(37, 99, 235, 0.15)',
-          marginBottom: '1.25rem'
-        }}>
-          <TrendingUp style={{ width: '1rem', height: '1rem', color: 'var(--primary)' }} />
-          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--primary)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            Top Sellers
-          </span>
-        </div>
-        
-        <h1 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-1)', margin: '0 0 0.5rem 0', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+      <div style={{ textAlign: 'center', marginBottom: '1.25rem', marginTop: '0.5rem' }}>
+        <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-1)', margin: '0 0 0.25rem 0', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
           Discover Top <span style={{ background: 'linear-gradient(135deg, var(--primary), var(--secondary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Selling Concepts</span>
         </h1>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-2)', maxWidth: '500px', margin: '0 auto', lineHeight: 1.6 }}>
-          Instantly find the most downloaded and highest-grossing assets for any keyword natively inside the app.
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-2)', maxWidth: '550px', margin: '0 auto', lineHeight: 1.4 }}>
+          Explore trending concepts for any niche. Click on images to instantly extract high-ranking titles and keywords.
         </p>
       </div>
 
-      {/* Search Bar */}
-      <form onSubmit={handleSearch} style={{ 
-        maxWidth: '700px', 
-        width: '100%', 
-        margin: '0 auto 2rem auto',
-        display: 'flex',
-        alignItems: 'center',
-        background: 'var(--surface-1)',
-        border: `2px solid ${isFocused ? 'var(--primary)' : 'rgba(0,0,0,0.08)'}`,
-        borderRadius: '999px',
-        padding: '0.25rem',
-        boxShadow: isFocused ? '0 8px 24px rgba(37, 99, 235, 0.15)' : '0 4px 12px rgba(0,0,0,0.05)',
-        transition: 'all 0.2s',
-        position: 'relative',
-        zIndex: 1
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '1rem' }}>
-          <Search style={{ width: '1.25rem', height: '1.25rem', color: isFocused ? 'var(--primary)' : 'var(--text-3)' }} />
+      {/* Search Area */}
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'stretch', gap: '0.75rem', maxWidth: '850px', margin: '0 auto 2rem auto', width: '100%' }}>
+        {/* Search Bar */}
+        <form onSubmit={handleSearch} style={{ 
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          background: 'var(--surface-1)',
+          border: `2px solid ${isFocused ? 'var(--primary)' : 'rgba(0,0,0,0.08)'}`,
+          borderRadius: '999px',
+          padding: '0.25rem',
+          boxShadow: isFocused ? '0 8px 24px rgba(37, 99, 235, 0.15)' : '0 4px 12px rgba(0,0,0,0.05)',
+          transition: 'all 0.2s',
+          position: 'relative',
+          zIndex: 1
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '1rem' }}>
+            <Search style={{ width: '1.25rem', height: '1.25rem', color: isFocused ? 'var(--primary)' : 'var(--text-3)' }} />
+          </div>
+          <input
+            type="text"
+            placeholder={isVisualLoading ? "Uploading & searching image on Adobe Stock..." : (isLoading ? "Searching..." : "Search keywords, niches, or styles...")}
+            value={searchQuery}
+            disabled={isLoading}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              padding: '0.75rem 1rem',
+              fontSize: '1rem',
+              color: 'var(--text-1)',
+              fontWeight: 500
+            }}
+          />
+          <button 
+            type="submit"
+            disabled={isLoading}
+            style={{
+              background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '999px',
+              padding: '0.75rem 1.75rem',
+              fontSize: '0.95rem',
+              fontWeight: 700,
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+              opacity: isLoading ? 0.7 : 1,
+              transition: 'transform 0.15s, box-shadow 0.15s'
+            }}
+          >
+            {isLoading && !isVisualLoading ? (
+              <><Loader2 className="animate-spin" size={16} /> Fetching...</>
+            ) : (
+              <><Search size={16} /> Search</>
+            )}
+          </button>
+        </form>
+
+        {/* Search by Image Button */}
+        <div style={{ display: 'flex', alignItems: 'stretch' }}>
+          <input 
+            type="file" 
+            accept="image/*" 
+            ref={fileInputRef} 
+            onChange={handleImageSearch} 
+            style={{ display: 'none' }} 
+          />
+          <button 
+            type="button"
+            disabled={isLoading}
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              background: 'var(--surface-1)',
+              color: 'var(--text-1)',
+              border: '2px solid rgba(0,0,0,0.08)',
+              borderRadius: '999px',
+              padding: '0 1.5rem',
+              fontSize: '0.95rem',
+              fontWeight: 700,
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              transition: 'all 0.2s',
+              opacity: isLoading ? 0.7 : 1,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+              whiteSpace: 'nowrap'
+            }}
+            onMouseOver={(e) => {
+              if(!isLoading) {
+                e.currentTarget.style.border = '2px solid var(--primary)';
+                e.currentTarget.style.boxShadow = '0 8px 24px rgba(37, 99, 235, 0.15)';
+              }
+            }}
+            onMouseOut={(e) => {
+              if(!isLoading) {
+                e.currentTarget.style.border = '2px solid rgba(0,0,0,0.08)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
+              }
+            }}
+          >
+            {isVisualLoading ? (
+              <>
+                <Loader2 className="animate-spin" size={18} color="var(--primary)" />
+                Analyzing...
+              </>
+            ) : (
+              <>
+                <Camera size={18} color="var(--primary)" /> Search by Image
+              </>
+            )}
+          </button>
         </div>
-        <input
-          type="text"
-          placeholder={isVisualLoading ? "Uploading & searching image on Adobe Stock..." : (isLoading ? "Searching..." : "Search keywords, niches, or styles...")}
-          value={searchQuery}
-          disabled={isLoading}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          style={{
-            flex: 1,
-            background: 'transparent',
-            border: 'none',
-            outline: 'none',
-            padding: '0.75rem 1rem',
-            fontSize: '1rem',
-            color: 'var(--text-1)',
-            fontWeight: 500
-          }}
-        />
-        <button 
-          type="submit"
-          disabled={isLoading}
-          style={{
-            background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '999px',
-            padding: '0.75rem 1.75rem',
-            fontSize: '0.95rem',
-            fontWeight: 700,
-            cursor: isLoading ? 'not-allowed' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
-            opacity: isLoading ? 0.7 : 1,
-            transition: 'transform 0.15s, box-shadow 0.15s'
-          }}
-        >
-          {isLoading && !isVisualLoading ? (
-            <><Loader2 className="animate-spin" size={16} /> Fetching...</>
-          ) : (
-            <><Search size={16} /> Search</>
-          )}
-        </button>
-      </form>
+      </div>
   
-      {/* Filters Bar - Mockup Style */}
+      {/* Filters Bar - Premium Sleek Style */}
       <div style={{
         display: 'flex',
-        flexWrap: 'wrap',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '2.5rem',
-        marginTop: '1.25rem',
-        marginBottom: '2rem',
-        padding: '1.25rem 2rem',
+        gap: '0.75rem',
+        padding: '0.4rem 1.25rem',
         background: 'var(--surface-1)',
         border: '1px solid var(--border-color)',
-        borderRadius: '16px',
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.03)',
-        maxWidth: '600px',
-        width: '100%',
-        margin: '0 auto 2rem auto'
+        borderRadius: '100px',
+        boxShadow: '0 4px 15px rgba(0, 0, 0, 0.03)',
+        width: 'fit-content',
+        margin: '0 auto 2.5rem auto'
       }}>
         {/* Sort By Custom Dropdown */}
-        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', minWidth: '190px', flex: 1 }}>
-          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.35rem' }}>Sort By</span>
-          <div style={{
-            position: 'relative',
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '0.55rem 1rem',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            cursor: 'pointer',
-            height: '42px',
-            transition: 'border-color 0.2s'
-          }}>
-            <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-1)' }}>
+        <div 
+          style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0 0.25rem' }}
+          onMouseLeave={() => setIsSortOpen(false)}
+        >
+          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sort By:</span>
+          <div 
+            onClick={() => !isLoading && setIsSortOpen(!isSortOpen)}
+            style={{
+              position: 'relative',
+              background: 'transparent',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              height: '32px',
+              padding: '0 0.25rem'
+            }}
+          >
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-1)' }}>
               {sortBy === 'relevance' ? 'Relevance' : 
                sortBy === 'creation' ? 'Newest' : 
                sortBy === 'featured' ? 'Featured' : 
                sortBy === 'nb_downloads' ? 'Most Downloaded' : 'Undiscovered'}
             </span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: '0.9rem', height: '0.9rem', color: 'var(--text-2)', marginLeft: '0.5rem' }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: '0.85rem', height: '0.85rem', color: 'var(--text-2)', marginLeft: '0.35rem', transform: isSortOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }}>
               <path d="m6 9 6 6 6-6"/>
             </svg>
-            <select 
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              disabled={isLoading}
-              style={{
+
+            {/* Custom Premium Dropdown Menu */}
+            {isSortOpen && (
+              <div style={{
                 position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                opacity: 0,
-                cursor: 'pointer',
-                appearance: 'none'
-              }}
-            >
-              <option value="relevance">Relevance</option>
-              <option value="creation">Newest</option>
-              <option value="featured">Featured</option>
-              <option value="nb_downloads">Most Downloaded</option>
-              <option value="undiscovered">Undiscovered</option>
-            </select>
+                top: '100%',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                paddingTop: '12px',
+                zIndex: 50,
+              }}>
+                <div style={{
+                  width: '200px',
+                  background: 'var(--surface-1)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '16px',
+                  boxShadow: '0 10px 40px rgba(0, 0, 0, 0.08)',
+                  padding: '0.5rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.25rem',
+                }}>
+                  {[
+                    { value: 'relevance', label: 'Relevance' },
+                    { value: 'creation', label: 'Newest' },
+                    { value: 'featured', label: 'Featured' },
+                    { value: 'nb_downloads', label: 'Most Downloaded' },
+                    { value: 'undiscovered', label: 'Undiscovered' },
+                  ].map((option) => (
+                    <div
+                      key={option.value}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSortBy(option.value);
+                        setIsSortOpen(false);
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-2)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                      style={{
+                        padding: '0.65rem 0.85rem',
+                        borderRadius: '10px',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        fontWeight: sortBy === option.value ? 700 : 500,
+                        color: sortBy === option.value ? 'var(--primary)' : 'var(--text-1)',
+                        background: 'transparent',
+                        transition: 'background 0.2s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}
+                    >
+                      {option.label}
+                      {sortBy === option.value && (
+                        <CheckSquare size={16} color="var(--primary)" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
+        {/* Divider */}
+        <div style={{ width: '1px', height: '16px', background: 'var(--border-color)', margin: '0 0.25rem' }}></div>
+
         {/* Content Type Custom Dropdown */}
-        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', minWidth: '190px', flex: 1 }}>
-          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.35rem' }}>Content Type</span>
-          <div style={{
-            position: 'relative',
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '0.55rem 1rem',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            cursor: 'pointer',
-            height: '42px',
-            transition: 'border-color 0.2s'
-          }}>
-            <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-1)' }}>
+        <div 
+          style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0 0.25rem' }}
+          onMouseLeave={() => setIsContentOpen(false)}
+        >
+          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Content Type:</span>
+          <div 
+            onClick={() => !isLoading && setIsContentOpen(!isContentOpen)}
+            style={{
+              position: 'relative',
+              background: 'transparent',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              height: '32px',
+              padding: '0 0.25rem'
+            }}
+          >
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-1)' }}>
               {contentType === 'all' ? 'All Types' : 
                contentType === 'photo' ? 'Photo' : 
                contentType === 'illustration' ? 'Illustration' : 
@@ -414,76 +494,76 @@ export const TopSellers = () => {
                contentType === 'video' ? 'Video' : 
                contentType === 'template' ? 'Template' : '3D'}
             </span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: '0.9rem', height: '0.9rem', color: 'var(--text-2)', marginLeft: '0.5rem' }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ width: '0.85rem', height: '0.85rem', color: 'var(--text-2)', marginLeft: '0.35rem', transform: isContentOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }}>
               <path d="m6 9 6 6 6-6"/>
             </svg>
-            <select 
-              value={contentType}
-              onChange={(e) => setContentType(e.target.value)}
-              disabled={isLoading}
-              style={{
+
+            {/* Custom Premium Dropdown Menu */}
+            {isContentOpen && (
+              <div style={{
                 position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                opacity: 0,
-                cursor: 'pointer',
-                appearance: 'none'
-              }}
-            >
-              <option value="all">All Types</option>
-              <option value="photo">Photo</option>
-              <option value="illustration">Illustration</option>
-              <option value="vector">Vector</option>
-              <option value="video">Video</option>
-              <option value="template">Template</option>
-              <option value="3d">3D</option>
-            </select>
+                top: '100%',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                paddingTop: '12px',
+                zIndex: 50,
+              }}>
+                <div style={{
+                  width: '200px',
+                  background: 'var(--surface-1)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '16px',
+                  boxShadow: '0 10px 40px rgba(0, 0, 0, 0.08)',
+                  padding: '0.5rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.25rem',
+                }}>
+                  {[
+                    { value: 'all', label: 'All Types' },
+                    { value: 'photo', label: 'Photo' },
+                    { value: 'illustration', label: 'Illustration' },
+                    { value: 'vector', label: 'Vector' },
+                    { value: 'video', label: 'Video' },
+                    { value: 'template', label: 'Template' },
+                    { value: '3d', label: '3D' },
+                  ].map((option) => (
+                    <div
+                      key={option.value}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setContentType(option.value);
+                        setIsContentOpen(false);
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-2)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                      style={{
+                        padding: '0.65rem 0.85rem',
+                        borderRadius: '10px',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        fontWeight: contentType === option.value ? 700 : 500,
+                        color: contentType === option.value ? 'var(--primary)' : 'var(--text-1)',
+                        background: 'transparent',
+                        transition: 'background 0.2s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}
+                    >
+                      {option.label}
+                      {contentType === option.value && (
+                        <CheckSquare size={16} color="var(--primary)" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '2.5rem' }}>
-        <input 
-          type="file" 
-          accept="image/*" 
-          ref={fileInputRef} 
-          onChange={handleImageSearch} 
-          style={{ display: 'none' }} 
-        />
-        <button 
-          type="button"
-          disabled={isLoading}
-          onClick={() => fileInputRef.current?.click()}
-          style={{
-            background: 'var(--surface-2)',
-            color: 'var(--text-1)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '999px',
-            padding: '0.65rem 1.5rem',
-            fontSize: '0.9rem',
-            fontWeight: 600,
-            cursor: isLoading ? 'not-allowed' : 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            transition: 'all 0.2s',
-            opacity: isLoading ? 0.7 : 1,
-          }}
-        >
-          {isVisualLoading ? (
-            <>
-              <Loader2 className="animate-spin" size={16} color="var(--primary)" />
-              Searching Image...
-            </>
-          ) : (
-            <>
-              <Camera size={16} style={{ color: 'var(--primary)' }} /> Search by Image
-            </>
-          )}
-        </button>
-      </div>
 
       {/* Dynamic Content Area */}
       <div style={{ maxWidth: '1200px', width: '100%', margin: '0 auto', flex: 1, paddingBottom: selectedIndices.size > 0 ? '5rem' : '0' }}>

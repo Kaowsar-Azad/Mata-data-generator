@@ -12,68 +12,13 @@ export function ImageUpscaler() {
   const [error, setError] = useState(null);
   const [statusText, setStatusText] = useState("");
   const [results, setResults] = useState([]);
-  const [comfyServerUrl, setComfyServerUrl] = useState("");
-  const [serverStatus, setServerStatus] = useState("disconnected"); // 'connected' | 'disconnected' | 'checking'
-  const [manualUrl, setManualUrl] = useState("");
-  const [showManualInput, setShowManualInput] = useState(false);
-  const [upscaleMethod, setUpscaleMethod] = useState("localNcnn"); // 'localNcnn' or 'comfy'
-
   const [localModel, setLocalModel] = useState("mata_ai");
   const [outputFormat, setOutputFormat] = useState("jpg");
   const [currentFileProgress, setCurrentFileProgress] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
   const [activeIndex, setActiveIndex] = useState(-1);
 
-
-  // Listen to Colab status from Electron (same server as AiImageGenerator)
-  useEffect(() => {
-    // 1. Get current URL immediately on mount (already connected case)
-    if (window.electronAPI?.getColabUrl) {
-      window.electronAPI.getColabUrl().then(res => {
-        if (res?.url) {
-          setComfyServerUrl(res.url.replace(/\/$/, ""));
-          setServerStatus('connected');
-        }
-      }).catch(() => {});
-    }
-
-    // 2. Listen for future status changes
-    if (window.electronAPI?.onColabStatus) {
-      const cleanup = window.electronAPI.onColabStatus((data) => {
-        if (data.status === 'connected' && data.url) {
-          setComfyServerUrl(data.url.replace(/\/$/, ""));
-          setServerStatus('connected');
-        } else if (data.status === 'disconnected') {
-          setComfyServerUrl("");
-          setServerStatus('disconnected');
-        }
-      });
-      return cleanup;
-    } else {
-      // Fallback: try GitHub backend_url.json
-      const fetchServerUrl = async () => {
-        setServerStatus('checking');
-        try {
-          const url = "https://raw.githubusercontent.com/Kaowsar-Azad/Mata-data-generator/main/backend_url.json?t=" + Date.now();
-          const res = await fetch(url);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.serverUrl) {
-              const api = data.serverUrl.replace(/\/$/, "");
-              const pingRes = await fetch(`${api}/system_stats`, { headers: { "bypass-tunnel-reminder": "true" } });
-              if (pingRes.ok || pingRes.status === 404 || pingRes.status === 403) {
-                setComfyServerUrl(api);
-                setServerStatus('connected');
-                return;
-              }
-            }
-          }
-        } catch (err) { console.warn("[ImageUpscaler] Initial connection check failed:", err.message); }
-        setServerStatus('disconnected');
-      };
-      fetchServerUrl();
-    }
-  }, []);
+  const upscaleMethod = "localNcnn";
 
   // Listen to local upscaler progress events
   useEffect(() => {
@@ -94,24 +39,6 @@ export function ImageUpscaler() {
       return cleanup;
     }
   }, [completedCount, selectedFiles.length, activeIndex]);
-
-  const handleManualConnect = async () => {
-    if (!manualUrl.trim()) return;
-    const api = manualUrl.trim().replace(/\/$/, "");
-    setServerStatus('checking');
-    try {
-      const pingRes = await fetch(`${api}/system_stats`, { headers: { "bypass-tunnel-reminder": "true" } });
-      if (pingRes.ok || pingRes.status === 404 || pingRes.status === 403) {
-        setComfyServerUrl(api);
-        setServerStatus('connected');
-        setShowManualInput(false);
-        setError(null);
-        return;
-      }
-    } catch (err) { console.warn("[ImageUpscaler] Manual connection check failed:", err.message); }
-    setServerStatus('disconnected');
-    setError("সার্ভারে কানেক্ট করা যায়নি। URL টি সঠিক কিনা দেখুন।");
-  };
 
 
   const fileInputRef = useRef(null);
@@ -178,104 +105,7 @@ export function ImageUpscaler() {
       return fileObj;
     };
 
-    if (upscaleMethod === 'comfy' && comfyServerUrl) {
-      try {
-        setStatusText(`Uploading ${fileObj.name} to Cloud GPU...`);
-        const blob = await getFileBlob();
-        const form = new FormData();
-        form.append("image", blob, fileObj.name);
 
-        const upRes = await fetch(`${comfyServerUrl}/upload/image`, {
-          method: "POST", headers: { "bypass-tunnel-reminder": "true" }, body: form
-        });
-        if (!upRes.ok) throw new Error("Image upload to ComfyUI failed");
-        const upData = await upRes.json();
-        const uploadedImageName = upData.name;
-
-        setStatusText(`Upscaling ${fileObj.name} with Real-ESRGAN...`);
-        
-        const workflow = {
-          "1": { class_type: "LoadImage", inputs: { image: uploadedImageName } },
-          "2": { class_type: "UpscaleModelLoader", inputs: { model_name: "RealESRGAN_x4plus.pth" } },
-          "3": { class_type: "ImageUpscaleWithModel", inputs: { upscale_model: ["2", 0], image: ["1", 0] } }
-        };
-
-        // Real-ESRGAN is 4x. If user selected 2x, scale down by 0.5. If user selected custom scale, calculate ratio
-        const finalScale = parseFloat(currentScale);
-        if (finalScale !== 4) {
-          workflow["4"] = { class_type: "ImageScaleBy", inputs: { upscale_method: "bicubic", scale_by: finalScale / 4.0, image: ["3", 0] } };
-          workflow["5"] = { class_type: "SaveImage", inputs: { filename_prefix: "upscale_out", images: ["4", 0] } };
-        } else {
-          workflow["5"] = { class_type: "SaveImage", inputs: { filename_prefix: "upscale_out", images: ["3", 0] } };
-        }
-
-        const clientId = Date.now().toString();
-        const submitRes = await fetch(`${comfyServerUrl}/prompt`, {
-          method: "POST", headers: { "Content-Type": "application/json", "bypass-tunnel-reminder": "true" },
-          body: JSON.stringify({ prompt: workflow, client_id: clientId })
-        });
-
-        if (!submitRes.ok) throw new Error("Failed to submit workflow to ComfyUI");
-        const { prompt_id: promptId } = await submitRes.json();
-
-        let imageUrl = null;
-        for (let attempt = 0; attempt < 60; attempt++) {
-          await new Promise(r => setTimeout(r, 2000));
-          const histRes = await fetch(`${comfyServerUrl}/history/${promptId}`, { headers: { "bypass-tunnel-reminder": "true" } });
-          if (!histRes.ok) continue;
-          const histData = await histRes.json();
-          const job = histData[promptId];
-          if (!job) continue;
-
-          if (job.status?.status_str === "error") throw new Error("ComfyUI upscaling error");
-
-          const outputs = job.outputs || {};
-          for (const nodeId of Object.keys(outputs)) {
-            const imgs = outputs[nodeId]?.images;
-            if (imgs?.length > 0) {
-              const img = imgs[0];
-              imageUrl = `${comfyServerUrl}/view?filename=${encodeURIComponent(img.filename)}&subfolder=${encodeURIComponent(img.subfolder ?? "")}&type=${encodeURIComponent(img.type ?? "output")}`;
-              break;
-            }
-          }
-          if (imageUrl) break;
-        }
-
-        if (!imageUrl) throw new Error("Upscaling timeout");
-
-        setStatusText(`Downloading ${fileObj.name}...`);
-        const imgRes = await fetch(imageUrl, { headers: { "bypass-tunnel-reminder": "true" } });
-        if (!imgRes.ok) throw new Error("Failed to download upscaled image");
-        
-        const arrayBuffer = await imgRes.arrayBuffer();
-
-        if (window.electronAPI && outputFolder) {
-          const pathSeparator = outputFolder.includes('\\') ? '\\' : '/';
-          const lastDot = fileObj.name.lastIndexOf('.');
-          const ext = lastDot > -1 ? fileObj.name.substring(lastDot) : '.jpg';
-          const baseName = lastDot > -1 ? fileObj.name.substring(0, lastDot) : fileObj.name;
-          const savePath = `${outputFolder}${pathSeparator}${baseName}_${currentScale}x_RealESRGAN${ext}`;
-          
-          const saveRes = await window.electronAPI.saveFile(savePath, new Uint8Array(arrayBuffer));
-          if (!saveRes.success) throw new Error(saveRes.error);
-          return { success: true, path: savePath, engine: 'gpu' };
-        } else {
-          const blobOutput = new Blob([arrayBuffer], { type: imgRes.headers.get('content-type') || 'image/jpeg' });
-          const url = URL.createObjectURL(blobOutput);
-          const a = document.createElement('a');
-          a.href = url;
-          const lastDot = fileObj.name.lastIndexOf('.');
-          const ext = lastDot > -1 ? fileObj.name.substring(lastDot) : '.jpg';
-          const baseName = lastDot > -1 ? fileObj.name.substring(0, lastDot) : fileObj.name;
-          a.download = `${baseName}_${currentScale}x_RealESRGAN${ext}`;
-          a.click();
-          URL.revokeObjectURL(url);
-          return { success: true, engine: 'gpu' };
-        }
-      } catch (err) {
-        console.warn("ComfyUI upscaling failed, falling back to local...", err);
-      }
-    }
 
     if (upscaleMethod === 'localNcnn' && window.electronAPI) {
       setStatusText(`Upscaling ${fileObj.name} with Local GPU (NCNN)...`);
@@ -317,10 +147,7 @@ export function ImageUpscaler() {
 
   const startUpscaling = async () => {
     if (selectedFiles.length === 0) return;
-    if (upscaleMethod === 'comfy' && !comfyServerUrl) {
-      setError("Cloud GPU সার্ভারে কানেক্ট করুন। 'Cloud GPU Image Gen' পেজ থেকে সার্ভার চালু করুন অথবা Manual বাটনে URL দিন।");
-      return;
-    }
+
     if (!outputFolder && window.electronAPI) {
       setError("Please select an output folder first.");
       return;
@@ -441,47 +268,10 @@ export function ImageUpscaler() {
             <Maximize style={{ width: '1.75rem', height: '1.75rem', color: 'var(--primary)' }} />
             AI Image Upscaler
           </h2>
-          {/* Server Status Badge */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '0.5rem',
-              padding: '0.4rem 0.9rem', borderRadius: '2rem',
-              background: serverStatus === 'connected' ? 'rgba(34,197,94,0.15)' : serverStatus === 'checking' ? 'rgba(234,179,8,0.15)' : 'rgba(239,68,68,0.12)',
-              border: `1px solid ${serverStatus === 'connected' ? 'rgba(34,197,94,0.35)' : serverStatus === 'checking' ? 'rgba(234,179,8,0.35)' : 'rgba(239,68,68,0.25)'}`,
-              fontSize: '0.78rem', fontWeight: 700,
-              color: serverStatus === 'connected' ? 'var(--success)' : serverStatus === 'checking' ? '#eab308' : 'var(--danger)'
-            }}>
-              {serverStatus === 'connected' ? <Wifi style={{ width: '0.85rem', height: '0.85rem' }} /> : serverStatus === 'checking' ? <Loader2 className="spin" style={{ width: '0.85rem', height: '0.85rem' }} /> : <WifiOff style={{ width: '0.85rem', height: '0.85rem' }} />}
-              {serverStatus === 'connected' ? 'Cloud GPU সংযুক্ত' : serverStatus === 'checking' ? 'সংযোগ পরীক্ষা...' : 'সার্ভার নেই'}
-            </div>
-            <button
-              onClick={() => setShowManualInput(v => !v)}
-              title="Manually enter server URL"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--glass-border)', color: 'var(--text-2)', padding: '0.4rem 0.65rem', borderRadius: '0.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', fontWeight: 600 }}
-            >
-              <Link style={{ width: '0.85rem', height: '0.85rem' }} /> Manual
-            </button>
-          </div>
         </div>
         <p style={{ color: 'var(--text-2)', fontSize: '0.95rem', margin: '0 0 0.75rem 0', maxWidth: '600px' }}>
-          Upscale your images without losing quality. Uses Real-ESRGAN via Cloud GPU for ultra-sharp results.
+          Upscale your images without losing quality. Uses Real-ESRGAN via Local GPU for ultra-sharp results.
         </p>
-        {/* Manual URL connect panel */}
-        {showManualInput && (
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.75rem', background: 'var(--surface-1)', border: '1px solid var(--glass-border)', borderRadius: '0.75rem' }}>
-            <input
-              type="text"
-              value={manualUrl}
-              onChange={e => setManualUrl(e.target.value)}
-              placeholder="https://xxx.trycloudflare.com"
-              onKeyDown={e => e.key === 'Enter' && handleManualConnect()}
-              style={{ flex: 1, padding: '0.5rem 0.75rem', background: 'var(--surface-2)', border: '1px solid var(--glass-border)', borderRadius: '0.5rem', color: 'var(--text-1)', fontSize: '0.85rem' }}
-            />
-            <button onClick={handleManualConnect} disabled={serverStatus === 'checking'} style={{ padding: '0.5rem 1rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '0.5rem', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}>
-              Connect
-            </button>
-          </div>
-        )}
       </div>
 
 
@@ -600,100 +390,56 @@ export function ImageUpscaler() {
           }}>
             <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 1rem 0' }}>Settings</h3>
             
-            {/* Upscale Method Selector */}
             <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.5rem' }}>Upscale Engine</label>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <button
-                  onClick={() => setUpscaleMethod('localNcnn')}
-                  disabled={isProcessing}
-                  style={{
-                    flex: '1 1 auto',
-                    padding: '0.55rem',
-                    background: upscaleMethod === 'localNcnn' ? 'var(--primary)' : 'var(--surface-2)',
-                    color: upscaleMethod === 'localNcnn' ? '#fff' : 'var(--text-1)',
-                    border: `1px solid ${upscaleMethod === 'localNcnn' ? 'var(--primary)' : 'var(--glass-border)'}`,
-                    borderRadius: '0.5rem',
-                    cursor: isProcessing ? 'not-allowed' : 'pointer',
-                    fontWeight: 600,
-                    fontSize: '0.78rem',
-                    transition: 'all 0.2s'
-                  }}
-                >💻 Local GPU (Real-ESRGAN)</button>
-                <button
-                  onClick={() => setUpscaleMethod('comfy')}
-                  disabled={isProcessing}
-                  style={{
-                    flex: 1,
-                    padding: '0.55rem',
-                    background: upscaleMethod === 'comfy' ? 'var(--primary)' : 'var(--surface-2)',
-                    color: upscaleMethod === 'comfy' ? '#fff' : 'var(--text-1)',
-                    border: `1px solid ${upscaleMethod === 'comfy' ? 'var(--primary)' : 'var(--glass-border)'}`,
-                    borderRadius: '0.5rem',
-                    cursor: isProcessing ? 'not-allowed' : 'pointer',
-                    fontWeight: 600,
-                    fontSize: '0.78rem',
-                    transition: 'all 0.2s'
-                  }}
-                >⚡ Cloud GPU (ComfyUI)</button>
-              </div>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.5rem' }}>Local AI Model</label>
+              <select
+                value={localModel}
+                disabled={isProcessing}
+                onChange={(e) => setLocalModel(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.6rem 0.75rem',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '0.5rem',
+                  color: 'var(--text-1)',
+                  fontSize: '0.8rem',
+                  cursor: isProcessing ? 'not-allowed' : 'pointer',
+                  outline: 'none'
+                }}
+              >
+                <option value="mata_ai">✨ Mata AI (Smart Hybrid Cloud/Local)</option>
+                <option value="realesrgan-x4plus">📸 General Photo (realesrgan-x4plus - Upscayl Default)</option>
+                <option value="remacri">📸 General Photo Alternative (Remacri)</option>
+                <option value="ultrasharp">✨ Ultrasharp (Aggressive enhancement)</option>
+                <option value="ultramix_balanced">⚖️ Ultramix Balanced (Smooth & sharp)</option>
+                <option value="realesr-animevideov3">⚡ Fast (realesr-animevideov3 - recommended for Intel / Low-end)</option>
+                <option value="realesrgan-x4plus-anime">🎨 Anime / Vector (realesrgan-x4plus-anime)</option>
+              </select>
             </div>
-            
-            {/* Model Selector - Only for Local GPU */}
-            {upscaleMethod === 'localNcnn' && (
-              <>
-                <div style={{ marginBottom: '1.25rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.5rem' }}>Local AI Model</label>
-                  <select
-                    value={localModel}
-                    disabled={isProcessing}
-                    onChange={(e) => setLocalModel(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.6rem 0.75rem',
-                      background: 'var(--surface-2)',
-                      border: '1px solid var(--glass-border)',
-                      borderRadius: '0.5rem',
-                      color: 'var(--text-1)',
-                      fontSize: '0.8rem',
-                      cursor: isProcessing ? 'not-allowed' : 'pointer',
-                      outline: 'none'
-                    }}
-                  >
-                    <option value="mata_ai">✨ Mata AI (Smart Hybrid Cloud/Local)</option>
-                    <option value="realesrgan-x4plus">📸 General Photo (realesrgan-x4plus - Upscayl Default)</option>
-                    <option value="remacri">📸 General Photo Alternative (Remacri)</option>
-                    <option value="ultrasharp">✨ Ultrasharp (Aggressive enhancement)</option>
-                    <option value="ultramix_balanced">⚖️ Ultramix Balanced (Smooth & sharp)</option>
-                    <option value="realesr-animevideov3">⚡ Fast (realesr-animevideov3 - recommended for Intel / Low-end)</option>
-                    <option value="realesrgan-x4plus-anime">🎨 Anime / Vector (realesrgan-x4plus-anime)</option>
-                  </select>
-                </div>
 
-                <div style={{ marginBottom: '1.25rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.5rem' }}>Output Format</label>
-                  <select
-                    value={outputFormat}
-                    disabled={isProcessing}
-                    onChange={(e) => setOutputFormat(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '0.6rem 0.75rem',
-                      background: 'var(--surface-2)',
-                      border: '1px solid var(--glass-border)',
-                      borderRadius: '0.5rem',
-                      color: 'var(--text-1)',
-                      fontSize: '0.8rem',
-                      cursor: isProcessing ? 'not-allowed' : 'pointer',
-                      outline: 'none'
-                    }}
-                  >
-                    <option value="jpg">🖼️ JPG / JPEG (Smaller size - Recommended for Adobe Stock)</option>
-                    <option value="png">🖼️ PNG (Lossless - Large file size, supports transparency)</option>
-                  </select>
-                </div>
-              </>
-            )}
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', marginBottom: '0.5rem' }}>Output Format</label>
+              <select
+                value={outputFormat}
+                disabled={isProcessing}
+                onChange={(e) => setOutputFormat(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.6rem 0.75rem',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '0.5rem',
+                  color: 'var(--text-1)',
+                  fontSize: '0.8rem',
+                  cursor: isProcessing ? 'not-allowed' : 'pointer',
+                  outline: 'none'
+                }}
+              >
+                <option value="jpg">🖼️ JPG / JPEG (Smaller size - Recommended for Adobe Stock)</option>
+                <option value="png">🖼️ PNG (Lossless - Large file size, supports transparency)</option>
+              </select>
+            </div>
             
 
             <div style={{ marginBottom: '1.25rem' }}>
@@ -897,7 +643,7 @@ export function ImageUpscaler() {
                   {res.status === 'success' ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
                       <span style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: 600 }}>
-                        {res.engine === 'gpu' ? '⚡ Upscaled with Cloud GPU (Success)' : res.engine === 'localNcnn' ? '💻 Upscaled with Local GPU / Real-ESRGAN (Success)' : '✅ Upscaled Successfully'}
+                        💻 Upscaled with Local GPU (Success)
                       </span>
                       {res.path && <span style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>Saved to: {res.path}</span>}
                     </div>

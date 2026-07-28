@@ -32,6 +32,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    icon: path.join(__dirname, '../public/logo.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
@@ -216,6 +217,21 @@ ipcMain.handle('check-video-codec', async (event, videoPath) => {
     });
   });
 });
+
+// IPC Handler to get image dimensions securely using Sharp
+ipcMain.handle('get-image-dimensions', async (event, filePath) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+    const metadata = await sharp(filePath).metadata();
+    return { width: metadata.width, height: metadata.height };
+  } catch (err) {
+    fileLog('[get-image-dimensions] Failed:', err.message);
+    return null;
+  }
+});
+
 
 // IPC Handler for extracting a representative frame from a video file
 ipcMain.handle('extract-video-frame', async (event, videoPath) => {
@@ -1316,21 +1332,33 @@ ipcMain.handle('load-all-keys', async (event) => {
 
 // FTP Upload Handlers
 const getFtpFilePath = () => path.join(app.getPath('userData'), 'ftp-config.json');
+const getSecureFtpFilePath = () => path.join(app.getPath('userData'), 'secure-ftp-config.json');
 
 ipcMain.handle('save-ftp-config', async (event, configs) => {
   const filePath = getFtpFilePath();
+  const securePath = getSecureFtpFilePath();
   try {
     const configsArray = Array.isArray(configs) ? configs : [configs];
+    
+    // Save public configs without passwords
     const configsToSave = configsArray.map(c => ({ ...c, password: '' }));
     fs.writeFileSync(filePath, JSON.stringify(configsToSave, null, 2), 'utf8');
+    
+    // Save secure configs containing passwords for fallback storage
+    const secureConfigs = configsArray.map(c => ({ id: c.id, password: c.password || '' }));
+    fs.writeFileSync(securePath, JSON.stringify(secureConfigs, null, 2), 'utf8');
     
     if (keytar) {
       for (const config of configsArray) {
         if (config.id && config.password) {
-          await keytar.setPassword(SERVICE_NAME, `ftp_password_${config.id}`, config.password);
+          try {
+            await keytar.setPassword(SERVICE_NAME, `ftp_password_${config.id}`, config.password);
+          } catch (_) {}
         } else if (config.password && !config.id) {
           // fallback
-          await keytar.setPassword(SERVICE_NAME, 'ftp_password', config.password);
+          try {
+            await keytar.setPassword(SERVICE_NAME, 'ftp_password', config.password);
+          } catch (_) {}
         }
       }
     }
@@ -1342,6 +1370,7 @@ ipcMain.handle('save-ftp-config', async (event, configs) => {
 
 ipcMain.handle('get-ftp-config', async (event) => {
   const filePath = getFtpFilePath();
+  const securePath = getSecureFtpFilePath();
   let configs = [];
   if (fs.existsSync(filePath)) {
     try {
@@ -1356,19 +1385,39 @@ ipcMain.handle('get-ftp-config', async (event) => {
       console.error('Error reading ftp config', err);
     }
   }
-  if (keytar) {
-    for (let c of configs) {
+  
+  // Load passwords from keytar first, then fallback to secure file
+  let secureFallbackMap = {};
+  if (fs.existsSync(securePath)) {
+    try {
+      const secureData = JSON.parse(fs.readFileSync(securePath, 'utf8'));
+      if (Array.isArray(secureData)) {
+        secureData.forEach(s => {
+          if (s.id) secureFallbackMap[s.id] = s.password;
+        });
+      }
+    } catch (err) {
+      console.error('Error reading secure ftp config', err);
+    }
+  }
+
+  for (let c of configs) {
+    let pwd = null;
+    if (keytar && c.id) {
       try {
-        let pwd;
-        if (c.id) {
-          pwd = await keytar.getPassword(SERVICE_NAME, `ftp_password_${c.id}`);
-        }
-        if (!pwd && c.id === 'legacy_1') {
-          pwd = await keytar.getPassword(SERVICE_NAME, 'ftp_password');
-        }
-        if (pwd) c.password = pwd;
+        pwd = await keytar.getPassword(SERVICE_NAME, `ftp_password_${c.id}`);
       } catch (e) { /* ignore */ }
     }
+    if (keytar && !pwd && c.id === 'legacy_1') {
+      try {
+        pwd = await keytar.getPassword(SERVICE_NAME, 'ftp_password');
+      } catch (e) { /* ignore */ }
+    }
+    // Fallback to secure config file if password is not found in keytar
+    if (!pwd && c.id && secureFallbackMap[c.id]) {
+      pwd = secureFallbackMap[c.id];
+    }
+    if (pwd) c.password = pwd;
   }
   return configs;
 });
@@ -1440,34 +1489,46 @@ const ftpPool = new Map();
 // track jobs that the user has cancelled
 global.cancelledFtpJobs = new Set();
 
-// Concurrency control variables for dynamic throttle
-let activeUploads = 0;
-const uploadWaiters = [];
+// Concurrency control variables for dynamic throttle per host
+const activeUploadsByHost = new Map();
+const uploadWaitersByHost = new Map();
 
 function wakeAllUploadWaiters() {
-  while (uploadWaiters.length > 0) {
-    const resolve = uploadWaiters.shift();
-    if (resolve) resolve();
+  for (const [, waiters] of uploadWaitersByHost.entries()) {
+    while (waiters.length > 0) {
+      const resolve = waiters.shift();
+      if (resolve) resolve();
+    }
   }
 }
 
 global.uploadConcurrency = 3;
 
 async function acquireUploadSlot(host) {
+  if (!host) return;
+  const key = host.toLowerCase().trim();
   while (true) {
-    const currentMax = Math.min(global.uploadConcurrency || 3, getWorkerLimit(host));
-    if (activeUploads < currentMax) {
-      activeUploads++;
+    const currentActive = activeUploadsByHost.get(key) || 0;
+    const currentMax = Math.min(global.uploadConcurrency || 3, getWorkerLimit(key));
+    if (currentActive < currentMax) {
+      activeUploadsByHost.set(key, currentActive + 1);
       return;
     }
-    await new Promise(resolve => uploadWaiters.push(resolve));
+    if (!uploadWaitersByHost.has(key)) {
+      uploadWaitersByHost.set(key, []);
+    }
+    await new Promise(resolve => uploadWaitersByHost.get(key).push(resolve));
   }
 }
 
-function releaseUploadSlot() {
-  activeUploads = Math.max(0, activeUploads - 1);
-  if (uploadWaiters.length > 0) {
-    const next = uploadWaiters.shift();
+function releaseUploadSlot(host) {
+  if (!host) return;
+  const key = host.toLowerCase().trim();
+  const currentActive = activeUploadsByHost.get(key) || 0;
+  activeUploadsByHost.set(key, Math.max(0, currentActive - 1));
+  const waiters = uploadWaitersByHost.get(key) || [];
+  if (waiters.length > 0) {
+    const next = waiters.shift();
     if (next) next();
   }
 }
@@ -1750,7 +1811,7 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
       if (jobId && global.cancelledFtpJobs.has(jobId)) {
         fileLog(`[upload-${type}] ⛔ Skipped ${fileName} (Job Cancelled)`);
         fileErrors[filePath] = 'Cancelled by user';
-        continue;
+        break;
       }
 
       let finalTitleToSave = '';
@@ -1854,9 +1915,9 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
 
       // Check cancellation again
       if (jobId && global.cancelledFtpJobs.has(jobId)) {
-        releaseUploadSlot();
+        releaseUploadSlot(config.host);
         fileErrors[filePath] = 'Cancelled by user';
-        continue;
+        break;
       }
 
       const slot = await acquireSlot(entry); // blocks until a connection is free
@@ -1895,8 +1956,7 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
             if (type === 'ftp') {
               remoteSize = await slot.client.size(fileName);
             } else {
-              const stat = await slot.client.stat(`/${fileName}`);
-              remoteSize = stat.size;
+              remoteSize = await slot.client.stat(fileName).then(s => s.size);
             }
             fileLog(`[upload-${type}] Checked remote file ${fileName}: size = ${remoteSize} bytes`);
           } catch (err) {
@@ -1923,7 +1983,7 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
             if (type === 'sftp') {
               // We use fastPut for SFTP to gain speed and get native progress tracking
               let lastProgress = 0;
-              await slot.client.fastPut(filePath, `/${attemptName}`, {
+              await slot.client.fastPut(filePath, attemptName, {
                 concurrency: 64,
                 chunkSize: 64 * 1024,
                 step: (transferred, chunk, total) => {
@@ -1996,8 +2056,7 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
           if (type === 'ftp') {
             verifySize = await slot.client.size(finalRemoteName);
           } else {
-            const stat = await slot.client.stat(`/${finalRemoteName}`);
-            verifySize = stat.size;
+            verifySize = await slot.client.stat(finalRemoteName).then(s => s.size);
           }
           fileLog(`[upload-${type}] Verified remote file ${finalRemoteName} size: ${verifySize}/${fileSize} bytes`);
         } catch (sizeErr) {
@@ -2056,7 +2115,7 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
         }
       } finally {
         releaseSlot(entry, slot); // always release so other waiters can proceed
-        releaseUploadSlot();     // always release concurrency slot so other waiting workers can proceed
+        releaseUploadSlot(config.host);     // always release concurrency slot so other waiting workers can proceed
       }
     }
   });
@@ -2086,10 +2145,6 @@ ipcMain.handle('upload-ftp', async (event, config, filePaths, jobId) => {
     await closePool(key); // rebuild pool on next call
     fileLog(`[upload-ftp] ❌ Failed (${((Date.now() - t0) / 1000).toFixed(1)}s): ${err.message}`);
     return { success: false, error: `${type.toUpperCase()} Error: ${err.message}` };
-  } finally {
-    if (jobId) {
-      global.cancelledFtpJobs.delete(jobId);
-    }
   }
 });
 
@@ -2165,614 +2220,7 @@ ipcMain.handle('read-file', async (event, filePath) => {
   }
 });
 
-// Colab Cloud GPU Engine Handlers
-let colabWindow = null;
-let colabScanInterval = null;
-let activeColabUrl = null; // Track currently connected server URL
-
-function scanFramesForGradioLink(webContents, onFound, onError) {
-  if (!webContents || !webContents.mainFrame) return;
-  
-  const frames = webContents.mainFrame.framesInSubtree || [webContents.mainFrame];
-  
-  frames.forEach(frame => {
-    if (!frame || typeof frame.executeJavaScript !== 'function') return;
-    
-    // Try to execute script in this frame to find links or printed text containing links or errors
-    frame.executeJavaScript(`
-      (() => {
-        const bodyText = document.body ? document.body.innerText : '';
-        
-        // Check for specific Python/Kaggle errors
-        if (bodyText.includes('AssertionError: Torch not compiled with CUDA enabled')) {
-            return { type: 'error', message: 'Kaggle GPU Error: আপনার Public নোটবুকটি GPU দিয়ে সেভ করা নেই! దয়া করে আপনার Kaggle নোটবুকে গিয়ে Accelerator: GPU T4 x2 সিলেক্ট করে Save Version দিন।' };
-        }
-        if (bodyText.includes('OutOfMemoryError') || bodyText.includes('CUDA out of memory')) {
-            return { type: 'error', message: 'GPU Out of Memory! সার্ভার রিস্টার্ট করুন।' };
-        }
-        
-        const links = document.querySelectorAll('a');
-        for (let a of links) {
-          if (a.href && (a.href.includes('.gradio.live') || a.href.includes('ngrok-free.app') || a.href.includes('trycloudflare.com') || a.href.includes('loca.lt'))) {
-            return { type: 'link', data: a.href };
-          }
-        }
-        const match = bodyText.match(/https?:\\/\\/[a-zA-Z0-9-]+\\.(gradio\\.live|ngrok-free\\.app|trycloudflare\\.com|loca\\.lt)/);
-        if (match) {
-          return { type: 'link', data: match[0] };
-        }
-        return null;
-      })()
-    `).then(res => {
-      if (res) {
-        if (res.type === 'link') onFound(res.data);
-        else if (res.type === 'error' && onError) onError(res.message);
-      }
-    }).catch(err => {
-      // Suppress frame execution errors
-    });
-  });
-}
-
-ipcMain.handle('start-colab', async (event, url) => {
-  if (colabWindow) {
-    colabWindow.destroy(); // Bypass intercept to close old window completely
-  }
-  if (colabScanInterval) {
-    clearInterval(colabScanInterval);
-    colabScanInterval = null;
-  }
-  
-  colabWindow = new BrowserWindow({
-    width: 1100,
-    height: 800,
-    show: false,
-    skipTaskbar: false,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      partition: 'persist:colab',
-      sandbox: true
-    },
-    title: 'Cloud GPU Engine (Colab)'
-  });
-
-  colabWindow.setMenu(null);
-  colabWindow.loadURL(url);
-
-  // Intercept the close event to hide the window instead of destroying it
-  colabWindow.on('close', (e) => {
-    if (!isQuitting) {
-      e.preventDefault();
-      colabWindow.hide();
-      fileLog('[Colab] Log window hidden by user close request.');
-    }
-  });
-
-  // Inject observer to find gradio link and auto-click Run All in the main frame
-  colabWindow.webContents.on('did-finish-load', () => {
-    // Show window briefly so keyboard events work, then auto-hide after 5s if not needing login
-    colabWindow.showInactive();
-    
-    // Send Ctrl+F9 after page settles (only works when window is visible)
-    setTimeout(() => {
-      if (!colabWindow || colabWindow.isDestroyed()) return;
-      fileLog('[Colab] Sending Ctrl+F9 Run All keyboard shortcut');
-      colabWindow.focus();
-      colabWindow.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'F9', modifiers: ['control'] });
-      setTimeout(() => {
-        if (colabWindow && !colabWindow.isDestroyed()) {
-          colabWindow.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'F9', modifiers: ['control'] });
-        }
-      }, 200);
-    }, 3500);
-
-    // 2. Run deep DOM search polling in the page
-    colabWindow.webContents.executeJavaScript(`
-      (function() {
-        if (window.__colabAutoRunStarted) return;
-        window.__colabAutoRunStarted = true;
-
-        console.log("[AutoRun] Injecting deep search script for Shadow DOM");
-
-        function findElementDeep(root, predicate) {
-          if (!root) return null;
-          if (predicate(root)) return root;
-          
-          // Check shadowRoot
-          if (root.shadowRoot) {
-            const found = findElementDeep(root.shadowRoot, predicate);
-            if (found) return found;
-          }
-          
-          // Check children
-          const children = root.children || [];
-          for (let i = 0; i < children.length; i++) {
-            const found = findElementDeep(children[i], predicate);
-            if (found) return found;
-          }
-          return null;
-        }
-
-        // Observe for the generated link
-        if (!window.__colabObserver) {
-          window.__colabObserver = new MutationObserver((mutations) => {
-            const links = document.querySelectorAll('a');
-            for (let a of links) {
-              if (a.href && (a.href.includes('.gradio.live') || a.href.includes('ngrok-free.app') || a.href.includes('trycloudflare.com') || a.href.includes('loca.lt'))) {
-                document.title = "GRADIO_LINK:" + a.href;
-              }
-            }
-          });
-          window.__colabObserver.observe(document.body, { childList: true, subtree: true });
-        }
-
-        // Check if user is logged out (Sign in button exists)
-        const isLoggedOut = document.body.innerText.includes('Sign in') || document.querySelector('a[href*="ServiceLogin"]') !== null;
-        if (isLoggedOut) {
-          return true; // Requires login
-        }
-
-        function clickElement(el) {
-          try { el.focus(); } catch(e) {}
-          try {
-            el.click();
-          } catch(e) {
-            // Dispatch mouse events fallback
-            const events = ['mousedown', 'mouseup', 'click'];
-            events.forEach(name => {
-              const ev = new MouseEvent(name, { bubbles: true, cancelable: true, view: window });
-              el.dispatchEvent(ev);
-            });
-          }
-        }
-
-        // Poll every 2 seconds to search and click Run All, Connect & Run Anyway
-        let attempts = 0;
-        const interval = setInterval(() => {
-          attempts++;
-          if (attempts > 30) {
-            clearInterval(interval);
-            return;
-          }
-
-          // A. Find "Run anyway" button in the warning dialog
-          const confirmBtn = findElementDeep(document.body, (el) => {
-            const text = (el.textContent || '').trim().toLowerCase();
-            const id = el.id || '';
-            const label = (el.getAttribute && el.getAttribute('aria-label') || '').toLowerCase();
-            return id === 'ok' || 
-                   text === 'run anyway' || 
-                   text.includes('run standard') || 
-                   label.includes('run anyway') || 
-                   (el.getAttribute && el.getAttribute('dialogaction') === 'ok') ||
-                   (el.classList && el.classList.contains('ok-button'));
-          });
-
-          if (confirmBtn) {
-            console.log("[AutoRun] Found confirmation dialog button, clicking it.");
-            clickElement(confirmBtn);
-          }
-
-          // B. Find "Connect" button at the top right if disconnected
-          const connectBtn = findElementDeep(document.body, (el) => {
-            if (!el.tagName) return false;
-            const tag = el.tagName.toLowerCase();
-            const text = (el.textContent || '').trim().toLowerCase();
-            return tag === 'colab-connect-button' || 
-                   text === 'connect' || 
-                   text === 'reconnect' ||
-                   text.includes('connect to hosted') ||
-                   (el.id && el.id.includes('connect'));
-          });
-
-          if (connectBtn) {
-            const text = (connectBtn.textContent || '').trim().toLowerCase();
-            if (text.includes('connect') || text.includes('reconnect')) {
-              console.log("[AutoRun] Found Connect button, clicking it.");
-              clickElement(connectBtn);
-            }
-          }
-
-          // C. Find "Run All" toolbar button
-          const runAllBtn = findElementDeep(document.body, (el) => {
-            if (!el.tagName) return false;
-            const tag = el.tagName.toLowerCase();
-            const id = el.id || '';
-            const label = (el.getAttribute && el.getAttribute('aria-label') || '').toLowerCase();
-            const title = (el.title || '').toLowerCase();
-            const text = (el.textContent || '').trim().toLowerCase();
-            
-            return tag === 'colab-run-button' ||
-                   id === 'run-all' ||
-                   label.includes('run all') ||
-                   title.includes('run all') ||
-                   text === 'run all' ||
-                   (tag === 'paper-button' && text.includes('run all')) ||
-                   (tag === 'button' && text.includes('run all')) ||
-                   (el.classList && el.classList.contains('run-all'));
-          });
-
-          if (runAllBtn) {
-            console.log("[AutoRun] Found Run All button, clicking it.");
-            clickElement(runAllBtn);
-          }
-
-          // D. Check for GPU limit modal
-          const gpuLimitText = findElementDeep(document.body, (el) => {
-            const text = (el.textContent || '').trim().toLowerCase();
-            return text.includes('cannot connect to gpu backend') || text.includes('usage limits in colab');
-          });
-
-          if (gpuLimitText) {
-            console.log("[AutoRun] GPU Limit detected!");
-            document.title = 'GPU_LIMIT_REACHED';
-          }
-        }, 2000);
-
-        return false;
-      })();
-    `).then(isLoggedOut => {
-      if (isLoggedOut) {
-        fileLog('[Colab] User needs to login. Showing window for login.');
-        colabWindow.show(); // Keep visible for login
-      } else {
-        fileLog('[Colab] User is logged in. Auto-running; will hide window in 6s.');
-        // Hide after 6 seconds (keyboard event + DOM clicker had time to run)
-        setTimeout(() => {
-          if (colabWindow && !colabWindow.isDestroyed() && !colabWindow.isVisible()) return;
-          if (colabWindow && !colabWindow.isDestroyed()) {
-            colabWindow.hide();
-            fileLog('[Colab] Auto-hidden after run trigger.');
-          }
-        }, 6000);
-      }
-    }).catch(err => fileLog('[Colab] Inject Error:', err.message));
-  });
-
-  // Keep track of active pings and connection state
-  const activePings = new Set();
-  let successfulLink = null;
-
-  // Watch for main page title updates (fallback)
-  colabWindow.on('page-title-updated', (e, title) => {
-    if (title === 'GPU_LIMIT_REACHED') {
-      fileLog('[Colab] GPU Limit Reached detected from page.');
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('colab-status', { status: 'gpu-limit' });
-      }
-      return;
-    }
-
-    if (title.startsWith('GRADIO_LINK:')) {
-      const link = title.replace('GRADIO_LINK:', '').trim();
-      if (successfulLink) return;
-      if (activePings.has(link)) return;
-
-      activePings.add(link);
-      fileLog('[Colab] Found potential link via title, testing:', link);
-
-      fetch(link.replace(/\/$/, '') + '/system_stats', {
-        headers: { 'bypass-tunnel-reminder': 'true' },
-        signal: AbortSignal.timeout(5000)
-      }).then(res => {
-        if (res.ok) {
-          fileLog('[Colab] Verified live link via title:', link);
-          successfulLink = link;
-          activeColabUrl = link;
-          if (colabScanInterval) {
-            clearInterval(colabScanInterval);
-            colabScanInterval = null;
-          }
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('colab-status', { status: 'connected', url: link });
-          }
-          if (colabWindow) {
-            colabWindow.hide();
-          }
-        } else {
-          fileLog('[Colab] Link from title returned non-ok status:', link, res.status);
-        }
-      }).catch(err => {
-        fileLog('[Colab] Link from title ping failed (will retry):', link, err.message);
-      }).finally(() => {
-        activePings.delete(link);
-      });
-    }
-  });
-
-  // Start periodic recursive frame scanning (handles sandboxed output iframes)
-  colabScanInterval = setInterval(() => {
-    if (!colabWindow || colabWindow.isDestroyed()) {
-      clearInterval(colabScanInterval);
-      colabScanInterval = null;
-      return;
-    }
-    
-    scanFramesForGradioLink(colabWindow.webContents, (link) => {
-      if (successfulLink) return;
-      if (activePings.has(link)) return;
-
-      activePings.add(link);
-      fileLog('[Colab] Found potential link via frame scan, testing:', link);
-      
-      // Ping the server to verify it's alive and responsive
-      fetch(link.replace(/\/$/, '') + '/system_stats', {
-        headers: { 'bypass-tunnel-reminder': 'true' },
-        signal: AbortSignal.timeout(5000)
-      }).then(res => {
-        if (res.ok) {
-          fileLog('[Colab] Verified live link via frame scan:', link);
-          successfulLink = link;
-          activeColabUrl = link;
-          if (colabScanInterval) {
-            clearInterval(colabScanInterval);
-            colabScanInterval = null;
-          }
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('colab-status', { status: 'connected', url: link });
-          }
-          if (colabWindow) {
-            colabWindow.hide();
-          }
-        } else {
-          fileLog('[Colab] Link from frame scan returned non-ok status:', link, res.status);
-        }
-      }).catch(err => {
-        fileLog('[Colab] Link from frame scan ping failed (will retry):', link, err.message);
-      }).finally(() => {
-        activePings.delete(link);
-      });
-    }, (errorMsg) => {
-      fileLog('[Colab] Frame scan error:', errorMsg);
-      if (errorMsg === 'gpu-limit') {
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('colab-status', { status: 'gpu-limit' });
-      } else {
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('colab-status', { status: 'disconnected', error: errorMsg });
-      }
-      if (colabScanInterval) {
-        clearInterval(colabScanInterval);
-        colabScanInterval = null;
-      }
-    });
-  }, 3000);
-
-  colabWindow.on('closed', () => {
-    fileLog('[Colab] Window fully closed (destroy called).');
-    if (colabScanInterval) {
-      clearInterval(colabScanInterval);
-      colabScanInterval = null;
-    }
-    colabWindow = null;
-    // Only send disconnected if NOT already connected (stop-colab was called intentionally)
-    if (mainWindow && !mainWindow.isDestroyed() && !successfulLink) {
-      activeColabUrl = null;
-      mainWindow.webContents.send('colab-status', { status: 'disconnected' });
-    }
-  });
-
-  return { success: true };
-});
-
-ipcMain.handle('get-colab-url', async () => {
-  return { url: activeColabUrl };
-});
-
-ipcMain.handle('start-kaggle', async (event, url) => {
-  if (colabWindow) {
-    colabWindow.destroy(); 
-  }
-  if (colabScanInterval) {
-    clearInterval(colabScanInterval);
-    colabScanInterval = null;
-  }
-  
-  colabWindow = new BrowserWindow({
-    width: 1100,
-    height: 800,
-    show: false,
-    skipTaskbar: false,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      partition: 'persist:colab', // Share same partition so it doesn't need double login
-      sandbox: true
-    },
-    title: 'Kaggle Fallback GPU Engine'
-  });
-
-  colabWindow.setMenu(null);
-  
-  // Intercept window close
-  colabWindow.on('close', (e) => {
-    if (!colabWindow) return;
-    e.preventDefault();
-    colabWindow.hide();
-    fileLog('[Kaggle] Window hidden by user close request.');
-  });
-
-  colabWindow.loadURL(url);
-
-  colabWindow.webContents.on('did-finish-load', () => {
-    const currentUrl = colabWindow.webContents.getURL();
-    if (currentUrl === 'https://www.kaggle.com/' || currentUrl === 'https://www.kaggle.com') {
-      fileLog('[Kaggle] Ended up on home page, redirecting back to notebook...');
-      colabWindow.loadURL(url);
-      return;
-    }
-
-    colabWindow.webContents.executeJavaScript(`
-      (() => {
-        function findElementDeep(root, predicate) {
-          if (!root) return null;
-          if (predicate(root)) return root;
-          let node = root.firstElementChild;
-          while (node) {
-            let res = findElementDeep(node, predicate);
-            if (res) return res;
-            node = node.nextElementSibling;
-          }
-          if (root.shadowRoot) {
-            let res = findElementDeep(root.shadowRoot, predicate);
-            if (res) return res;
-          }
-          return null;
-        }
-
-        const isLoggedOut = document.body.innerText.includes('Sign In') || 
-                            document.body.innerText.includes('Register') || 
-                            document.title === 'Kaggle: Your Home for Data Science' ||
-                            window.location.pathname.includes('/account/login');
-
-        if (isLoggedOut) {
-          if (!window.location.pathname.includes('/account/login')) {
-            window.location.href = 'https://www.kaggle.com/account/login?returnUrl=' + encodeURIComponent(window.location.pathname + window.location.search);
-          }
-          return true;
-        }
-
-        function clickElement(el) {
-          try { el.click(); } catch(e) {}
-        }
-
-        let attempts = 0;
-        const interval = setInterval(() => {
-          attempts++;
-          if (attempts > 30) {
-            clearInterval(interval);
-            return;
-          }
-
-          // If we are on the View page (URL doesn't end with /edit), look for "Copy & Edit" or "Edit"
-          if (!window.location.pathname.includes('/edit')) {
-            const editBtn = findElementDeep(document.body, (el) => {
-              if (!el.tagName) return false;
-              const text = (el.textContent || '').trim().toLowerCase();
-              return el.tagName === 'BUTTON' && (text === 'copy & edit' || text === 'edit' || text === 'edit notebook');
-            });
-            if (editBtn) {
-              console.log("[AutoRun] Kaggle Edit button found! Forking/Editing...");
-              clickElement(editBtn);
-            }
-          } else {
-            // We are on the Editor page, look for "Run All"
-            const runAllBtn = findElementDeep(document.body, (el) => {
-              if (!el.tagName) return false;
-              const text = (el.textContent || '').trim().toLowerCase();
-              const title = (el.title || '').toLowerCase();
-              const aria = (el.getAttribute && el.getAttribute('aria-label') || '').toLowerCase();
-              return (el.tagName === 'BUTTON' && (text === 'run all' || title.includes('run all') || aria.includes('run all')));
-            });
-
-            if (runAllBtn) {
-              console.log("[AutoRun] Kaggle Run All button found!");
-              clickElement(runAllBtn);
-            }
-          }
-
-          // Check if Kaggle GPU quota exceeded (30h limit)
-          const limitText = findElementDeep(document.body, (el) => {
-            const text = (el.textContent || '').trim().toLowerCase();
-            return text.includes('quota exceeded') || text.includes('exceeded your gpu quota');
-          });
-
-          if (limitText) {
-            document.title = 'KAGGLE_LIMIT_REACHED';
-          }
-        }, 2500);
-
-        return false;
-      })();
-    `).then(isLoggedOut => {
-      if (isLoggedOut) {
-        fileLog('[Kaggle] User needs to login.');
-        colabWindow.show();
-      } else {
-        fileLog('[Kaggle] User is logged in. Auto-running...');
-        setTimeout(() => {
-          if (colabWindow && !colabWindow.isDestroyed()) colabWindow.hide();
-        }, 8000);
-      }
-    }).catch(err => fileLog('[Kaggle] Inject Error:', err.message));
-  });
-
-  const activePings = new Set();
-  let successfulLink = null;
-
-  colabWindow.on('page-title-updated', (e, title) => {
-    if (title === 'KAGGLE_LIMIT_REACHED') {
-      fileLog('[Kaggle] GPU Limit Reached.');
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('colab-status', { status: 'disconnected', error: 'Kaggle GPU Quota Exceeded' });
-      }
-      return;
-    }
-  });
-
-  colabScanInterval = setInterval(() => {
-    if (!colabWindow || colabWindow.isDestroyed()) return;
-    scanFramesForGradioLink(colabWindow.webContents, (link) => {
-      if (successfulLink) return;
-      if (activePings.has(link)) return;
-
-      activePings.add(link);
-      fileLog('[Kaggle] Found link via frame scan:', link);
-
-      fetch(link.replace(/\/$/, '') + '/system_stats', {
-        headers: { 'bypass-tunnel-reminder': 'true' },
-        signal: AbortSignal.timeout(5000)
-      }).then(res => {
-        if (res.ok) {
-          fileLog('[Kaggle] Verified link:', link);
-          successfulLink = link;
-          activeColabUrl = link;
-          if (colabScanInterval) {
-            clearInterval(colabScanInterval);
-            colabScanInterval = null;
-          }
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('colab-status', { status: 'connected', url: link });
-          }
-          if (colabWindow) colabWindow.hide();
-        }
-      }).catch(() => {}).finally(() => activePings.delete(link));
-    });
-  }, 3000);
-
-  colabWindow.on('closed', () => {
-    if (colabScanInterval) {
-      clearInterval(colabScanInterval);
-      colabScanInterval = null;
-    }
-    colabWindow = null;
-    if (mainWindow && !mainWindow.isDestroyed() && !successfulLink) {
-      activeColabUrl = null;
-      mainWindow.webContents.send('colab-status', { status: 'disconnected' });
-    }
-  });
-
-  return { success: true };
-});
-
-
-ipcMain.handle('stop-colab', async () => {
-  if (colabScanInterval) {
-    clearInterval(colabScanInterval);
-    colabScanInterval = null;
-  }
-  if (colabWindow) {
-    colabWindow.destroy(); // Destroy window directly to bypass hide interceptor
-    colabWindow = null;
-  }
-  return { success: true };
-});
-
-ipcMain.handle('show-colab', async () => {
-  if (colabWindow) {
-    colabWindow.show();
-  }
-  return { success: true };
-});
+// Colab Cloud GPU Engine Handlers removed as requested.
 
 ipcMain.handle('fetch-image', async (event, url) => {
   try {

@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFiles: (options) => ipcRenderer.invoke('select-files', options),
   saveFile: (filePath, bufferArray) => ipcRenderer.invoke('save-file', filePath, bufferArray),
+  getImageDimensions: (filePath) => ipcRenderer.invoke('get-image-dimensions', filePath),
   setUploadConcurrency: (concurrency) => ipcRenderer.invoke('set-upload-concurrency', concurrency),
   upscaleLocalNcnn: (filePath, scale, modelName, format, saveDir) => ipcRenderer.invoke('upscale-local-ncnn', filePath, scale, modelName, format, saveDir)
 });

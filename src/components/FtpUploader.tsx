@@ -290,7 +290,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
       });
       return unsubscribe;
     }
-  }, [activeHosts]);
+  }, [activeHosts, activeConfigs]);
 
   const handleTestSpecificConfig = async (config) => {
     setTestingStatus(prev => ({ ...prev, [config.id]: { isTesting: true, result: null } }));
@@ -421,6 +421,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
     }
     // Flag to stop any pending asynchronous operations (like validation)
     jobIdRef.current = 'CANCELLED';
+    validationCompleteRef.current = false;
 
     files.forEach(f => { if (f.previewUrl) URL.revokeObjectURL(f.previewUrl); });
     setFiles([]);
@@ -429,9 +430,210 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
     setIsUploading(false);
   };
 
+  const nextFileIndexRef = useRef(0);
+  const activeWorkersCountRef = useRef(0);
+  const concurrencyRef = useRef(concurrency);
+  const validatedFilesRef = useRef([]);
+  const activeConfigsRef = useRef([]);
+  const newJobIdRef = useRef('');
+  const t0Ref = useRef(0);
+  const totalSizeRef = useRef(0);
+  const generatedCsvPathsRef = useRef([]);
+  const allRenamedFilesRef = useRef([]);
+  const batchFailedRef = useRef(0);
+  const batchSuccessRef = useRef(0);
+  const validationCompleteRef = useRef(false);
+
+  const spawnWorker = async (workerId) => {
+    activeWorkersCountRef.current++;
+    try {
+      while (true) {
+        if (jobIdRef.current === 'CANCELLED') break;
+        
+        // Dynamic concurrency check: immediately break if workerId is beyond selected concurrency
+        if (workerId >= concurrencyRef.current) {
+          console.log(`[Worker Pool] Worker ${workerId} exiting because concurrency limit was reduced to ${concurrencyRef.current}`);
+          break;
+        }
+
+        const index = nextFileIndexRef.current++;
+        if (index >= validatedFilesRef.current.length) break;
+
+        const file = validatedFilesRef.current[index];
+
+        // Set current file status to 'uploading'
+        setFiles(prev => prev.map(item =>
+          item.id === file.id
+            ? { ...item, status: 'uploading', progress: {} }
+            : item
+        ));
+
+        try {
+          // Trigger upload in parallel across all servers for this SINGLE file
+          const uploadPromises = activeConfigsRef.current.map(async (conf) => {
+            // If this file already succeeded on this specific server in a past run, skip it
+            if (file.serverStatus && file.serverStatus[conf.host] === 'success') {
+              return { host: conf.host, success: true, fileErrors: {}, renamedFiles: {}, csvPath: null };
+            }
+
+            // Initialize this server's status as 'uploading' in UI
+            setFiles(prev => prev.map(item => {
+              if (item.id === file.id) {
+                const newServerStatus = { ...(item.serverStatus || {}) };
+                newServerStatus[conf.host] = 'uploading';
+                return { ...item, serverStatus: newServerStatus };
+              }
+              return item;
+            }));
+
+            const res = await window.electronAPI.uploadFtp(conf, [file.path], newJobIdRef.current);
+            
+            // Update this server's status based on result
+            setFiles(prev => prev.map(item => {
+              if (item.id === file.id) {
+                const newServerStatus = { ...(item.serverStatus || {}) };
+                const newServerErrors = { ...(item.serverErrors || {}) };
+                if (res.success) {
+                  newServerStatus[conf.host] = 'success';
+                  delete newServerErrors[conf.host];
+                } else {
+                  newServerStatus[conf.host] = 'error';
+                  newServerErrors[conf.host] = res.error || (res.fileErrors && res.fileErrors[file.path]) || 'Failed';
+                }
+                return { ...item, serverStatus: newServerStatus, serverErrors: newServerErrors };
+              }
+              return item;
+            }));
+
+            return {
+              host: conf.host,
+              success: res.success,
+              fileErrors: res.fileErrors || {},
+              renamedFiles: res.renamedFiles || {},
+              csvPath: res.csvPath || null,
+              error: res.error
+            };
+          });
+
+          const uploadResults = await Promise.all(uploadPromises);
+
+          if (jobIdRef.current === 'CANCELLED') break;
+
+          // Track errors and state updates for this file
+          let hasSuccess = false;
+          let hasError = false;
+          const newServerStatus = { ...(file.serverStatus || {}) };
+          const newServerErrors = { ...(file.serverErrors || {}) };
+
+          uploadResults.forEach(res => {
+            if (res.csvPath) {
+              generatedCsvPathsRef.current.push(res.csvPath);
+            }
+            const hostError = res.error || (res.fileErrors && res.fileErrors[file.path]);
+            if (hostError) {
+              newServerStatus[res.host] = 'error';
+              newServerErrors[res.host] = hostError;
+              hasError = true;
+            } else if (res.success) {
+              newServerStatus[res.host] = 'success';
+              delete newServerErrors[res.host];
+              hasSuccess = true;
+            }
+            if (res.renamedFiles) {
+              for (const [, info] of Object.entries(res.renamedFiles)) {
+                allRenamedFilesRef.current.push({ host: res.host, ...info });
+              }
+            }
+          });
+
+          let finalStatus = file.status;
+          let finalError = null;
+
+          if (hasError && !hasSuccess) {
+            finalStatus = 'error';
+            finalError = Object.values(newServerErrors).join(', ');
+            batchFailedRef.current++;
+          } else if (hasSuccess && !hasError) {
+            finalStatus = 'success';
+            batchSuccessRef.current++;
+          } else if (hasSuccess && hasError) {
+            finalStatus = 'partial';
+            batchFailedRef.current++;
+          }
+
+          // Update UI state for this single file immediately!
+          setFiles(prev => prev.map(item =>
+            item.id === file.id
+              ? {
+                  ...item,
+                  status: finalStatus,
+                  error: finalError,
+                  serverStatus: newServerStatus,
+                  serverErrors: newServerErrors
+                }
+              : item
+          ));
+        } catch (err) {
+          setFiles(prev => prev.map(item =>
+            item.id === file.id
+              ? { ...item, status: 'error', error: err.message }
+              : item
+          ));
+          batchFailedRef.current++;
+        }
+      }
+    } finally {
+      activeWorkersCountRef.current--;
+      if (activeWorkersCountRef.current === 0) {
+        onUploadComplete();
+      }
+    }
+  };
+
+  const onUploadComplete = () => {
+    const elapsed = (Date.now() - t0Ref.current) / 1000;
+    if (totalSizeRef.current > 0 && elapsed > 0) {
+      setUploadSpeed(totalSizeRef.current / elapsed);
+    }
+
+    if (allRenamedFilesRef.current.length > 0) {
+      const msg = allRenamedFilesRef.current.map(r => `[${r.host}] Failed: ${r.failedName} ➔ New: ${r.newName}`).join('\n');
+      showToast(`Adobe Stock Update:\n${msg}\nPlease delete the failed original files manually from the portal!`, 'warning');
+    }
+
+    if (generatedCsvPathsRef.current.length > 0) {
+      showToast(`Adobe Stock CSV file generated:\n${generatedCsvPathsRef.current[0]}`, 'success');
+    }
+
+    if (batchFailedRef.current > 0) {
+      showToast(`Upload completed, but ${batchFailedRef.current} file(s) failed. Click "Retry Failed" to try again.`, "error");
+    } else {
+      showToast(`${batchSuccessRef.current} file(s) successfully uploaded to server(s)!`, "success");
+    }
+
+    setIsUploading(false);
+    setCurrentJobId(null);
+    validationCompleteRef.current = false;
+  };
+
+  useEffect(() => {
+    concurrencyRef.current = concurrency;
+    if (isUploading && validationCompleteRef.current) {
+      const currentActive = activeWorkersCountRef.current;
+      if (concurrency > currentActive) {
+        console.log(`[Worker Pool] Spawning ${concurrency - currentActive} new worker(s) dynamically`);
+        for (let i = currentActive; i < concurrency; i++) {
+          spawnWorker(i);
+        }
+      }
+    }
+  }, [concurrency, isUploading]);
+
   const uploadFiles = async () => {
     if (!window.electronAPI || files.length === 0 || activeConfigs.length === 0) return;
     
+    validationCompleteRef.current = false;
+
     // Assign job ID early so it can be cancelled even during validation
     const newJobId = Math.random().toString(36).substr(2, 9);
     jobIdRef.current = newJobId;
@@ -453,6 +655,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
     
     for (let f of pendingFiles) {
       const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
+      if (jobIdRef.current === 'CANCELLED') return;
       let errorMsg = null;
       
       // Video Validation
@@ -477,12 +680,18 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
         } else {
           // Check Resolution
           try {
-            const dims = await new Promise((resolve) => {
-              const img = new Image();
-              img.onload = () => resolve({ w: img.width, h: img.height });
-              img.onerror = () => resolve({ w: 0, h: 0 });
-              img.src = f.previewUrl || URL.createObjectURL(f.file);
-            });
+            let dims = { w: 0, h: 0 };
+            if (f.file) {
+              dims = await new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve({ w: img.width, h: img.height });
+                img.onerror = () => resolve({ w: 0, h: 0 });
+                img.src = URL.createObjectURL(f.file);
+              });
+            } else if (window.electronAPI && window.electronAPI.getImageDimensions && f.path) {
+              const res = await window.electronAPI.getImageDimensions(f.path);
+              if (res) dims = { w: res.width, h: res.height };
+            }
             const mp = (dims.w * dims.h) / 1000000;
             if (mp > 0 && mp < 4) {
               errorMsg = `Resolution too low (${mp.toFixed(1)} MP). Minimum 4 Megapixels required.`;
@@ -529,153 +738,29 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
 
     setFiles(prev => prev.map(item =>
       validatedFiles.some(pf => pf.id === item.id)
-        ? { ...item, status: 'uploading', progress: {}, error: null }
+        ? { ...item, status: 'pending', progress: {}, error: null, serverStatus: {}, serverErrors: {} }
         : item
     ));
 
-    try {
-      const uploadPromises = activeConfigs.map(async (conf) => {
-        // Filter out files that already succeeded on this specific server
-        const hostFiles = validatedFiles.filter(f => {
-          return !(f.serverStatus && f.serverStatus[conf.host] === 'success');
-        }).map(f => f.path).filter(Boolean);
+    // Initialize all Refs for concurrent worker pool execution
+    nextFileIndexRef.current = 0;
+    activeWorkersCountRef.current = 0;
+    concurrencyRef.current = concurrency;
+    validatedFilesRef.current = validatedFiles;
+    activeConfigsRef.current = activeConfigs;
+    newJobIdRef.current = newJobId;
+    t0Ref.current = t0;
+    totalSizeRef.current = totalSize;
+    generatedCsvPathsRef.current = [];
+    allRenamedFilesRef.current = [];
+    batchFailedRef.current = 0;
+    batchSuccessRef.current = 0;
+    validationCompleteRef.current = true;
 
-        if (hostFiles.length === 0) {
-          return { host: conf.host, websiteName: conf.websiteName || conf.host, fileErrors: {}, renamedFiles: {}, csvPath: null };
-        }
-
-        const res = await window.electronAPI.uploadFtp(conf, hostFiles, newJobId);
-        if (!res.success) {
-          // Instead of failing the entire batch, mark all these files as failed for this specific server
-          const errs = {};
-          hostFiles.forEach(hf => { errs[hf] = res.error; });
-          return { host: conf.host, websiteName: conf.websiteName || conf.host, fileErrors: errs, renamedFiles: {}, csvPath: null };
-        }
-        return { 
-          host: conf.host, 
-          websiteName: conf.websiteName || conf.host,
-          fileErrors: res.fileErrors || {},
-          renamedFiles: res.renamedFiles || {},
-          csvPath: res.csvPath || null
-        };
-      });
-
-      const uploadResults = await Promise.all(uploadPromises);
-
-      const elapsed = (Date.now() - t0) / 1000;
-      if (totalSize > 0 && elapsed > 0) {
-        setUploadSpeed(totalSize / elapsed);
-      }
-
-      // Combine errors and track renamed files
-      const fileErrorsMap = {}; // { [filePath]: { [host]: error } }
-      const allRenamedFiles = [];
-      const generatedCsvPaths = [];
-      
-      for (const res of uploadResults) {
-        if (res.csvPath) {
-          generatedCsvPaths.push(res.csvPath);
-        }
-        for (const [filePath, err] of Object.entries(res.fileErrors)) {
-          if (err) {
-            const normalizedPath = filePath.replace(/\\/g, '/');
-            if (!fileErrorsMap[normalizedPath]) fileErrorsMap[normalizedPath] = {};
-            fileErrorsMap[normalizedPath][res.host] = err;
-          }
-        }
-        if (res.renamedFiles) {
-          for (const [, info] of Object.entries(res.renamedFiles)) {
-             allRenamedFiles.push({ host: res.host, ...info });
-          }
-        }
-      }
-
-      if (allRenamedFiles.length > 0) {
-        const msg = allRenamedFiles.map(r => `[${r.host}] Failed: ${r.failedName} ➔ New: ${r.newName}`).join('\n');
-        showToast(`Adobe Stock Update:\n${msg}\nPlease delete the failed original files manually from the portal!`, 'warning');
-      }
-
-      if (generatedCsvPaths.length > 0) {
-        showToast(`Adobe Stock CSV file generated:\n${generatedCsvPaths[0]}`, 'success');
-      }
-
-      setFiles(prev => prev.map(item => {
-        if (!pendingFiles.some(pf => pf.id === item.id)) return item;
-        
-        const fPath = item.path.replace(/\\/g, '/');
-        const errorsForFile = fileErrorsMap[fPath] || {};
-        
-        const newServerStatus = { ...(item.serverStatus || {}) };
-        const newServerErrors = { ...(item.serverErrors || {}) };
-        
-        let hasSuccess = false;
-        let hasError = false;
-        
-        activeConfigs.forEach(conf => {
-          if (errorsForFile[conf.host]) {
-             newServerStatus[conf.host] = 'error';
-             newServerErrors[conf.host] = errorsForFile[conf.host];
-             hasError = true;
-          } else if (newServerStatus[conf.host] === 'success') {
-             hasSuccess = true;
-          } else {
-             // If no error was reported this run, and it was attempted, consider it a success.
-             // If it was skipped because it was already success, the condition above handles it.
-             if (validatedFiles.some(vf => vf.id === item.id)) {
-                newServerStatus[conf.host] = 'success';
-                delete newServerErrors[conf.host];
-                hasSuccess = true;
-             }
-          }
-        });
-        
-        let finalStatus = item.status;
-        let finalError = null;
-        
-        if (hasError && !hasSuccess) {
-           finalStatus = 'error';
-           finalError = Object.values(newServerErrors).join(', ');
-        } else if (hasSuccess && !hasError) {
-           finalStatus = 'success';
-        } else if (hasSuccess && hasError) {
-           finalStatus = 'partial';
-        }
-        
-        return { 
-          ...item, 
-          status: finalStatus, 
-          error: finalError,
-          serverStatus: newServerStatus,
-          serverErrors: newServerErrors
-        };
-      }));
-
-      let batchFailed = 0;
-      filePaths.forEach(fPath => {
-         const normalizedPath = fPath.replace(/\\/g, '/');
-         if (fileErrorsMap[normalizedPath] && Object.keys(fileErrorsMap[normalizedPath]).length > 0) {
-            batchFailed++;
-         }
-      });
-      const batchSuccess = filePaths.length - batchFailed;
-
-      if (batchFailed > 0) {
-        showToast(`Upload completed, but ${batchFailed} file(s) failed. Click "Retry Failed" to try again.`, "error");
-      } else {
-        showToast(`${batchSuccess} file(s) successfully uploaded to server(s)!`, "success");
-      }
-
-    } catch (uploadErr) {
-      setFiles(prev => prev.map(item =>
-        pendingFiles.some(pf => pf.id === item.id) && item.status !== 'success'
-          ? { ...item, status: 'error', error: uploadErr.message }
-          : item
-      ));
-      showToast(`Upload failed: ${uploadErr.message}`, "error");
+    // Trigger the initial concurrent workers
+    for (let i = 0; i < concurrency; i++) {
+      spawnWorker(i);
     }
-
-    setIsUploading(false);
-    setCurrentJobId(null);
   };
 
   const getCategorizedError = (rawErr, serverName) => {
@@ -1298,37 +1383,40 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
                       })()}
                       {file.status === 'success' && <span style={{ fontSize: '0.65rem', color: 'var(--success)', fontWeight: 600 }}>✓ Uploaded</span>}
                       
-                      {/* Detailed per-server status badges */}
-                      {file.serverStatus && activeConfigs.length > 1 && (file.status === 'partial' || file.status === 'error' || file.status === 'success') && (
-                        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', marginLeft: '0.25rem', flexWrap: 'wrap' }}>
-                          {activeConfigs.map(conf => {
-                            const st = file.serverStatus[conf.host];
-                            if (!st) return null;
-                            const isSucc = st === 'success';
-                            const isErr = st === 'error';
-                            const name = conf.websiteName || conf.host;
-                            let cleanErrText = '';
-                            if (isErr && file.serverErrors && file.serverErrors[conf.host]) {
-                              cleanErrText = getCategorizedError(file.serverErrors[conf.host], name);
-                            }
-                            
-                            return (
-                              <span key={conf.host} title={cleanErrText ? `Error: ${cleanErrText}` : ''} style={{ 
-                                fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 600,
-                                background: isSucc ? 'rgba(16,185,129,0.1)' : isErr ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
-                                color: isSucc ? 'var(--success)' : isErr ? 'var(--danger)' : '#f59e0b',
-                                border: `1px solid ${isSucc ? 'rgba(16,185,129,0.2)' : isErr ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'}`,
-                                cursor: isErr ? 'help' : 'default', display: 'flex', alignItems: 'center', gap: '0.2rem'
-                              }}>
-                                {isSucc ? '✅' : isErr ? '❌' : '⏳'} {name}
-                                {isErr && cleanErrText && (
-                                  <span style={{ fontWeight: 400, opacity: 0.85 }}>({cleanErrText})</span>
-                                )}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
+                       {/* Detailed per-server status badges */}
+                       {file.serverStatus && activeConfigs.length > 1 && (file.status === 'partial' || file.status === 'error' || file.status === 'success' || file.status === 'uploading') && (
+                         <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', marginLeft: '0.25rem', flexWrap: 'wrap' }}>
+                           {activeConfigs.map(conf => {
+                             const st = file.serverStatus[conf.host];
+                             if (!st) return null;
+                             const isSucc = st === 'success';
+                             const isErr = st === 'error';
+                             const name = conf.websiteName || conf.host;
+                             let cleanErrText = '';
+                             if (isErr && file.serverErrors && file.serverErrors[conf.host]) {
+                               cleanErrText = getCategorizedError(file.serverErrors[conf.host], name);
+                             }
+                             const prg = (file.progress && typeof file.progress === 'object') ? file.progress[conf.host] : undefined;
+                             const showProgress = !isSucc && !isErr && typeof prg === 'number';
+                             
+                             return (
+                               <span key={conf.host} title={cleanErrText ? `Error: ${cleanErrText}` : ''} style={{ 
+                                 fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 600,
+                                 background: isSucc ? 'rgba(16,185,129,0.1)' : isErr ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
+                                 color: isSucc ? 'var(--success)' : isErr ? 'var(--danger)' : '#f59e0b',
+                                 border: `1px solid ${isSucc ? 'rgba(16,185,129,0.2)' : isErr ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'}`,
+                                 cursor: isErr ? 'help' : 'default', display: 'flex', alignItems: 'center', gap: '0.2rem'
+                               }}>
+                                 {isSucc ? '✅' : isErr ? '❌' : '⏳'} {name}
+                                 {showProgress && ` (${prg}%)`}
+                                 {isErr && cleanErrText && (
+                                   <span style={{ fontWeight: 400, opacity: 0.85 }}>({cleanErrText})</span>
+                                 )}
+                               </span>
+                             );
+                           })}
+                         </div>
+                       )}
                       
                       {file.error && (activeConfigs.length === 1 || !file.serverStatus) && (() => {
                         const activeConf = activeConfigs[0];

@@ -175,19 +175,18 @@ function App() {
           {/* BRANDING */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0', justifyContent: sidebarOpen ? 'space-between' : 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <div style={{
-                background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
-                color: '#fff',
-                padding: '0.4rem',
-                borderRadius: '0.5rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                boxShadow: '0 2px 8px rgba(37,99,235,0.3)'
-              }}>
-                <Sparkles style={{ width: '0.95rem', height: '0.95rem' }} />
-              </div>
+              <img 
+                src="/logo.png" 
+                alt="MetadataPro Logo" 
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '0.5rem',
+                  objectFit: 'contain',
+                  flexShrink: 0,
+                  boxShadow: '0 2px 8px rgba(37,99,235,0.25)'
+                }}
+              />
               {sidebarOpen && (
                 <div style={{ overflow: 'hidden' }}>
                   <h1 style={{ fontSize: '1rem', margin: 0, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.2 }}>

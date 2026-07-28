@@ -767,7 +767,7 @@ export const TopSellers: React.FC = () => {
                         <img src={img.src} alt={img.alt} style={{ position: 'absolute', width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
                       )}
                       
-                      {(img.videoUrl || (img.detailUrl && (img.detailUrl.includes('/video') || img.detailUrl.includes('/video-clip')))) && (
+                      {(img.videoUrl || (img.detailUrl && (img.detailUrl.includes('/video/') || img.detailUrl.includes('-video/') || img.detailUrl.includes('/video-clip')))) && (
                         <div 
                           onClick={(e) => handlePlayVideo(img, idx, e)}
                           style={{
@@ -929,7 +929,7 @@ export const TopSellers: React.FC = () => {
           boxShadow: '0 20px 40px rgba(0,0,0,0.3), 0 0 0 1px var(--border-color)',
           display: 'flex',
           alignItems: 'center',
-          gap: '2rem',
+          gap: '1.5rem',
           zIndex: 100
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -963,6 +963,29 @@ export const TopSellers: React.FC = () => {
             ) : (
               <><BarChart2 size={16} /> Extract Metadata</>
             )}
+          </button>
+
+          <div style={{ width: '1px', height: '24px', background: 'var(--border-color)' }}></div>
+
+          <button 
+            onClick={() => setSelectedIndices(new Set())}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--text-3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '0.25rem',
+              borderRadius: '50%',
+              transition: 'background 0.2s'
+            }}
+            title="Deselect all"
+            onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.05)'; }}
+            onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            <X size={16} />
           </button>
         </div>
       )}

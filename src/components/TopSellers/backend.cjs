@@ -391,7 +391,7 @@ function registerTopSellersIPC(ipcMain, BrowserWindow) {
                 const html = document.documentElement.outerHTML;
                 let keywords = [];
                 
-                // 1. Extract directly from Apollo / Redux state in HTML
+                // 1. Extract directly from Apollo / Redux state in HTML (Adobe Stock and Shutterstock)
                 const match = html.match(/"keywords":\\[(.*?)\\]/);
                 if (match) {
                     try {
@@ -401,18 +401,113 @@ function registerTopSellersIPC(ipcMain, BrowserWindow) {
                     }
                 }
 
+                // Clean and normalize keywords
+                keywords = keywords.map(k => k.replace(/\\s+/g, ' ').trim()).filter(Boolean);
+
+                // Filter out Adobe Firefly / Stock navigation promotional keywords and UI noise
+                const headerPromos = new Set([
+                  "image generation",
+                  "change background",
+                  "expand",
+                  "change color",
+                  "change mood",
+                  "type to edit",
+                  "bulk edit",
+                  "generative fill",
+                  "text to image",
+                  "find similar",
+                  "see more",
+                  "download",
+                  "share",
+                  "license",
+                  "free trial",
+                  "my collections",
+                  "collections",
+                  "pricing",
+                  "plans",
+                  "subscription",
+                  "login",
+                  "logout",
+                  "signin",
+                  "signout",
+                  "signup",
+                  "register",
+                  "categories",
+                  "explore",
+                  "trending",
+                  "popular",
+                  "recent",
+                  "new",
+                  "english",
+                  "page",
+                  "next",
+                  "previous",
+                  "original"
+                ]);
+                keywords = keywords.filter(k => !headerPromos.has(k.toLowerCase()));
+
                 // 2. Try extracting from meta tags
                 if (keywords.length < 5) {
                    const meta = document.querySelector('meta[name="keywords"]');
                    if (meta && meta.content) {
-                      keywords = meta.content.split(',').map(k => k.trim());
+                      keywords = meta.content.split(',').map(k => k.replace(/\\s+/g, ' ').trim()).filter(Boolean);
+                      keywords = keywords.filter(k => !headerPromos.has(k.toLowerCase()));
                    }
                 }
 
+                // 3. Extract from tag/search links (Vecteezy, Freepik/Magnific)
+                if (keywords.length < 5) {
+                  const tagLinks = [];
+                  document.querySelectorAll('a').forEach(a => {
+                    // Exclude header, nav, footer, and sidebar elements
+                    if (a.closest('header') || a.closest('nav') || a.closest('footer') || a.closest('.header') || a.closest('.footer') || a.closest('[role="navigation"]')) {
+                      return;
+                    }
+                    const href = a.href || '';
+                    if (
+                      href.includes('#referrer=detail') ||
+                      href.includes('/search') || 
+                      href.includes('/tags/') || 
+                      href.includes('/tag/') || 
+                      (href.includes('/videos/') && !href.endsWith('/videos') && !href.endsWith('/videos/')) ||
+                      (href.includes('/images/') && !href.endsWith('/images') && !href.endsWith('/images/')) ||
+                      href.includes('/free-vector') || 
+                      href.includes('/vector-art') || 
+                      href.includes('/free-video') || 
+                      href.includes('/premium-video')
+                    ) {
+                      const text = a.textContent.replace(/\\s+/g, ' ').trim();
+                      if (
+                        text && 
+                        text.length < 30 && 
+                        !headerPromos.has(text.toLowerCase()) &&
+                        !text.toLowerCase().includes('log') && 
+                        !text.toLowerCase().includes('sign') && 
+                        !text.toLowerCase().includes('pricing') && 
+                        !text.toLowerCase().includes('magnific') &&
+                        !text.toLowerCase().includes('vecteezy') &&
+                        !text.toLowerCase().includes('vector') &&
+                        !text.toLowerCase().includes('english') &&
+                        !text.toLowerCase().includes('pусский') &&
+                        !text.toLowerCase().includes('日本語') &&
+                        !text.toLowerCase().includes('한국어')
+                      ) {
+                        tagLinks.push(text);
+                      }
+                    }
+                  });
+                  keywords = tagLinks;
+                }
+
+                // Clean keywords (remove empty items, keep unique)
+                keywords = [...new Set(keywords.map(k => k.toLowerCase()).filter(Boolean))];
+
                 // Title
-                const title = document.querySelector('h1')?.textContent.trim() || document.title.split('|')[0].trim();
+                const h1 = document.querySelector('h1')?.textContent.replace(/\\s+/g, ' ').trim() || '';
+                const docTitle = document.title.split('|')[0].replace(/\\s+/g, ' ').trim();
+                const title = h1 || docTitle;
                 
-                return { title, keywords: [...new Set(keywords)] };
+                return { title, keywords };
               })();
             `);
             resolve({ success: true, data });
@@ -732,7 +827,7 @@ function registerTopSellersIPC(ipcMain, BrowserWindow) {
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
-          sandbox: false,
+          sandbox: true,
         },
       });
 
@@ -1030,29 +1125,43 @@ function registerTopSellersIPC(ipcMain, BrowserWindow) {
           try {
             const videoUrl = await scraperWindow.webContents.executeJavaScript(`
               (() => {
+                // Extract the unique numeric asset ID from the current page URL
+                const urlMatch = window.location.href.match(/\\/(\\d+)(?:\\b|$|\\?|#)/);
+                const assetId = urlMatch ? urlMatch[1] : '';
+
                 // 1. Collect all video and source src elements
                 const candidates = [];
                 document.querySelectorAll('video, source').forEach(el => {
                   const src = el.src || el.getAttribute('data-src') || el.getAttribute('data-lazy-src') || '';
                   if (src && !src.startsWith('blob:') && !src.startsWith('data:')) {
-                    candidates.push(src);
+                    // Exclude generic header promotional template videos
+                    if (!src.includes('supernav') && !src.includes('slp-statics')) {
+                      candidates.push(src);
+                    }
                   }
                 });
 
-                // 2. Prioritize actual video file streams hosted on CDNs
+                // 2. Prioritize the video stream containing the matching asset ID
                 const realVideo = candidates.find(src => 
+                  (assetId && src.includes(assetId)) &&
+                  (src.includes('.mp4') || src.includes('.webm') || src.includes('ftcdn.net') || src.includes('picdn.net'))
+                );
+                if (realVideo) return realVideo;
+
+                // 3. Fallback to generic preview video if asset ID match was not found
+                const fallbackRealVideo = candidates.find(src => 
                   src.includes('.mp4') || 
                   src.includes('.webm') || 
                   src.includes('ftcdn.net') || 
                   src.includes('picdn.net')
                 );
-                if (realVideo) return realVideo;
+                if (fallbackRealVideo) return fallbackRealVideo;
 
-                // 3. Fallback to any non-html webpage source
+                // 4. Fallback to any non-html webpage source
                 const fallback = candidates.find(src => !src.includes('stock.adobe.com') && !src.includes('shutterstock.com'));
                 if (fallback) return fallback;
 
-                // 4. Fallback to meta tags only if they contain direct video file streams
+                // 5. Fallback to meta tags only if they contain direct video file streams
                 const meta = document.querySelector('meta[property="og:video"]') || 
                              document.querySelector('meta[property="og:video:secure_url"]') ||
                              document.querySelector('meta[name="twitter:player"]');

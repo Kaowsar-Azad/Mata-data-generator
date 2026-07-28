@@ -56,3 +56,8 @@ The app must be protected against reverse engineering and common vulnerabilities
 - **Rule:** Do NOT modify, rewrite, delete, or append to any file within the Microstock Uploader (FTP) section, specifically `src/components/FtpUploader.jsx`, `src/components/FtpConfigManager.jsx`, or related FTP upload logic under any circumstances.
 - **Exception:** You may only modify these files if the user explicitly grants permission in the direct chat transcript (e.g., "I permit you to modify the FTP uploader" or "Unlock the Microstock Uploader").
 - **Action:** If changes are needed in this section, you MUST ask the user for permission in the chat first. Do not modify speculatively.
+
+## STRICT POLICY: Top Sellers Frozen Guard
+- **Rule:** Do NOT modify, rewrite, delete, or append to any file within the `src/components/TopSellers/` directory or change Top Sellers files inside `backend.cjs` under any circumstances.
+- **Exception:** You may only modify these files if the user explicitly writes the text `"Top Sellers Section Unlock"` in the direct chat transcript.
+- **Action:** If changes are needed in this section, you MUST ask the user for permission in the chat first. Do not modify speculatively.

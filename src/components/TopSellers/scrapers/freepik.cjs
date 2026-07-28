@@ -14,7 +14,12 @@ async function scrapeTextSearch({ query, order, contentType, gentech, page = 1 }
 
       let url = `https://www.magnific.com/search?query=${encodeURIComponent(query)}&page=${targetPage}`;
       if (contentType && contentType !== 'all') {
-        url += `&type=${contentType}`;
+        if (contentType === 'video') {
+          const pathParam = query.trim().replace(/\s+/g, '-');
+          url = `https://www.magnific.com/videos/${encodeURIComponent(pathParam)}?page=${targetPage}`;
+        } else {
+          url += `&type=${contentType}`;
+        }
       }
       fileLog(`[Freepik Scraper] Loading URL: ${url}`);
       scraperWindow.loadURL(url, { userAgent });

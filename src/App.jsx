@@ -42,7 +42,8 @@ const TabWrapper = ({ active, children, isFlexColumn, padding }) => (
       width: '100%',
       height: '100%',
       padding: padding || 0,
-      overflow: active ? 'auto' : 'hidden'
+      overflowX: 'hidden',
+      overflowY: active ? 'auto' : 'hidden'
     }}
   >
     {children}

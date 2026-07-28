@@ -170,7 +170,7 @@ body {
   border-radius: 1rem;
 }
 
-.card { padding: 1.25rem; transition: all 0.2s ease; }
+.card { padding: 1.25rem; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
 .card:hover {
   border-color: rgba(37, 99, 235, 0.12);
   box-shadow: 0 2px 12px rgba(0,0,0,0.05), 0 0 0 1px rgba(37,99,235,0.06);
@@ -572,6 +572,7 @@ input[type="checkbox"].ios-toggle:disabled {
   align-items: flex-start;
   padding: 0.85rem;
   position: relative;
+  overflow: hidden;
 }
 
 /* Thumbnail */

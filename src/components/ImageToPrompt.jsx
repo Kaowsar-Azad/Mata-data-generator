@@ -465,8 +465,9 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
                 <p className="text-xs italic text-muted mt-2">Awaiting AI analysis...</p>
               )}
               {img.status === "processing" && (
-                <p className="text-xs text-primary animate-pulse mt-2">
-                  🤖 Analyzing image details...
+                <p className="text-xs text-primary mt-2" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Analyzing image details...</span>
                 </p>
               )}
             </div>

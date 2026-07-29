@@ -2231,7 +2231,8 @@ ipcMain.handle('start-colab', async (event, url) => {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      partition: 'persist:colab'
+      partition: 'persist:colab',
+      sandbox: true
     },
     title: 'Cloud GPU Engine (Colab)'
   });
@@ -2574,7 +2575,8 @@ ipcMain.handle('start-kaggle', async (event, url) => {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      partition: 'persist:colab' // Share same partition so it doesn't need double login
+      partition: 'persist:colab', // Share same partition so it doesn't need double login
+      sandbox: true
     },
     title: 'Kaggle Fallback GPU Engine'
   });

@@ -16,7 +16,7 @@ The file `src/services/apis/gemini.js` is strictly **FROZEN and LOCKED**.
 
 ## STRICT POLICY: SEO & User-Friendly Code Guidelines
 The entire app must strictly adhere to the following SEO and user-friendly guidelines:
-1. **Semantic HTML:** The landing page must use only ONE `<h1>` tag containing the app's main name and core keyword. Use `<h2>`, `<h3>`, etc., sequentially for feature descriptions.
+1. **Semantic HTML:** The landing page must use only ONE `<h1>` tag containing the app's main name and core keyword. Use `<h2>`, `<h3>`, etc., sequentially for feature descriptions. In addition, the Top Sellers section must NOT contain any `<h1>` or `<h2>` tags under any circumstances. Use `<h3>` or other lower-level semantic tags (or custom styled elements) instead.
 2. **Core Web Vitals:** Optimize for LCP (< 2.5s), INP (< 200ms), and CLS (< 0.1). Ensure fast loading times and stable layouts.
 3. **Mobile-Responsive:** The app MUST be fully responsive and optimized for all devices, prioritizing a mobile-first indexing approach.
 4. **Descriptive URLs:** Keep routing URLs short and keyword-rich. Avoid random numbers in the URL.

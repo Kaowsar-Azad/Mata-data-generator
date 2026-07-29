@@ -151,6 +151,16 @@ function App() {
     localStorage.setItem("selected_api_providers", JSON.stringify(apiProvider));
   }, [apiProvider]);
 
+  useEffect(() => {
+    const handleSwitchTab = (e) => {
+      if (e.detail && e.detail.tab) {
+        setActiveTab(e.detail.tab);
+      }
+    };
+    window.addEventListener('switch-tab', handleSwitchTab);
+    return () => window.removeEventListener('switch-tab', handleSwitchTab);
+  }, []);
+
   return (
     <div className="dashboard-layout">
       {/* ─── LEFT SIDEBAR ─── */}

@@ -8,6 +8,8 @@ async function scrapeTextSearch({ query, order, contentType, gentech, page = 1 }
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
+        disableBlinkFeatures: 'AutomationControlled',
+        sandbox: true
       }
     });
 
@@ -32,6 +34,14 @@ async function scrapeTextSearch({ query, order, contentType, gentech, page = 1 }
 
     fileLog(`[Search Scraper] Loading URL: ${url}`);
     scraperWindow.loadURL(url, { userAgent });
+
+    // Safety timeout
+    const safetyTimeout = setTimeout(() => {
+      if (scraperWindow && !scraperWindow.isDestroyed()) {
+        scraperWindow.destroy();
+        resolve({ success: false, error: 'Timeout waiting for Adobe Stock to load.' });
+      }
+    }, 45000);
 
     scraperWindow.webContents.on('dom-ready', () => {
       setTimeout(async () => {
@@ -89,20 +99,13 @@ async function scrapeTextSearch({ query, order, contentType, gentech, page = 1 }
           console.error("Scraper Error:", err);
           resolve({ success: false, error: err.message });
         } finally {
+          clearTimeout(safetyTimeout);
           if (scraperWindow && !scraperWindow.isDestroyed()) {
             scraperWindow.destroy();
           }
         }
       }, 7000); // Increased wait time to 7 seconds for deeper scroll
     });
-
-    // Safety timeout
-    setTimeout(() => {
-      if (scraperWindow && !scraperWindow.isDestroyed()) {
-        scraperWindow.destroy();
-        resolve({ success: false, error: 'Timeout waiting for Adobe Stock to load.' });
-      }
-    }, 20000);
   });
 }
 

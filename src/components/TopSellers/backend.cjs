@@ -1,28 +1,44 @@
 function registerTopSellersIPC(ipcMain, BrowserWindow) {
-  ipcMain.handle('scrape-top-sellers', async (event, payload) => {
-    const mainModule = require('../../../electron/main.cjs') || {};
+  ipcMain.handle("scrape-top-sellers", async (event, payload) => {
+    const mainModule = require("../../../electron/main.cjs") || {};
     const fileLog = mainModule.fileLog || console.log;
 
-    const { platform, query, order, contentType, gentech, page } = typeof payload === 'object' ? payload : { query: payload, platform: 'adobe-stock', page: 1 };
-    
+    const { platform, query, order, contentType, gentech, page } =
+      typeof payload === "object"
+        ? payload
+        : { query: payload, platform: "adobe-stock", page: 1 };
+
     try {
-      if (platform === 'adobe-stock') {
-        const { scrapeTextSearch } = require('./scrapers/adobeStock.cjs');
-        return await scrapeTextSearch({ query, order, contentType, gentech, page }, BrowserWindow, fileLog);
-      } else if (platform === 'shutterstock') {
-        const { scrapeTextSearch } = require('./scrapers/shutterstock.cjs');
-        return await scrapeTextSearch({ query, order, contentType, gentech, page }, BrowserWindow, fileLog);
-      } else if (platform === 'freepik') {
-        const { scrapeTextSearch } = require('./scrapers/freepik.cjs');
-        return await scrapeTextSearch({ query, order, contentType, gentech, page }, BrowserWindow, fileLog);
-      } else if (platform === 'getty') {
-        const { scrapeTextSearch } = require('./scrapers/gettyImages.cjs');
-        return await scrapeTextSearch({ query, order, contentType, gentech, page }, BrowserWindow, fileLog);
-      } else if (platform === 'dreamstime') {
-        const { scrapeTextSearch } = require('./scrapers/dreamstime.cjs');
-        return await scrapeTextSearch({ query, order, contentType, gentech, page }, BrowserWindow, fileLog);
+      if (platform === "adobe-stock") {
+        const { scrapeTextSearch } = require("./scrapers/adobeStock.cjs");
+        return await scrapeTextSearch(
+          { query, order, contentType, gentech, page },
+          BrowserWindow,
+          fileLog,
+        );
+      } else if (platform === "shutterstock") {
+        const { scrapeTextSearch } = require("./scrapers/shutterstock.cjs");
+        return await scrapeTextSearch(
+          { query, order, contentType, gentech, page },
+          BrowserWindow,
+          fileLog,
+        );
+      } else if (platform === "freepik") {
+        const { scrapeTextSearch } = require("./scrapers/freepik.cjs");
+        return await scrapeTextSearch(
+          { query, order, contentType, gentech, page },
+          BrowserWindow,
+          fileLog,
+        );
+      } else if (platform === "vecteezy") {
+        const { scrapeTextSearch } = require("./scrapers/vecteezy.cjs");
+        return await scrapeTextSearch(
+          { query, order, contentType, gentech, page },
+          BrowserWindow,
+          fileLog,
+        );
       } else {
-        return { success: false, error: 'Platform not supported yet.' };
+        return { success: false, error: "Platform not supported yet." };
       }
     } catch (err) {
       fileLog(`[Scraper Router] Error: ${err.message}`);
@@ -30,42 +46,47 @@ function registerTopSellersIPC(ipcMain, BrowserWindow) {
     }
   });
 
-  ipcMain.handle('scrape-adobe-stock-by-image', async (event, filePath) => {
-    const path = require('path');
-    const fs = require('fs');
-    const os = require('os');
-    const LOG_FILE = path.join(os.tmpdir(), 'imagemetadata_electron.log');
-    
+  ipcMain.handle("scrape-adobe-stock-by-image", async (event, filePath, contentType) => {
+    if (contentType === "video") contentType = "all";
+    const path = require("path");
+    const fs = require("fs");
+    const os = require("os");
+    const LOG_FILE = path.join(os.tmpdir(), "imagemetadata_electron.log");
+
     const fileLog = (...args) => {
       try {
-        const msg = `[${new Date().toISOString()}] ${args.map(a => a instanceof Error ? a.stack || a.message : (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`;
+        const msg = `[${new Date().toISOString()}] ${args.map((a) => (a instanceof Error ? a.stack || a.message : typeof a === "object" ? JSON.stringify(a) : a)).join(" ")}\n`;
         fs.appendFileSync(LOG_FILE, msg);
         console.log(...args);
       } catch (e) {
-        console.error('Logging failed:', e);
+        console.error("Logging failed:", e);
       }
     };
-    
+
     return new Promise((resolve) => {
       fileLog(`[Visual Search] Starting search for file: ${filePath}`);
-      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-      
+      const userAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
       let scraperWindow = new BrowserWindow({
         show: false,
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
-        }
+          sandbox: true,
+        },
       });
 
       let completed = false;
+      let safetyTimeout;
 
       // Clean cleanup helper
       const cleanupAndResolve = (result) => {
         if (completed) return;
         completed = true;
+        if (safetyTimeout) clearTimeout(safetyTimeout);
         fileLog(`[Visual Search] Resolving task. Success: ${result.success}`);
-        
+
         try {
           if (scraperWindow && !scraperWindow.isDestroyed()) {
             scraperWindow.destroy();
@@ -79,9 +100,11 @@ function registerTopSellersIPC(ipcMain, BrowserWindow) {
       // Handler for processing the search results after redirect
       const scrapeResultsPage = async () => {
         try {
-          fileLog(`[Visual Search] Results page URL: ${scraperWindow.webContents.getURL()}`);
+          fileLog(
+            `[Visual Search] Results page URL: ${scraperWindow.webContents.getURL()}`,
+          );
           fileLog(`[Visual Search] Scrolling down to load lazy assets...`);
-          
+
           // Scroll down smoothly to trigger lazy load
           await scraperWindow.webContents.executeJavaScript(`
             (async () => {
@@ -132,7 +155,9 @@ function registerTopSellersIPC(ipcMain, BrowserWindow) {
             })();
           `);
 
-          fileLog(`[Visual Search] Scraped successfully! Images found: ${debugInfo.images.length}`);
+          fileLog(
+            `[Visual Search] Scraped successfully! Images found: ${debugInfo.images.length}`,
+          );
           cleanupAndResolve({ success: true, images: debugInfo.images });
         } catch (err) {
           fileLog(`[Visual Search] Scrape execution failed: ${err.message}`);
@@ -140,30 +165,43 @@ function registerTopSellersIPC(ipcMain, BrowserWindow) {
         }
       };
 
-      // Watch redirects to visual search result page
-      scraperWindow.webContents.on('did-redirect-navigation', (event, url) => {
-        fileLog(`[Visual Search] Redirected to: ${url}`);
-        if (url.includes('visual-search') || url.includes('/search/images')) {
-          // Listen to the load of the results page
-          scraperWindow.webContents.once('did-finish-load', () => {
-            fileLog(`[Visual Search] Redirect target page loaded.`);
-            scrapeResultsPage();
-          });
+      let filterApplied = false;
+      scraperWindow.webContents.on("did-finish-load", () => {
+        if (completed) return;
+        const currentUrl = scraperWindow.webContents.getURL();
+        fileLog(`[Visual Search] Page finished loading: ${currentUrl}`);
+        
+        if (currentUrl.includes("visual-search") || currentUrl.includes("/search")) {
+          if (contentType && contentType !== "all" && !filterApplied) {
+            const resolvedType = contentType === "vector" ? "zip_vector" : contentType;
+            if (!currentUrl.includes(`content_type:${resolvedType}`)) {
+              filterApplied = true;
+              const targetUrl = currentUrl + `&filters[content_type:${resolvedType}]=1`;
+              fileLog(`[Visual Search] Appending filter and reloading: ${targetUrl}`);
+              scraperWindow.loadURL(targetUrl, { userAgent });
+              return;
+            }
+          }
+          
+          scrapeResultsPage();
         }
       });
 
       // Register listener BEFORE loadURL
-      scraperWindow.webContents.once('did-finish-load', () => {
+      scraperWindow.webContents.once("did-finish-load", () => {
         fileLog(`[Visual Search] Initial page loaded. Triggering upload flow.`);
-        
+
         // Use a loop check for element instead of fixed setTimeout
         let checkAttempts = 0;
         const clickAndInject = async () => {
           if (completed) return;
           try {
-            fileLog(`[Visual Search] Attempting to click camera button (Attempt ${checkAttempts + 1})...`);
-            
-            const btnExists = await scraperWindow.webContents.executeJavaScript(`
+            fileLog(
+              `[Visual Search] Attempting to click camera button (Attempt ${checkAttempts + 1})...`,
+            );
+
+            const btnExists = await scraperWindow.webContents
+              .executeJavaScript(`
               (function() {
                 const btn = document.querySelector('button[data-t="find-similar-button"]');
                 if (btn) {
@@ -175,57 +213,84 @@ function registerTopSellersIPC(ipcMain, BrowserWindow) {
             `);
 
             if (btnExists) {
-              fileLog(`[Visual Search] Camera button clicked. Waiting for file input...`);
-              
+              fileLog(
+                `[Visual Search] Camera button clicked. Waiting for file input...`,
+              );
+
               // Wait for file input to appear
               let inputAttempts = 0;
               const injectFile = async () => {
                 if (completed) return;
                 try {
-                  const inputExists = await scraperWindow.webContents.executeJavaScript(`
+                  const inputExists = await scraperWindow.webContents
+                    .executeJavaScript(`
                     !!document.querySelector('input[type="file"]')
                   `);
 
                   if (inputExists) {
-                    fileLog(`[Visual Search] File input rendered. Attaching debugger...`);
-                    
+                    fileLog(
+                      `[Visual Search] File input rendered. Attaching debugger...`,
+                    );
+
                     try {
-                      scraperWindow.webContents.debugger.attach('1.3');
+                      scraperWindow.webContents.debugger.attach("1.3");
                     } catch (dbgErr) {
-                      fileLog(`[Visual Search] Debugger attach warning (might be already attached): ${dbgErr.message}`);
+                      fileLog(
+                        `[Visual Search] Debugger attach warning (might be already attached): ${dbgErr.message}`,
+                      );
                     }
 
                     let injectSuccess = false;
                     let retryCount = 0;
-                    
+
                     while (!injectSuccess && retryCount < 8) {
                       try {
-                        fileLog(`[Visual Search] Fetching fresh DOM document (Try ${retryCount + 1})...`);
-                        const { root } = await scraperWindow.webContents.debugger.sendCommand('DOM.getDocument');
-                        
-                        const { nodeId } = await scraperWindow.webContents.debugger.sendCommand('DOM.querySelector', {
-                          nodeId: root.nodeId,
-                          selector: 'input[type="file"]'
-                        });
+                        fileLog(
+                          `[Visual Search] Fetching fresh DOM document (Try ${retryCount + 1})...`,
+                        );
+                        const { root } =
+                          await scraperWindow.webContents.debugger.sendCommand(
+                            "DOM.getDocument",
+                          );
+
+                        const { nodeId } =
+                          await scraperWindow.webContents.debugger.sendCommand(
+                            "DOM.querySelector",
+                            {
+                              nodeId: root.nodeId,
+                              selector: 'input[type="file"]',
+                            },
+                          );
 
                         if (nodeId) {
-                          fileLog(`[Visual Search] Injecting file path using CDP...`);
-                          await scraperWindow.webContents.debugger.sendCommand('DOM.setFileInputFiles', {
-                            files: [filePath],
-                            nodeId: nodeId
-                          });
+                          fileLog(
+                            `[Visual Search] Injecting file path using CDP...`,
+                          );
+                          await scraperWindow.webContents.debugger.sendCommand(
+                            "DOM.setFileInputFiles",
+                            {
+                              files: [filePath],
+                              nodeId: nodeId,
+                            },
+                          );
                           injectSuccess = true;
-                          fileLog(`[Visual Search] File injected successfully.`);
+                          fileLog(
+                            `[Visual Search] File injected successfully.`,
+                          );
                         } else {
-                          fileLog(`[Visual Search] QuerySelector did not return a nodeId.`);
+                          fileLog(
+                            `[Visual Search] QuerySelector did not return a nodeId.`,
+                          );
                           retryCount++;
-                          await new Promise(r => setTimeout(r, 200));
+                          await new Promise((r) => setTimeout(r, 200));
                         }
                       } catch (err) {
-                        fileLog(`[Visual Search] CDP injection attempt ${retryCount + 1} failed: ${err.message}`);
+                        fileLog(
+                          `[Visual Search] CDP injection attempt ${retryCount + 1} failed: ${err.message}`,
+                        );
                         retryCount++;
                         // Wait a bit before retrying to allow DOM to settle
-                        await new Promise(r => setTimeout(r, 250));
+                        await new Promise((r) => setTimeout(r, 250));
                       }
                     }
 
@@ -234,7 +299,11 @@ function registerTopSellersIPC(ipcMain, BrowserWindow) {
                     } catch (e) {}
 
                     if (!injectSuccess) {
-                      cleanupAndResolve({ success: false, error: 'Could not inject file path into Adobe Stock after 8 attempts.' });
+                      cleanupAndResolve({
+                        success: false,
+                        error:
+                          "Could not inject file path into Adobe Stock after 8 attempts.",
+                      });
                       return;
                     }
                   } else {
@@ -242,22 +311,30 @@ function registerTopSellersIPC(ipcMain, BrowserWindow) {
                     if (inputAttempts < 15) {
                       setTimeout(injectFile, 200); // Poll every 200ms
                     } else {
-                      cleanupAndResolve({ success: false, error: 'File input did not render on Adobe Stock.' });
+                      cleanupAndResolve({
+                        success: false,
+                        error: "File input did not render on Adobe Stock.",
+                      });
                     }
                   }
                 } catch (err) {
-                  fileLog(`[Visual Search] Injection process failed: ${err.message}`);
+                  fileLog(
+                    `[Visual Search] Injection process failed: ${err.message}`,
+                  );
                   cleanupAndResolve({ success: false, error: err.message });
                 }
               };
-              
+
               injectFile();
             } else {
               checkAttempts++;
               if (checkAttempts < 15) {
                 setTimeout(clickAndInject, 200); // Try again in 200ms
               } else {
-                cleanupAndResolve({ success: false, error: 'Camera button not found on page.' });
+                cleanupAndResolve({
+                  success: false,
+                  error: "Camera button not found on page.",
+                });
               }
             }
           } catch (err) {
@@ -269,32 +346,44 @@ function registerTopSellersIPC(ipcMain, BrowserWindow) {
         clickAndInject();
       });
 
-      scraperWindow.loadURL('https://stock.adobe.com', { userAgent });
+      scraperWindow.loadURL("https://stock.adobe.com", { userAgent });
 
       // Safety timeout: 45 seconds total if something completely hangs
-      setTimeout(() => {
+      safetyTimeout = setTimeout(() => {
         if (!completed) {
           fileLog(`[Visual Search] Global timeout reached!`);
-          cleanupAndResolve({ success: false, error: 'Timeout waiting for visual search to complete.' });
+          cleanupAndResolve({
+            success: false,
+            error: "Timeout waiting for visual search to complete.",
+          });
         }
       }, 45000);
     });
   });
 
-  ipcMain.handle('adobe-stock-details', async (event, url) => {
+  ipcMain.handle("adobe-stock-details", async (event, url) => {
     return new Promise((resolve) => {
-      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+      const userAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
       let scraperWindow = new BrowserWindow({
         show: false,
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true,
-        }
+          sandbox: true,
+        },
       });
+
+      const safetyTimeout = setTimeout(() => {
+        if (scraperWindow && !scraperWindow.isDestroyed()) {
+          scraperWindow.destroy();
+          resolve({ success: false, error: "Timeout" });
+        }
+      }, 15000);
 
       scraperWindow.loadURL(url, { userAgent });
 
-      scraperWindow.webContents.on('dom-ready', () => {
+      scraperWindow.webContents.on("dom-ready", () => {
         setTimeout(async () => {
           try {
             const data = await scraperWindow.webContents.executeJavaScript(`
@@ -330,19 +419,667 @@ function registerTopSellersIPC(ipcMain, BrowserWindow) {
           } catch (err) {
             resolve({ success: false, error: err.message });
           } finally {
+            clearTimeout(safetyTimeout);
             if (scraperWindow && !scraperWindow.isDestroyed()) {
               scraperWindow.destroy();
             }
           }
         }, 3000); // Wait for page to render
       });
+    });
+  });
 
-      setTimeout(() => {
-        if (scraperWindow && !scraperWindow.isDestroyed()) {
-          scraperWindow.destroy();
-          resolve({ success: false, error: 'Timeout' });
+  ipcMain.handle("scrape-vecteezy-by-image", async (event, filePath, contentType) => {
+    if (contentType === "video") contentType = "all";
+    const path = require("path");
+    const fs = require("fs");
+    const os = require("os");
+    const LOG_FILE = path.join(os.tmpdir(), "imagemetadata_electron.log");
+
+    const fileLog = (...args) => {
+      try {
+        const msg = `[${new Date().toISOString()}] ${args.map((a) => (a instanceof Error ? a.stack || a.message : typeof a === "object" ? JSON.stringify(a) : a)).join(" ")}\n`;
+        fs.appendFileSync(LOG_FILE, msg);
+        console.log(...args);
+      } catch (e) {}
+    };
+
+    return new Promise((resolve) => {
+      fileLog(`[Visual Search] Starting search for file: ${filePath}`);
+      const userAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+      let scraperWindow = new BrowserWindow({
+        show: false,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+        },
+      });
+
+      let completed = false;
+      let safetyTimeout;
+
+      const cleanupAndResolve = (result) => {
+        if (completed) return;
+        completed = true;
+        if (safetyTimeout) clearTimeout(safetyTimeout);
+        fileLog(`[Visual Search] Resolving task. Success: ${result.success}`);
+        try {
+          if (scraperWindow && !scraperWindow.isDestroyed()) {
+            scraperWindow.destroy();
+          }
+        } catch (e) {}
+        resolve(result);
+      };
+
+      const scrapeResultsPage = async () => {
+        try {
+          fileLog(`[Visual Search] Scraping image metadata from Vecteezy...`);
+
+          await scraperWindow.webContents.executeJavaScript(`
+            (async () => {
+              for (let i = 1; i <= 6; i++) {
+                window.scrollTo(0, i * 600);
+                await new Promise(r => setTimeout(r, 150));
+              }
+            })();
+          `);
+
+          const debugInfo = await scraperWindow.webContents.executeJavaScript(`
+            (async () => {
+              const uniqueImages = new Map();
+              document.querySelectorAll('img').forEach(img => {
+                const src = img.getAttribute('data-src') || img.src || img.srcset || '';
+                if (src && (src.includes('vecteezy_') || src.includes('ezimg') || src.includes('system/resources/thumbnails'))) {
+                  const alt = img.alt || 'Vecteezy Image';
+                  const link = img.closest('a');
+                  const detailUrl = link ? link.href : '';
+                  if (!src.includes('term-bg')) {
+                    const listItem = img.closest('li');
+                    const videoUrl = listItem ? (listItem.getAttribute('data-video-url') || '') : '';
+                    uniqueImages.set(src, { src, alt, detailUrl, videoUrl });
+                  }
+                }
+              });
+
+              return {
+                title: document.title,
+                images: Array.from(uniqueImages.values()).slice(0, 30)
+              };
+            })();
+          `);
+
+          fileLog(
+            `[Visual Search] Scraped successfully! Images found: ${debugInfo.images.length}`,
+          );
+          cleanupAndResolve({ success: true, images: debugInfo.images });
+        } catch (err) {
+          fileLog(`[Visual Search] Scrape execution failed: ${err.message}`);
+          cleanupAndResolve({ success: false, error: err.message });
+        }
+      };
+
+      let filterApplied = false;
+      const handleNavigation = (event, url) => {
+        if (url.includes("/similar") || url.includes("/search")) {
+          if (contentType && contentType !== "all" && !filterApplied) {
+            const resolvedType = contentType === "vector" ? "vector" : contentType === "video" ? "video" : "photo";
+            if (!url.includes(`type=${resolvedType}`)) {
+              filterApplied = true;
+              let targetUrl = url;
+              if (targetUrl.includes("type=")) {
+                targetUrl = targetUrl.replace(/type=[^&]*/, `type=${resolvedType}`);
+              } else {
+                targetUrl = targetUrl + (targetUrl.includes("?") ? "&" : "?") + `type=${resolvedType}`;
+              }
+              fileLog(`[Visual Search] Appending Vecteezy filter and reloading: ${targetUrl}`);
+              scraperWindow.loadURL(targetUrl, { userAgent });
+              return;
+            }
+          }
+
+          fileLog(`[Visual Search] Vecteezy redirected to results: ${url}`);
+          // Remove listeners to prevent multiple calls if both fire or if multiple in-page navigations occur
+          scraperWindow.webContents.removeListener("did-navigate", handleNavigation);
+          scraperWindow.webContents.removeListener("did-navigate-in-page", handleNavigation);
+          
+          setTimeout(() => {
+            scrapeResultsPage();
+          }, 3000); // Wait 3 seconds for results to load
+        }
+      };
+
+      scraperWindow.webContents.on("did-navigate", handleNavigation);
+      scraperWindow.webContents.on("did-navigate-in-page", handleNavigation);
+
+      scraperWindow.loadURL("https://www.vecteezy.com", { userAgent });
+
+      scraperWindow.webContents.once("did-finish-load", () => {
+        fileLog(
+          `[Visual Search] Vecteezy Initial page loaded. Triggering upload flow.`,
+        );
+
+        let checkAttempts = 0;
+        const clickAndInject = async () => {
+          if (completed) return;
+          try {
+            fileLog(
+              `[Visual Search] Attempting to click camera button (Attempt ${checkAttempts + 1})...`,
+            );
+
+            const btnExists = await scraperWindow.webContents
+              .executeJavaScript(`
+              (function() {
+                const btn = document.querySelector('.search-by-image') || document.querySelector('#sbi_button');
+                if (btn) {
+                  btn.click();
+                  return true;
+                }
+                return false;
+              })();
+            `);
+
+            if (btnExists) {
+              fileLog(
+                `[Visual Search] Camera button clicked. Waiting for file input...`,
+              );
+
+              let inputAttempts = 0;
+              const injectFile = async () => {
+                if (completed) return;
+                try {
+                  const inputExists = await scraperWindow.webContents
+                    .executeJavaScript(`
+                    !!document.querySelector('input.dz-hidden-input') || !!document.querySelector('input[type="file"]')
+                  `);
+
+                  if (inputExists) {
+                    fileLog(
+                      `[Visual Search] File input rendered. Attaching debugger...`,
+                    );
+                    try {
+                      scraperWindow.webContents.debugger.attach("1.3");
+                    } catch (dbgErr) {}
+
+                    let injectSuccess = false;
+                    let retryCount = 0;
+
+                    while (!injectSuccess && retryCount < 8) {
+                      try {
+                        const { root } =
+                          await scraperWindow.webContents.debugger.sendCommand(
+                            "DOM.getDocument",
+                            { depth: -1 },
+                          );
+                        const { nodeId } =
+                          await scraperWindow.webContents.debugger.sendCommand(
+                            "DOM.querySelector",
+                            {
+                              nodeId: root.nodeId,
+                              selector:
+                                'input.dz-hidden-input, input[type="file"]',
+                            },
+                          );
+
+                        if (nodeId) {
+                          await scraperWindow.webContents.debugger.sendCommand(
+                            "DOM.setFileInputFiles",
+                            {
+                              files: [filePath],
+                              nodeId: nodeId,
+                            },
+                          );
+                          injectSuccess = true;
+
+                          await scraperWindow.webContents.executeJavaScript(`
+                            (function() {
+                              const input = document.querySelector('input.dz-hidden-input') || document.querySelector('input[type="file"]');
+                              if (input) {
+                                input.dispatchEvent(new Event('change', { bubbles: true }));
+                              }
+                            })();
+                          `);
+                        } else {
+                          retryCount++;
+                          await new Promise((r) => setTimeout(r, 200));
+                        }
+                      } catch (err) {
+                        retryCount++;
+                        await new Promise((r) => setTimeout(r, 250));
+                      }
+                    }
+
+                    try {
+                      scraperWindow.webContents.debugger.detach();
+                    } catch (e) {}
+
+                    if (!injectSuccess) {
+                      cleanupAndResolve({
+                        success: false,
+                        error: "Could not inject file path into Vecteezy.",
+                      });
+                    }
+                  } else {
+                    inputAttempts++;
+                    if (inputAttempts < 15) setTimeout(injectFile, 200);
+                    else
+                      cleanupAndResolve({
+                        success: false,
+                        error: "File input did not render on Vecteezy.",
+                      });
+                  }
+                } catch (err) {
+                  cleanupAndResolve({ success: false, error: err.message });
+                }
+              };
+
+              injectFile();
+            } else {
+              checkAttempts++;
+              if (checkAttempts < 15) setTimeout(clickAndInject, 500);
+              else
+                cleanupAndResolve({
+                  success: false,
+                  error: "Camera button not found on Vecteezy.",
+                });
+            }
+          } catch (err) {
+            cleanupAndResolve({ success: false, error: err.message });
+          }
+        };
+
+        clickAndInject();
+      });
+
+      safetyTimeout = setTimeout(() => {
+        if (!completed) {
+          fileLog(`[Visual Search] Global timeout reached!`);
+          cleanupAndResolve({
+            success: false,
+            error: "Timeout waiting for visual search to complete.",
+          });
+        }
+      }, 120000); // Increased timeout to 120 seconds for slow uploads
+    });
+  });
+
+  ipcMain.handle("scrape-shutterstock-by-image", async (event, filePath, contentType) => {
+    if (contentType === "video") contentType = "all";
+    const path = require("path");
+    const fs = require("fs");
+    const os = require("os");
+    const LOG_FILE = path.join(os.tmpdir(), "imagemetadata_electron.log");
+
+    const fileLog = (...args) => {
+      try {
+        const msg = `[${new Date().toISOString()}] ${args.map((a) => (a instanceof Error ? a.stack || a.message : typeof a === "object" ? JSON.stringify(a) : a)).join(" ")}\n`;
+        fs.appendFileSync(LOG_FILE, msg);
+        console.log(...args);
+      } catch (e) {}
+    };
+
+    return new Promise(async (resolve) => {
+      fileLog(`[Visual Search] Starting search for file: ${filePath}`);
+      const userAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+      let scraperWindow = new BrowserWindow({
+        show: false,
+        width: 1280,
+        height: 800,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: false,
+        },
+      });
+
+      let completed = false;
+      let safetyTimeout;
+
+      const cleanupAndResolve = (result) => {
+        if (completed) return;
+        completed = true;
+        if (safetyTimeout) clearTimeout(safetyTimeout);
+        fileLog(`[Visual Search] Resolving task. Success: ${result.success}`);
+        try {
+          if (scraperWindow && !scraperWindow.isDestroyed()) {
+            scraperWindow.destroy();
+          }
+        } catch (e) {}
+        resolve(result);
+      };
+
+      const scrapeResultsPage = async () => {
+        if (completed) return;
+        try {
+          fileLog(
+            `[Visual Search] Scraping image metadata from Shutterstock...`,
+          );
+
+          await scraperWindow.webContents.executeJavaScript(`
+            (async () => {
+              for (let i = 1; i <= 6; i++) {
+                window.scrollTo(0, i * 600);
+                await new Promise(r => setTimeout(r, 150));
+              }
+            })();
+          `);
+
+          const debugInfo = await scraperWindow.webContents.executeJavaScript(`
+            (async () => {
+              const uniqueImages = new Map();
+              document.querySelectorAll('img').forEach(img => {
+                // Check if the image is actually visible in the DOM layout
+                if (img.offsetParent === null) return;
+
+                // Exclude the search-by-image pill thumbnail
+                const isPill = Array.from(img.classList || []).some(cls => cls.includes('pillThumbnail'));
+                if (isPill) return;
+
+                let src = img.getAttribute('data-src') || img.src || '';
+                if ((!src || src.startsWith('data:')) && img.srcset) {
+                  src = img.srcset.split(',')[0].trim().split(' ')[0];
+                }
+                if (src && !src.startsWith('data:') && (src.includes('shutterstock.com/image') || src.includes('260nw') || src.includes('600w') || src.includes('picdn.net'))) {
+                  const finalSrc = src.replace(/100nw|260nw/g, '600w');
+                  const alt = img.alt || 'Shutterstock Image';
+
+                  // Find the link to the image detail page in the card structure
+                  let link = img.closest('a');
+                  if (!link) {
+                    let current = img.parentElement;
+                    for (let depth = 0; depth < 3 && current; depth++) {
+                      link = current.querySelector('a');
+                      if (link) break;
+                      current = current.parentElement;
+                    }
+                  }
+                  const detailUrl = link ? link.href : '';
+
+                  if (!uniqueImages.has(finalSrc)) {
+                    uniqueImages.set(finalSrc, { src: finalSrc, alt, detailUrl });
+                  }
+                }
+              });
+
+              return {
+                title: document.title,
+                images: Array.from(uniqueImages.values()).slice(0, 30)
+              };
+            })();
+          `);
+
+          fileLog(
+            `[Visual Search] Scraped successfully! Images found: ${debugInfo.images.length}`,
+          );
+          cleanupAndResolve({ success: true, images: debugInfo.images });
+        } catch (err) {
+          fileLog(`[Visual Search] Scrape execution failed: ${err.message}`);
+          cleanupAndResolve({ success: false, error: err.message });
+        }
+      };
+
+      let filterApplied = false;
+      let resultUrl = null;
+
+      const handleNavigation = (event, url) => {
+        // Catch any navigation that goes to search results
+        if (
+          url.includes("/similar") ||
+          url.includes("/search/ris/") ||
+          (url.includes("/search/") && !url.includes("/nature") && !url.includes("/en/search"))
+        ) {
+          if (contentType && contentType !== "all" && !filterApplied) {
+            const resolvedType = contentType;
+            if (!url.includes(`image_type=${resolvedType}`)) {
+              filterApplied = true;
+              let targetUrl = url;
+              if (targetUrl.includes("image_type=")) {
+                targetUrl = targetUrl.replace(/image_type=[^&]*/, `image_type=${resolvedType}`);
+              } else {
+                targetUrl = targetUrl + (targetUrl.includes("?") ? "&" : "?") + `image_type=${resolvedType}`;
+              }
+              fileLog(`[Visual Search] Appending Shutterstock filter and reloading: ${targetUrl}`);
+              scraperWindow.loadURL(targetUrl, { userAgent });
+              return;
+            }
+          }
+
+          fileLog(`[Visual Search] Shutterstock redirected to results (${event && event.type === 'did-navigate-in-page' ? 'in-page' : 'standard'}): ${url}`);
+          resultUrl = url;
+          
+          if (event && event.type === 'did-navigate-in-page') {
+            setTimeout(() => {
+              scrapeResultsPage();
+            }, 4000); // Wait 4 seconds for React results grid to populate
+          } else {
+            // Wait for page to fully load, then scrape
+            scraperWindow.webContents.once('did-finish-load', () => {
+              setTimeout(() => {
+                scrapeResultsPage();
+              }, 2000); // Extra 2 seconds after load for lazy images
+            });
+          }
+        }
+      };
+
+      scraperWindow.webContents.on("did-navigate", (event, url) => handleNavigation({ type: 'did-navigate' }, url));
+      scraperWindow.webContents.on("did-navigate-in-page", (event, url) => handleNavigation({ type: 'did-navigate-in-page' }, url));
+
+      // Two-phase approach:
+      // Phase 1: Use uguu.se to get a public URL for the image
+      // Phase 2: Use that URL with Shutterstock's native URL search (/search/ris/)
+      //          which returns image-specific results, not generic defaults.
+      try {
+        fileLog(`[Visual Search] Phase 1 - Loading Shutterstock to inject file via CDP...`);
+        scraperWindow.loadURL("https://www.shutterstock.com/en/search/nature", { userAgent });
+        
+        scraperWindow.webContents.once('did-finish-load', async () => {
+          try {
+            scraperWindow.webContents.debugger.attach('1.3');
+
+            // Step 1: Click camera button
+            const clicked = await scraperWindow.webContents.executeJavaScript(`
+              (function() {
+                  const btn = document.querySelector('[data-automation="Search by image"]') || document.querySelector('button[aria-label="Search by image"]');
+                  if (btn) { btn.click(); return true; }
+                  return false;
+              })();
+            `);
+            
+            if (!clicked) throw new Error("Could not find camera button.");
+            
+            await new Promise(r => setTimeout(r, 2000));
+            
+            // Step 2 & 3: Get file input node ID and inject file with retry loop
+            let injectSuccess = false;
+            let retryCount = 0;
+            
+            while (!injectSuccess && retryCount < 10) {
+              try {
+                fileLog(`[Visual Search] Fetching fresh DOM document for Shutterstock (Try ${retryCount + 1})...`);
+                const { root } = await scraperWindow.webContents.debugger.sendCommand('DOM.getDocument', { depth: -1 });
+                const { nodeId } = await scraperWindow.webContents.debugger.sendCommand('DOM.querySelector', {
+                    nodeId: root.nodeId,
+                    selector: 'input[type="file"]'
+                });
+                
+                if (nodeId) {
+                  fileLog(`[Visual Search] File input found (nodeId=${nodeId}). Injecting file...`);
+                  await scraperWindow.webContents.debugger.sendCommand('DOM.setFileInputFiles', {
+                      nodeId: nodeId,
+                      files: [filePath]
+                  });
+                  injectSuccess = true;
+                  fileLog(`[Visual Search] File injected successfully.`);
+                } else {
+                  fileLog(`[Visual Search] QuerySelector did not return a nodeId.`);
+                  retryCount++;
+                  await new Promise(r => setTimeout(r, 300));
+                }
+              } catch (err) {
+                fileLog(`[Visual Search] CDP injection attempt ${retryCount + 1} failed: ${err.message}`);
+                retryCount++;
+                await new Promise(r => setTimeout(r, 300));
+              }
+            }
+
+            if (!injectSuccess) {
+              throw new Error("Could not inject file path into Shutterstock after 10 attempts.");
+            }
+
+            // Step 4: Dispatch change event to trigger the React component's upload handler
+            await scraperWindow.webContents.executeJavaScript(`
+                (function() {
+                    const input = document.querySelector('input[type="file"]');
+                    if (input) {
+                        // Dispatch multiple events to ensure React picks it up
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                })();
+            `);
+
+            fileLog(`[Visual Search] File injected & events dispatched. Waiting for navigation...`);
+            // The did-navigate handler will catch the redirect to /search/ris/...
+
+          } catch (cdpErr) {
+            fileLog(`[Visual Search] CDP Error: ${cdpErr.message}. Aborting.`);
+            cleanupAndResolve({ success: false, error: cdpErr.message });
+          }
+        });
+      } catch (err) {
+        fileLog(`[Visual Search] Setup failed: ${err.message}`);
+        cleanupAndResolve({ success: false, error: err.message });
+      }
+
+      safetyTimeout = setTimeout(() => {
+        if (!completed) {
+          fileLog(`[Visual Search] Global timeout reached!`);
+          cleanupAndResolve({
+            success: false,
+            error: "Timeout waiting for visual search to complete.",
+          });
+        }
+      }, 60000); 
+    });
+  });
+
+  ipcMain.handle("scrape-video-preview", async (event, detailUrl) => {
+    const path = require("path");
+    const fs = require("fs");
+    const os = require("os");
+    const LOG_FILE = path.join(os.tmpdir(), "imagemetadata_electron.log");
+
+    const fileLog = (...args) => {
+      try {
+        const msg = `[${new Date().toISOString()}] ${args.map((a) => (a instanceof Error ? a.stack || a.message : typeof a === "object" ? JSON.stringify(a) : a)).join(" ")}\n`;
+        fs.appendFileSync(LOG_FILE, msg);
+        console.log(...args);
+      } catch (e) {}
+    };
+
+    return new Promise((resolve) => {
+      fileLog(`[Video Preview] Scraping video preview URL: ${detailUrl}`);
+      const userAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+      let scraperWindow = new BrowserWindow({
+        show: false,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+        },
+      });
+
+      let completed = false;
+      let safetyTimeout;
+
+      const cleanupAndResolve = (result) => {
+        if (completed) return;
+        completed = true;
+        if (safetyTimeout) clearTimeout(safetyTimeout);
+        fileLog(`[Video Preview] Resolving task. Success: ${result.success}`);
+        try {
+          if (scraperWindow && !scraperWindow.isDestroyed()) {
+            scraperWindow.destroy();
+          }
+        } catch (e) {}
+        resolve(result);
+      };
+
+      safetyTimeout = setTimeout(() => {
+        if (!completed) {
+          fileLog(`[Video Preview] Global timeout reached!`);
+          cleanupAndResolve({
+            success: false,
+            error: "Timeout waiting for video preview to load.",
+          });
         }
       }, 15000);
+
+      scraperWindow.loadURL(detailUrl, { userAgent });
+
+      scraperWindow.webContents.on("dom-ready", () => {
+        setTimeout(async () => {
+          if (completed) return;
+          try {
+            const videoUrl = await scraperWindow.webContents.executeJavaScript(`
+              (() => {
+                // 1. Collect all video and source src elements
+                const candidates = [];
+                document.querySelectorAll('video, source').forEach(el => {
+                  const src = el.src || el.getAttribute('data-src') || el.getAttribute('data-lazy-src') || '';
+                  if (src && !src.startsWith('blob:') && !src.startsWith('data:')) {
+                    candidates.push(src);
+                  }
+                });
+
+                // 2. Prioritize actual video file streams hosted on CDNs
+                const realVideo = candidates.find(src => 
+                  src.includes('.mp4') || 
+                  src.includes('.webm') || 
+                  src.includes('ftcdn.net') || 
+                  src.includes('picdn.net')
+                );
+                if (realVideo) return realVideo;
+
+                // 3. Fallback to any non-html webpage source
+                const fallback = candidates.find(src => !src.includes('stock.adobe.com') && !src.includes('shutterstock.com'));
+                if (fallback) return fallback;
+
+                // 4. Fallback to meta tags only if they contain direct video file streams
+                const meta = document.querySelector('meta[property="og:video"]') || 
+                             document.querySelector('meta[property="og:video:secure_url"]') ||
+                             document.querySelector('meta[name="twitter:player"]');
+                if (meta && meta.content) {
+                  const content = meta.content;
+                  if (content.includes('.mp4') || content.includes('.webm') || content.includes('ftcdn.net') || content.includes('picdn.net')) {
+                    return content;
+                  }
+                }
+
+                return null;
+              })()
+            `);
+            
+            if (videoUrl) {
+              fileLog(`[Video Preview] Found video preview URL: ${videoUrl}`);
+              cleanupAndResolve({ success: true, videoUrl });
+            } else {
+              fileLog(`[Video Preview] No video preview found on page.`);
+              cleanupAndResolve({ success: false, error: "No video found" });
+            }
+          } catch (err) {
+            fileLog(`[Video Preview] executeJavaScript Error: ${err.message}`);
+            cleanupAndResolve({ success: false, error: err.message });
+          }
+        }, 3000);
+      });
     });
   });
 }

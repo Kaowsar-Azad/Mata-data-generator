@@ -59,6 +59,16 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
     setImages((prev) => [...prev, ...newEntries]);
   };
 
+  useEffect(() => {
+    const handleAddImage = (e) => {
+      if (e.detail && e.detail.file) {
+        addImages([e.detail.file]);
+      }
+    };
+    window.addEventListener('add-image-to-prompt', handleAddImage);
+    return () => window.removeEventListener('add-image-to-prompt', handleAddImage);
+  }, []);
+
   const onFileChange = (e) => {
     addImages(Array.from(e.target.files));
     e.target.value = "";

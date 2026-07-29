@@ -58,6 +58,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   upscaleLocalNcnn: (filePath, scale, modelName, format, saveDir) => ipcRenderer.invoke('upscale-local-ncnn', filePath, scale, modelName, format, saveDir),
   scrapeTopSellers: (payload) => ipcRenderer.invoke('scrape-top-sellers', payload),
   getAdobeStockDetails: (url) => ipcRenderer.invoke('adobe-stock-details', url),
-  scrapeAdobeStockByImage: (url) => ipcRenderer.invoke('scrape-adobe-stock-by-image', url)
+  scrapeAdobeStockByImage: (url, contentType) => ipcRenderer.invoke('scrape-adobe-stock-by-image', url, contentType),
+  scrapeShutterstockByImage: (url, contentType) => ipcRenderer.invoke('scrape-shutterstock-by-image', url, contentType),
+  scrapeVecteezyByImage: (url, contentType) => ipcRenderer.invoke('scrape-vecteezy-by-image', url, contentType),
+  scrapeVideoPreview: (url) => ipcRenderer.invoke('scrape-video-preview', url)
 });
 

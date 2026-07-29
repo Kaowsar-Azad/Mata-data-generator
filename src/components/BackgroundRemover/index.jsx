@@ -124,9 +124,9 @@ export const BackgroundRemover = () => {
           <script type="application/ld+json">{JSON.stringify(schemaMarkup)}</script>
         </Helmet>
         
-        <h1 style={{ position: 'absolute', width: '1px', height: '1px', overflow: 'hidden' }}>
+        <h2 style={{ position: 'absolute', width: '1px', height: '1px', overflow: 'hidden' }}>
           MetadataPro AI Background Remover
-        </h1>
+        </h2>
 
         {/* Mode Selector Row */}
         <div style={{

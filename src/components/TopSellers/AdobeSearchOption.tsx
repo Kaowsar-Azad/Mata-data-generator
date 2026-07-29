@@ -45,7 +45,7 @@ export const AdobeSearchOption: React.FC<AdobeSearchOptionProps> = ({
         </div>
         <input
           type="text"
-          placeholder={isVisualLoading ? "Uploading & searching image on Adobe Stock..." : (isLoading ? "Searching..." : "Search keywords, niches, or styles...")}
+          placeholder={isVisualLoading ? `Uploading & searching image on ${platform === 'shutterstock' ? 'Shutterstock' : platform === 'vecteezy' ? 'Vecteezy' : 'Adobe Stock'}...` : (isLoading ? "Searching..." : "Search keywords, niches, or styles...")}
           value={searchQuery}
           disabled={isLoading}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -90,8 +90,8 @@ export const AdobeSearchOption: React.FC<AdobeSearchOptionProps> = ({
         </button>
       </form>
 
-      {/* Search by Image Button - ONLY FOR ADOBE STOCK */}
-      {platform === 'adobe-stock' && (
+      {/* Search by Image Button - FOR ADOBE STOCK, SHUTTERSTOCK AND VECTEEZY */}
+      {(platform === 'adobe-stock' || platform === 'shutterstock' || platform === 'vecteezy') && (
         <div style={{ display: 'flex', alignItems: 'stretch' }}>
           <input 
             type="file" 

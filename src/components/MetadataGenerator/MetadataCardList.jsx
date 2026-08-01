@@ -1,5 +1,5 @@
 import React, { memo } from "react";
-import { Video, Loader2, FileCode2, Image as ImageIcon, AlertTriangle, CheckCircle2, X, Upload, ShieldAlert } from "lucide-react";
+import { Video, Loader2, FileCode2, Image as ImageIcon, AlertTriangle, CheckCircle2, X, Upload, ShieldAlert, Sparkles, Bot, Maximize2 } from "lucide-react";
 import { MdCloudUpload } from "react-icons/md";
 import { StatusBadge, getScoreMeta } from "./workflowHelpers";
 import { MetaField } from "./MetaField";
@@ -161,28 +161,40 @@ const MetadataCard = memo(({
         {img.status === "error" && <p className="text-xs text-red-400 bg-red-400/10 p-2 rounded mt-2">⚠ {img.error}</p>}
         {img.status === "pending" && <p className="text-xs italic text-muted mt-2">{img.isVideo ? "🎬 Ready — Frame will be extracted for AI analysis" : img.isPaired ? "✨ Ready (Using JPG for AI)" : (img.isEps && !img.epsData) ? "⚙ Extracting EPS preview..." : "Awaiting analysis..."}</p>}
         {img.status === "upscaling" && (
-          <p className="text-xs text-indigo-400 mt-2 flex items-center gap-1.5 font-medium">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            <span>✨ Auto-Upscaling image to {upscaleScale}x{img.upscaleModel ? ` [${img.upscaleModel}]` : ''}...{img.upscaleProgress !== undefined && img.upscaleProgress > 0 ? ` ${Math.round(img.upscaleProgress)}%` : ''}</span>
-          </p>
+          <div className="premium-indicator-badge premium-indicator-blue">
+            <div className="premium-indicator-wrapper">
+              <div className="premium-indicator-spinner" />
+              <Maximize2 className="w-2.5 h-2.5 premium-indicator-inner" />
+            </div>
+            <span>Auto-Upscaling image to {upscaleScale}x{img.upscaleModel ? ` [${img.upscaleModel}]` : ''}...{img.upscaleProgress !== undefined && img.upscaleProgress > 0 ? ` ${Math.round(img.upscaleProgress)}%` : ''}</span>
+          </div>
         )}
         {img.status === "scanning" && (
-          <p className="text-xs text-amber-500 mt-2 flex items-center gap-1.5 font-medium">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            <span>🛡️ Scanning for Policy Violations...</span>
-          </p>
+          <div className="premium-indicator-badge premium-indicator-amber">
+            <div className="premium-indicator-wrapper">
+              <div className="premium-indicator-spinner" />
+              <ShieldAlert className="w-2.5 h-2.5 premium-indicator-inner" />
+            </div>
+            <span>Scanning for Policy Violations...</span>
+          </div>
         )}
         {img.status === "extracting" && (
-          <p className="text-xs text-violet-400 mt-2 flex items-center gap-1.5 font-medium">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            <span>🎬 Extracting video frame for AI analysis...</span>
-          </p>
+          <div className="premium-indicator-badge premium-indicator-violet">
+            <div className="premium-indicator-wrapper">
+              <div className="premium-indicator-spinner" />
+              <Video className="w-2.5 h-2.5 premium-indicator-inner" />
+            </div>
+            <span>Extracting video frame for AI analysis...</span>
+          </div>
         )}
         {img.status === "processing" && (
-          <p className="text-xs text-primary mt-2 flex items-center gap-1.5 font-medium">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            <span>🤖 Generating metadata with {activeProviderName} AI...</span>
-          </p>
+          <div className="premium-indicator-badge premium-indicator-indigo">
+            <div className="premium-indicator-wrapper">
+              <div className="premium-indicator-spinner" />
+              <Sparkles className="w-2.5 h-2.5 premium-indicator-inner" />
+            </div>
+            <span>Generating metadata with {activeProviderName} AI...</span>
+          </div>
         )}
         
         {img.embeddingStatus && img.embeddingStatus !== 'none' && (

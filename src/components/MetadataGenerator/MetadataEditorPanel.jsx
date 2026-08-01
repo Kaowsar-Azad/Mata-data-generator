@@ -1,7 +1,7 @@
 import React from "react";
 import { StatusBadge, getScoreMeta } from "./workflowHelpers";
 import { MetaField } from "./MetaField";
-import { Video, Loader2, Image as ImageIcon } from "lucide-react";
+import { Video, Loader2, Image as ImageIcon, Sparkles, Bot, Maximize2, ShieldAlert } from "lucide-react";
 
 export function MetadataEditorPanel({
   img,
@@ -191,31 +191,43 @@ export function MetadataEditorPanel({
       )}
 
       {img.status === "upscaling" && (
-        <p className="text-xs text-indigo-400 mt-2 flex items-center gap-1.5 font-medium">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          <span>✨ Auto-Upscaling image...{img.upscaleProgress !== undefined && img.upscaleProgress > 0 ? ` ${Math.round(img.upscaleProgress)}%` : ''}</span>
-        </p>
+        <div className="premium-indicator-badge premium-indicator-blue">
+          <div className="premium-indicator-wrapper">
+            <div className="premium-indicator-spinner" />
+            <Maximize2 className="w-2.5 h-2.5 premium-indicator-inner" />
+          </div>
+          <span>Auto-Upscaling image...{img.upscaleProgress !== undefined && img.upscaleProgress > 0 ? ` ${Math.round(img.upscaleProgress)}%` : ''}</span>
+        </div>
       )}
 
       {img.status === "scanning" && (
-        <p className="text-xs text-amber-500 mt-2 flex items-center gap-1.5 font-medium">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          <span>🛡️ Scanning for Policy Violations...</span>
-        </p>
+        <div className="premium-indicator-badge premium-indicator-amber">
+          <div className="premium-indicator-wrapper">
+            <div className="premium-indicator-spinner" />
+            <ShieldAlert className="w-2.5 h-2.5 premium-indicator-inner" />
+          </div>
+          <span>Scanning for Policy Violations...</span>
+        </div>
       )}
 
       {img.status === "extracting" && (
-        <p className="text-xs text-violet-400 mt-2 flex items-center gap-1.5 font-medium">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          <span>🎬 Extracting video frame for AI analysis...</span>
-        </p>
+        <div className="premium-indicator-badge premium-indicator-violet">
+          <div className="premium-indicator-wrapper">
+            <div className="premium-indicator-spinner" />
+            <Video className="w-2.5 h-2.5 premium-indicator-inner" />
+          </div>
+          <span>Extracting video frame for AI analysis...</span>
+        </div>
       )}
 
       {img.status === "processing" && (
-        <p className="text-xs text-primary mt-2 flex items-center gap-1.5 font-medium">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          <span>🤖 Generating metadata with AI...</span>
-        </p>
+        <div className="premium-indicator-badge premium-indicator-indigo">
+          <div className="premium-indicator-wrapper">
+            <div className="premium-indicator-spinner" />
+            <Sparkles className="w-2.5 h-2.5 premium-indicator-inner" />
+          </div>
+          <span>Generating metadata with AI...</span>
+        </div>
       )}
     </div>
   );

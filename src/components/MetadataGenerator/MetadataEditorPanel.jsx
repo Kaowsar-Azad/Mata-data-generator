@@ -191,26 +191,30 @@ export function MetadataEditorPanel({
       )}
 
       {img.status === "upscaling" && (
-        <p className="text-xs text-indigo-400 animate-pulse mt-2">
-          ✨ Auto-Upscaling image...{img.upscaleProgress !== undefined && img.upscaleProgress > 0 ? ` ${Math.round(img.upscaleProgress)}%` : ''}
+        <p className="text-xs text-indigo-400 mt-2 flex items-center gap-1.5 font-medium">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          <span>✨ Auto-Upscaling image...{img.upscaleProgress !== undefined && img.upscaleProgress > 0 ? ` ${Math.round(img.upscaleProgress)}%` : ''}</span>
         </p>
       )}
 
       {img.status === "scanning" && (
-        <p className="text-xs text-amber-500 animate-pulse mt-2">
-          🛡️ Scanning for Policy Violations...
+        <p className="text-xs text-amber-500 mt-2 flex items-center gap-1.5 font-medium">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          <span>🛡️ Scanning for Policy Violations...</span>
         </p>
       )}
 
       {img.status === "extracting" && (
-        <p className="text-xs text-violet-400 animate-pulse mt-2">
-          🎬 Extracting video frame for AI analysis...
+        <p className="text-xs text-violet-400 mt-2 flex items-center gap-1.5 font-medium">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          <span>🎬 Extracting video frame for AI analysis...</span>
         </p>
       )}
 
       {img.status === "processing" && (
-        <p className="text-xs text-primary animate-pulse mt-2">
-          🤖 Generating metadata with AI...
+        <p className="text-xs text-primary mt-2 flex items-center gap-1.5 font-medium">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          <span>🤖 Generating metadata with AI...</span>
         </p>
       )}
     </div>

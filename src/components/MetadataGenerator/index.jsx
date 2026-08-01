@@ -2181,7 +2181,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             
             {window.electronAPI ? (
               <button
-                className={`btn-glass-blue ${doneCount > 0 && !isProcessing && !isEmbedding ? 'animate-pulse' : ''}`}
+                className={`btn-glass-blue ${doneCount > 0 && !isProcessing && !isEmbedding ? 'animate-border-glow' : ''}`}
                 style={{ 
                   padding: '0.38rem 0.8rem',
                   transition: 'background-color 0.3s, border-color 0.3s'

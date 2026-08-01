@@ -160,13 +160,33 @@ const MetadataCard = memo(({
 
         {img.status === "error" && <p className="text-xs text-red-400 bg-red-400/10 p-2 rounded mt-2">⚠ {img.error}</p>}
         {img.status === "pending" && <p className="text-xs italic text-muted mt-2">{img.isVideo ? "🎬 Ready — Frame will be extracted for AI analysis" : img.isPaired ? "✨ Ready (Using JPG for AI)" : (img.isEps && !img.epsData) ? "⚙ Extracting EPS preview..." : "Awaiting analysis..."}</p>}
-        {img.status === "upscaling" && <p className="text-xs text-indigo-400 animate-pulse mt-2">✨ Auto-Upscaling image to {upscaleScale}x{img.upscaleModel ? ` using [${img.upscaleModel}]` : ''}...{img.upscaleProgress !== undefined && img.upscaleProgress > 0 ? ` ${Math.round(img.upscaleProgress)}%` : ''}</p>}
-        {img.status === "scanning" && <p className="text-xs text-amber-500 animate-pulse mt-2">🛡️ Scanning for Policy Violations...</p>}
-        {img.status === "extracting" && <p className="text-xs text-violet-400 animate-pulse mt-2">🎬 Extracting video frame for AI analysis...</p>}
-        {img.status === "processing" && <p className="text-xs text-primary animate-pulse mt-2">🤖 Generating metadata with {activeProviderName} AI...</p>}
+        {img.status === "upscaling" && (
+          <p className="text-xs text-indigo-400 mt-2 flex items-center gap-1.5 font-medium">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>✨ Auto-Upscaling image to {upscaleScale}x{img.upscaleModel ? ` [${img.upscaleModel}]` : ''}...{img.upscaleProgress !== undefined && img.upscaleProgress > 0 ? ` ${Math.round(img.upscaleProgress)}%` : ''}</span>
+          </p>
+        )}
+        {img.status === "scanning" && (
+          <p className="text-xs text-amber-500 mt-2 flex items-center gap-1.5 font-medium">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>🛡️ Scanning for Policy Violations...</span>
+          </p>
+        )}
+        {img.status === "extracting" && (
+          <p className="text-xs text-violet-400 mt-2 flex items-center gap-1.5 font-medium">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>🎬 Extracting video frame for AI analysis...</span>
+          </p>
+        )}
+        {img.status === "processing" && (
+          <p className="text-xs text-primary mt-2 flex items-center gap-1.5 font-medium">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>🤖 Generating metadata with {activeProviderName} AI...</span>
+          </p>
+        )}
         
         {img.embeddingStatus && img.embeddingStatus !== 'none' && (
-          <div className={`mt-3 p-2 rounded text-xs flex items-center gap-2 ${img.embeddingStatus === 'embedding' ? 'bg-indigo-500/10 text-indigo-400 animate-pulse' : img.embeddingStatus === 'uploading' ? 'bg-amber-500/10 text-amber-500 w-full' : img.embeddingStatus === 'success' ? 'bg-green-500/10 text-green-400 font-medium' : 'bg-red-500/10 text-red-400'}`} style={{ width: '100%' }}>
+          <div className={`mt-3 p-2 rounded text-xs flex items-center gap-2 ${img.embeddingStatus === 'embedding' ? 'bg-indigo-500/10 text-indigo-400' : img.embeddingStatus === 'uploading' ? 'bg-amber-500/10 text-amber-500 w-full' : img.embeddingStatus === 'success' ? 'bg-green-500/10 text-green-400 font-medium' : 'bg-red-500/10 text-red-400'}`} style={{ width: '100%' }}>
             {img.embeddingStatus === 'embedding' && <><Loader2 className="w-3 h-3 animate-spin" /><span>Embedding metadata into file...</span></>}
             {img.embeddingStatus === 'uploading' && (() => {
               const singleProgress = (() => {

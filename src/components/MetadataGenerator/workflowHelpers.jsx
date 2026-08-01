@@ -3,8 +3,8 @@ import React from "react";
 export function StatusBadge({ status, progress, upscaleModel }) {
   const map = {
     done: "bg-green-500/20 text-green-400",
-    processing: "bg-primary/20 text-primary animate-pulse",
-    upscaling: "bg-indigo-500/20 text-indigo-400 animate-pulse",
+    processing: "bg-primary/20 text-primary",
+    upscaling: "bg-indigo-500/20 text-indigo-400",
     upscale_queued: "bg-indigo-500/10 text-indigo-300",
     error: "bg-red-500/20 text-red-500",
     pending: "bg-surface text-muted",

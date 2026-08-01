@@ -481,7 +481,7 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
 function StatusBadge({ status }) {
   const map = {
     done: "bg-green-500/20 text-green-400",
-    processing: "bg-primary/20 text-primary animate-pulse",
+    processing: "bg-primary/20 text-primary",
     error: "bg-red-500/20 text-red-500",
     pending: "bg-surface text-muted",
   };

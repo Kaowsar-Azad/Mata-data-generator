@@ -71,7 +71,7 @@ const MetadataCard = memo(({
       {/* File info + metadata */}
       <div className="flex-grow space-y-2 min-w-0">
         <div className="flex justify-between items-start gap-2">
-          <h3 className="font-mono text-sm text-muted truncate">{img.file.name}</h3>
+          <h3 className="font-sans font-medium text-sm text-muted truncate">{img.file.name}</h3>
           <StatusBadge status={img.status} progress={img.upscaleProgress} upscaleModel={img.upscaleModel} />
         </div>
 

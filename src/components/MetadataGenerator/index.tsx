@@ -2046,211 +2046,350 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
       {/* Control Bar */}
       {images.length > 0 && (
-        <div className="control-bar">
-          <div className="flex justify-between items-center w-full flex-wrap gap-4">
-            {epsCount > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="eps-badge" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>
-                  {epsCount} EPS
-                </span>
+        <div className="control-bar" style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+          
+          {/* ── ROW 1: Main Actions ── */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.65rem' }}>
+            
+            {/* Left side: View Toggle + Main Buttons */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+              
+              {/* 1. View mode toggle */}
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                background: '#e4e7ec', 
+                padding: '2px', 
+                borderRadius: '0.55rem',
+                border: '1px solid rgba(0, 0, 0, 0.04)',
+                boxShadow: 'inset 0 1px 2px rgba(0, 0, 0, 0.06)',
+                gap: '2px'
+              }}>
+                <button
+                  className="btn-icon"
+                  style={{ 
+                    padding: '0.35rem', 
+                    borderRadius: '0.4rem', 
+                    background: viewMode === 'card' ? '#ffffff' : 'transparent', 
+                    color: viewMode === 'card' ? 'var(--text-1)' : '#71717a', 
+                    border: 'none', 
+                    cursor: 'pointer',
+                    boxShadow: viewMode === 'card' ? '0 2px 4px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    outline: 'none'
+                  }}
+                  onClick={() => { setViewMode('card'); setSelectedRows(new Set()); }}
+                  title="Card View"
+                >
+                  <List className="w-4 h-4" />
+                </button>
+                <button
+                  className="btn-icon"
+                  style={{ 
+                    padding: '0.35rem', 
+                    borderRadius: '0.4rem', 
+                    background: viewMode === 'grid' ? '#ffffff' : 'transparent', 
+                    color: viewMode === 'grid' ? 'var(--text-1)' : '#71717a', 
+                    border: 'none', 
+                    cursor: 'pointer',
+                    boxShadow: viewMode === 'grid' ? '0 2px 4px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    outline: 'none'
+                  }}
+                  onClick={() => setViewMode('grid')}
+                  title="Spreadsheet View (Bulk Edit)"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                </button>
               </div>
-            )}
 
-
-            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', width: '100%', flexWrap: 'nowrap', overflowX: 'auto' }} className="text-xs font-medium">
-              {localEmbedErrorCount > 0 && (
-                <span style={{ color: '#f43f5e', flexShrink: 0 }} className="flex items-center gap-1" title="Failed Local Embed">
-                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {localEmbedErrorCount} Failed Embed
-                </span>
-              )}
-
-              {ftpErrorCount > 0 && (
-                <span style={{ color: '#f43f5e', flexShrink: 0 }} className="flex items-center gap-1" title="Failed FTP Upload">
-                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {ftpErrorCount} Failed Upload
-                </span>
-              )}
-
-              {policyViolationCount > 0 && (
-                <span style={{ color: '#f43f5e', flexShrink: 0 }} className="flex items-center gap-1" title="Flagged for Policy/Copyright Issue">
-                  <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {policyViolationCount} Policy Issue
-                </span>
-              )}
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }} className="flex-shrink-0">
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  background: '#e4e7ec', 
-                  padding: '2px', 
-                  borderRadius: '0.55rem',
-                  border: '1px solid rgba(0, 0, 0, 0.04)',
-                  boxShadow: 'inset 0 1px 2px rgba(0, 0, 0, 0.06)',
-                  gap: '2px'
-                }}>
-                  <button
-                    className="btn-icon"
-                    style={{ 
-                      padding: '0.35rem', 
-                      borderRadius: '0.4rem', 
-                      background: viewMode === 'card' ? '#ffffff' : 'transparent', 
-                      color: viewMode === 'card' ? 'var(--text-1)' : '#71717a', 
-                      border: 'none', 
-                      cursor: 'pointer',
-                      boxShadow: viewMode === 'card' ? '0 2px 4px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)' : 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                      outline: 'none'
-                    }}
-                    onClick={() => { setViewMode('card'); setSelectedRows(new Set()); }}
-                    title="Card View"
-                  >
-                    <List className="w-4 h-4" />
-                  </button>
-                  <button
-                    className="btn-icon"
-                    style={{ 
-                      padding: '0.35rem', 
-                      borderRadius: '0.4rem', 
-                      background: viewMode === 'grid' ? '#ffffff' : 'transparent', 
-                      color: viewMode === 'grid' ? 'var(--text-1)' : '#71717a', 
-                      border: 'none', 
-                      cursor: 'pointer',
-                      boxShadow: viewMode === 'grid' ? '0 2px 4px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)' : 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                      outline: 'none'
-                    }}
-                    onClick={() => setViewMode('grid')}
-                    title="Spreadsheet View (Bulk Edit)"
-                  >
-                    <LayoutGrid className="w-4 h-4" />
-                  </button>
+              {/* Badges (EPS/Errors) right next to view toggle if they exist */}
+              {(epsCount > 0 || localEmbedErrorCount > 0 || ftpErrorCount > 0 || policyViolationCount > 0) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <div style={{ width: '1px', height: '1.4rem', background: 'var(--glass-border, #e2e8f0)', margin: '0 2px' }} />
+                  {epsCount > 0 && (
+                    <span className="eps-badge" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>
+                      {epsCount} EPS
+                    </span>
+                  )}
+                  {localEmbedErrorCount > 0 && (
+                    <span style={{ color: '#f43f5e', display: 'inline-flex', alignItems: 'center', gap: '3px', background: 'rgba(244, 63, 94, 0.08)', padding: '2px 8px', borderRadius: '5px', border: '1px solid rgba(244, 63, 94, 0.2)', fontSize: '0.75rem', fontWeight: 600 }} title="Failed Local Embed">
+                      <AlertTriangle style={{ width: '0.8rem', height: '0.8rem' }} /> {localEmbedErrorCount}
+                    </span>
+                  )}
+                  {ftpErrorCount > 0 && (
+                    <span style={{ color: '#f43f5e', display: 'inline-flex', alignItems: 'center', gap: '3px', background: 'rgba(244, 63, 94, 0.08)', padding: '2px 8px', borderRadius: '5px', border: '1px solid rgba(244, 63, 94, 0.2)', fontSize: '0.75rem', fontWeight: 600 }} title="Failed FTP Upload">
+                      <AlertTriangle style={{ width: '0.8rem', height: '0.8rem' }} /> {ftpErrorCount}
+                    </span>
+                  )}
                 </div>
+              )}
 
-                {isProcessing ? (
-                  <button style={{
-                    color: '#f43f5e',
-                    background: 'transparent',
-                    border: '1.5px solid rgba(244, 63, 94, 0.45)',
-                    borderRadius: '99px',
-                    fontSize: '0.8rem',
-                    fontWeight: 500,
-                    padding: '0.35rem 0.8rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    cursor: 'pointer'
-                  }} onClick={stopProcessing}>
-                    <Square style={{ width: '0.85rem', height: '0.85rem', fill: 'currentColor' }} /> Stop
-                  </button>
-                ) : (
-                  <button style={{
-                    color: '#f43f5e',
-                    background: 'transparent',
-                    border: '1px solid rgba(244, 63, 94, 0.3)',
-                    borderRadius: '99px',
-                    fontSize: '0.8rem',
-                    fontWeight: 500,
-                    padding: '0.35rem 0.8rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    cursor: 'pointer'
-                  }} onClick={clearAll}>
-                    <Trash2 style={{ width: '0.9rem', height: '0.9rem' }} /> Clear all
-                  </button>
-                )}
-              </div>
+              <div style={{ width: '1px', height: '1.6rem', background: 'var(--glass-border, #e2e8f0)', margin: '0 4px' }} />
+
+              {/* 2. Generate All */}
+              {!images.every(img => img.status === 'done') && (
+                <button
+                  className="btn-glass-blue"
+                  style={{ padding: '0.38rem 0.8rem', boxShadow: 'none' }}
+                  disabled={isProcessing}
+                  onClick={() => processBatch(false)}
+                  title="Keyboard shortcut: Enter"
+                >
+                  {isProcessing ? <Loader2 style={{ width: '0.95rem', height: '0.95rem' }} className="animate-spin" /> : <Sparkles style={{ width: '0.95rem', height: '0.95rem' }} />}
+                  {isProcessing ? 'Generating...' : 'Generate all'}
+                </button>
+              )}
+              
+              {/* 3. Embed to files */}
+              {window.electronAPI ? (
+                <button
+                  className={`btn-glass-blue ${doneCount > 0 && !isProcessing && !isEmbedding ? 'animate-border-glow' : ''}`}
+                  style={{ padding: '0.38rem 0.8rem', transition: 'background-color 0.3s, border-color 0.3s' }}
+                  disabled={isEmbedding || doneCount === 0}
+                  onClick={() => {
+                    setShowPermissionModal(true);
+                    localStorage.setItem('embedToastSeen', 'true');
+                  }}
+                >
+                  {isEmbedding ? <Loader2 style={{ width: '0.9rem', height: '0.9rem' }} className="animate-spin" /> : <Tag style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} />}
+                  {isEmbedding ? 'Embedding...' : 'Embed to files'}
+                </button>
+              ) : (
+                <button
+                  className="btn-glass-blue"
+                  style={{ padding: '0.38rem 0.8rem' }}
+                  onClick={() => alert("To embed metadata directly into files, run the app as a desktop application (npm run app:dev).")}
+                  disabled
+                >
+                  <Tag style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Embed to files
+                </button>
+              )}
+
+              {/* 4. Export CSV */}
+              <button
+                className="btn-csv-grad"
+                style={{ padding: '0.38rem 0.8rem' }}
+                disabled={isProcessing || doneCount === 0}
+                onClick={() => setShowExportModal(true)}
+              >
+                <FileSpreadsheet style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Export CSV ({doneCount})
+              </button>
+
+              {/* Clean Yellow/Red buttons (conditional) */}
+              {doneCount > 0 && (!(autoEmbed && autoRemoveYellow) || !(autoEmbed && autoRemoveRed)) && (
+                <>
+                  <div style={{ width: '1px', height: '1.4rem', background: 'var(--glass-border, #e2e8f0)', margin: '0 4px' }} />
+                  {!(autoEmbed && autoRemoveYellow) && (
+                    <button
+                      className="btn-glass-inactive"
+                      style={{
+                        padding: '0.32rem 0.7rem',
+                        border: '1.5px solid rgba(245, 158, 11, 0.3)',
+                        color: '#d97706',
+                        background: 'rgba(245, 158, 11, 0.04)',
+                        cursor: isProcessing ? 'not-allowed' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        borderRadius: '0.4rem',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        transition: 'all 0.2s',
+                      }}
+                      disabled={isProcessing}
+                      onClick={() => {
+                        if (confirm("Are you sure you want to remove all Medium (Yellow) keywords across all files?")) removeKeywordsByColor('yellow');
+                      }}
+                    >
+                      <Eraser style={{ width: '0.82rem', height: '0.82rem', strokeWidth: 2.2 }} /> Clean Yellow
+                    </button>
+                  )}
+                  {!(autoEmbed && autoRemoveRed) && (
+                    <button
+                      className="btn-glass-inactive"
+                      style={{
+                        padding: '0.32rem 0.7rem',
+                        border: '1.5px solid rgba(239, 68, 68, 0.3)',
+                        color: '#dc2626',
+                        background: 'rgba(239, 68, 68, 0.04)',
+                        cursor: isProcessing ? 'not-allowed' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        borderRadius: '0.4rem',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        transition: 'all 0.2s',
+                      }}
+                      disabled={isProcessing}
+                      onClick={() => {
+                        if (confirm("Are you sure you want to remove all Low (Red) keywords across all files?")) removeKeywordsByColor('red');
+                      }}
+                    >
+                      <Eraser style={{ width: '0.82rem', height: '0.82rem', strokeWidth: 2.2 }} /> Clean Red
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Right side: 5. Clear all / Stop */}
+            <div style={{ flexShrink: 0 }}>
+              {isProcessing ? (
+                <button style={{
+                  color: '#f43f5e',
+                  background: 'rgba(244, 63, 94, 0.06)',
+                  border: '1.5px solid rgba(244, 63, 94, 0.35)',
+                  borderRadius: '99px',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  padding: '0.3rem 0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }} onClick={stopProcessing}>
+                  <Square style={{ width: '0.75rem', height: '0.75rem', fill: 'currentColor' }} /> Stop
+                </button>
+              ) : (
+                <button style={{
+                  color: '#f43f5e',
+                  background: 'transparent',
+                  border: '1px solid rgba(244, 63, 94, 0.35)',
+                  borderRadius: '99px',
+                  fontSize: '0.8rem',
+                  fontWeight: 500,
+                  padding: '0.3rem 0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                onClick={clearAll}>
+                  <Trash2 style={{ width: '0.8rem', height: '0.8rem' }} /> Clear all
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="flex gap-3 flex-wrap mt-3 sm:mt-0 items-center w-full">
-              {window.electronAPI && (
-                <>
-                  <div 
-                    className={`${autoEmbed ? 'btn-glass-green-custom' : 'btn-glass-inactive'} flex items-center gap-2 select-none`}
-                    title="Automatically embed metadata and upload to FTP when generation finishes"
-                  >
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        className="ios-toggle ios-toggle-green-custom"
-                        checked={autoEmbed} 
-                        onChange={handleAutoEmbedChange}
-                      />
-                      <span style={{ fontWeight: 500 }}>Auto embed and upload</span>
-                    </label>
-                  </div>
+          {/* ── ROW 2: Automation Toggles ── */}
+          {window.electronAPI && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', paddingLeft: '2px' }}>
+              
+              {/* 1. Auto Embed Group */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div 
+                  className={`${autoEmbed ? 'btn-glass-green-custom' : 'btn-glass-inactive'} flex items-center gap-2 select-none`}
+                >
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="ios-toggle ios-toggle-green-custom"
+                      checked={autoEmbed} 
+                      onChange={handleAutoEmbedChange}
+                    />
+                    <span style={{ fontWeight: 500 }}>Auto embed and upload</span>
+                  </label>
+                </div>
 
-                  {autoEmbed && (
-                    <>
-                      <div 
-                        className={`${autoRemoveYellow ? 'btn-glass-amber-custom' : 'btn-glass-inactive'} flex items-center gap-2 select-none`}
-                        title="Automatically remove Yellow (Medium relevance) keywords before embedding"
-                        style={{
-                          background: autoRemoveYellow ? 'rgba(245, 158, 11, 0.08)' : 'var(--surface-2)',
-                          borderColor: autoRemoveYellow ? 'rgba(245, 158, 11, 0.3)' : 'var(--glass-border)',
-                          color: autoRemoveYellow ? '#d97706' : 'var(--text-2)'
-                        }}
-                      >
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input 
-                            type="checkbox" 
-                            className="ios-toggle ios-toggle-amber-custom"
-                            checked={autoRemoveYellow} 
-                            onChange={handleAutoRemoveYellowChange}
-                          />
-                          <span style={{ fontWeight: 500 }}>Auto Clean Yellow Kws</span>
-                        </label>
-                      </div>
+                {autoEmbed && (
+                  <>
+                    <div 
+                      className={`${autoRemoveYellow ? 'btn-glass-amber-custom' : 'btn-glass-inactive'} flex items-center gap-2 select-none`}
+                      style={{
+                        background: autoRemoveYellow ? 'rgba(245, 158, 11, 0.08)' : 'var(--surface-2)',
+                        borderColor: autoRemoveYellow ? 'rgba(245, 158, 11, 0.3)' : 'var(--glass-border)',
+                        color: autoRemoveYellow ? '#d97706' : 'var(--text-2)'
+                      }}
+                    >
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="ios-toggle ios-toggle-amber-custom"
+                          checked={autoRemoveYellow} 
+                          onChange={handleAutoRemoveYellowChange}
+                        />
+                        <span style={{ fontWeight: 500 }}>Auto Clean Yellow</span>
+                      </label>
+                    </div>
 
-                      <div 
-                        className={`${autoRemoveRed ? 'btn-glass-red-custom' : 'btn-glass-inactive'} flex items-center gap-2 select-none`}
-                        title="Automatically remove Red (Low relevance) keywords before embedding"
-                        style={{
-                          background: autoRemoveRed ? 'rgba(239, 68, 68, 0.08)' : 'var(--surface-2)',
-                          borderColor: autoRemoveRed ? 'rgba(239, 68, 68, 0.3)' : 'var(--glass-border)',
-                          color: autoRemoveRed ? '#dc2626' : 'var(--text-2)'
-                        }}
-                      >
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input 
-                            type="checkbox" 
-                            className="ios-toggle ios-toggle-red-custom"
-                            checked={autoRemoveRed} 
-                            onChange={handleAutoRemoveRedChange}
-                          />
-                          <span style={{ fontWeight: 500 }}>Auto Clean Red Kws</span>
-                        </label>
-                      </div>
-                    </>
-                  )}
+                    <div 
+                      className={`${autoRemoveRed ? 'btn-glass-red-custom' : 'btn-glass-inactive'} flex items-center gap-2 select-none`}
+                      style={{
+                        background: autoRemoveRed ? 'rgba(239, 68, 68, 0.08)' : 'var(--surface-2)',
+                        borderColor: autoRemoveRed ? 'rgba(239, 68, 68, 0.3)' : 'var(--glass-border)',
+                        color: autoRemoveRed ? '#dc2626' : 'var(--text-2)'
+                      }}
+                    >
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="ios-toggle ios-toggle-red-custom"
+                          checked={autoRemoveRed} 
+                          onChange={handleAutoRemoveRedChange}
+                        />
+                        <span style={{ fontWeight: 500 }}>Auto Clean Red</span>
+                      </label>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* 2. Auto Upscale Group */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div 
+                  className={`${autoUpscale ? 'btn-glass-green-custom' : 'btn-glass-inactive'} flex items-center gap-2 select-none`}
+                >
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="ios-toggle ios-toggle-green-custom"
+                      checked={autoUpscale} 
+                      onChange={(e: any) => setAutoUpscale(e.target.checked)}
+                    />
+                    <span style={{ fontWeight: 500 }}>Auto upscale</span>
+                  </label>
                   
-                  <div 
-                    className={`${autoUpscale ? 'btn-glass-green-custom' : 'btn-glass-inactive'} flex items-center gap-2 select-none`}
-                    title="Automatically upscale images before generating metadata"
-                  >
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        className="ios-toggle ios-toggle-green-custom"
-                        checked={autoUpscale} 
-                        onChange={(e: any) => setAutoUpscale(e.target.checked)}
-                      />
-                      <span style={{ fontWeight: 500 }}>Auto upscale</span>
-                    </label>
-                    
-                    {autoUpscale && (
-                      <>
-                        <div style={{ width: '1.5px', height: '1.2rem', background: 'rgba(22, 163, 74, 0.3)', margin: '0 4px' }} />
-                        <select
-                          value={upscaleScale}
-                          onChange={(e: any) => setUpscaleScale(parseInt(e.target.value) || 2)}
+                  {autoUpscale && (
+                    <>
+                      <div style={{ width: '1.5px', height: '1.2rem', background: 'rgba(22, 163, 74, 0.3)', margin: '0 4px' }} />
+                      <select
+                        value={upscaleScale}
+                        onChange={(e: any) => setUpscaleScale(parseInt(e.target.value) || 2)}
+                        style={{
+                          background: 'rgba(22, 163, 74, 0.08)',
+                          color: '#15803D',
+                          border: '1px solid rgba(22, 163, 74, 0.3)',
+                          borderRadius: '0.35rem',
+                          fontSize: '0.82rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          outline: 'none',
+                          padding: '0.15rem 0.4rem'
+                        }}
+                      >
+                        {[2, 3, 4, 5, 6, 8, 10].map(val => (
+                          <option key={val} value={val} style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>{val}x</option>
+                        ))}
+                      </select>
+                      <div style={{ width: '1.5px', height: '1.2rem', background: 'rgba(22, 163, 74, 0.3)', margin: '0 4px' }} />
+                      <div ref={engineDropdownRef} style={{ position: 'relative' }}>
+                        <button
+                          type="button"
+                          onClick={() => setEngineDropdownOpen(!engineDropdownOpen)}
                           style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
                             background: 'rgba(22, 163, 74, 0.08)',
                             color: '#15803D',
                             border: '1px solid rgba(22, 163, 74, 0.3)',
@@ -2259,267 +2398,90 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                             fontWeight: 600,
                             cursor: 'pointer',
                             outline: 'none',
-                            padding: '0.15rem 0.4rem'
+                            padding: '0.15rem 0.45rem',
+                            lineHeight: '1.2',
+                            userSelect: 'none'
                           }}
                         >
-                          <option value="2" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>2x</option>
-                          <option value="3" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>3x</option>
-                          <option value="4" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>4x</option>
-                          <option value="5" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>5x</option>
-                          <option value="6" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>6x</option>
-                          <option value="8" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>8x</option>
-                          <option value="10" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>10x</option>
-                        </select>
-                        <div style={{ width: '1.5px', height: '1.2rem', background: 'rgba(22, 163, 74, 0.3)', margin: '0 4px' }} />
-                        <div ref={engineDropdownRef} style={{ position: 'relative' }}>
-                          <button
-                            type="button"
-                            onClick={() => setEngineDropdownOpen(!engineDropdownOpen)}
-                            title="Select AI Upscale Model"
+                          {upscaleEngine === 'mata_ai' && <Sparkles style={{ width: '0.82rem', height: '0.82rem', color: '#16a34a' }} />}
+                          {upscaleEngine === 'auto_detect' && <Target style={{ width: '0.82rem', height: '0.82rem', color: '#2563eb' }} />}
+                          {upscaleEngine === 'fast' && <Zap style={{ width: '0.82rem', height: '0.82rem', color: '#d97706' }} />}
+                          <span>{upscaleEngine === 'mata_ai' ? 'Mata AI' : (upscaleEngine === 'auto_detect' ? 'Auto Detect' : 'Fast')}</span>
+                          <ChevronDown style={{ width: '0.75rem', height: '0.75rem', transform: engineDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s ease', opacity: 0.7 }} />
+                        </button>
+
+                        {engineDropdownOpen && (
+                          <div
                             style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '5px',
-                              background: 'rgba(22, 163, 74, 0.08)',
-                              color: '#15803D',
-                              border: '1px solid rgba(22, 163, 74, 0.3)',
-                              borderRadius: '0.35rem',
-                              fontSize: '0.82rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              outline: 'none',
-                              padding: '0.15rem 0.45rem',
-                              lineHeight: '1.2',
-                              userSelect: 'none'
+                              position: 'absolute',
+                              top: 'calc(100% + 5px)',
+                              left: 0,
+                              minWidth: '150px',
+                              background: 'var(--surface-1, #ffffff)',
+                              border: '1px solid var(--glass-border, rgba(22, 163, 74, 0.25))',
+                              borderRadius: '0.5rem',
+                              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.18)',
+                              backdropFilter: 'blur(12px)',
+                              zIndex: 1000,
+                              padding: '4px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '2px'
                             }}
                           >
-                            {upscaleEngine === 'mata_ai' && <Sparkles style={{ width: '0.82rem', height: '0.82rem', color: '#16a34a' }} />}
-                            {upscaleEngine === 'auto_detect' && <Target style={{ width: '0.82rem', height: '0.82rem', color: '#2563eb' }} />}
-                            {upscaleEngine === 'fast' && <Zap style={{ width: '0.82rem', height: '0.82rem', color: '#d97706' }} />}
-                            <span>
-                              {upscaleEngine === 'mata_ai' ? 'Mata AI' : (upscaleEngine === 'auto_detect' ? 'Auto Detect' : 'Fast')}
-                            </span>
-                            <ChevronDown style={{ width: '0.75rem', height: '0.75rem', transform: engineDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s ease', opacity: 0.7 }} />
-                          </button>
+                            {UPSCALE_ENGINE_OPTIONS.map((item) => {
+                              const IconComponent = item.icon;
+                              const isSelected = upscaleEngine === item.id;
+                              return (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setUpscaleEngine(item.id);
+                                    localStorage.setItem('upscaleEngine', item.id);
+                                    setEngineDropdownOpen(false);
+                                  }}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: '8px',
+                                    padding: '0.4rem 0.55rem',
+                                    borderRadius: '0.35rem',
+                                    border: 'none',
+                                    background: isSelected ? 'rgba(22, 163, 74, 0.12)' : 'transparent',
+                                    color: isSelected ? '#15803D' : 'var(--text-1)',
+                                    fontSize: '0.8rem',
+                                    fontWeight: isSelected ? 600 : 500,
+                                    cursor: 'pointer',
+                                    textAlign: 'left',
+                                    width: '100%',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                  onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = 'var(--surface-2, rgba(0,0,0,0.05))'; }}
+                                  onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                    <IconComponent style={{ width: '0.85rem', height: '0.85rem', color: item.color }} />
+                                    <span>{item.label}</span>
+                                  </div>
+                                  {isSelected && <Check style={{ width: '0.75rem', height: '0.75rem', color: '#16a34a' }} />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
-                          {engineDropdownOpen && (
-                            <div
-                              style={{
-                                position: 'absolute',
-                                top: 'calc(100% + 5px)',
-                                left: 0,
-                                minWidth: '150px',
-                                background: 'var(--surface-1, #ffffff)',
-                                border: '1px solid var(--glass-border, rgba(22, 163, 74, 0.25))',
-                                borderRadius: '0.5rem',
-                                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.18)',
-                                backdropFilter: 'blur(12px)',
-                                zIndex: 1000,
-                                padding: '4px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '2px'
-                              }}
-                            >
-                              {UPSCALE_ENGINE_OPTIONS.map((item) => {
-                                const IconComponent = item.icon;
-                                const isSelected = upscaleEngine === item.id;
-                                return (
-                                  <button
-                                    key={item.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setUpscaleEngine(item.id);
-                                      localStorage.setItem('upscaleEngine', item.id);
-                                      setEngineDropdownOpen(false);
-                                    }}
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'space-between',
-                                      gap: '8px',
-                                      padding: '0.4rem 0.55rem',
-                                      borderRadius: '0.35rem',
-                                      border: 'none',
-                                      background: isSelected ? 'rgba(22, 163, 74, 0.12)' : 'transparent',
-                                      color: isSelected ? '#15803D' : 'var(--text-1)',
-                                      fontSize: '0.8rem',
-                                      fontWeight: isSelected ? 600 : 500,
-                                      cursor: 'pointer',
-                                      textAlign: 'left',
-                                      width: '100%',
-                                      transition: 'all 0.15s ease'
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      if (!isSelected) {
-                                        e.currentTarget.style.background = 'var(--surface-2, rgba(0,0,0,0.05))';
-                                      }
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      if (!isSelected) {
-                                        e.currentTarget.style.background = 'transparent';
-                                      }
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                                      <IconComponent style={{ width: '0.85rem', height: '0.85rem', color: item.color }} />
-                                      <span>{item.label}</span>
-                                    </div>
-                                    {isSelected && <Check style={{ width: '0.75rem', height: '0.75rem', color: '#16a34a' }} />}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </>
-              )}
-
-
-            {/* Search filter moved below */}
-
-
-            {/* End of dynamic controls */}
-            
-            {images.length > 0 && !images.every(img => img.status === 'done') && (
-              <button
-                className="btn-glass-blue"
-                style={{
-                  padding: '0.38rem 0.8rem',
-                  boxShadow: 'none'
-                }}
-                disabled={isProcessing}
-                onClick={() => processBatch(false)}
-                title="Keyboard shortcut: Enter"
-              >
-                {isProcessing ? <Loader2 style={{ width: '0.95rem', height: '0.95rem' }} className="animate-spin" /> : <Sparkles style={{ width: '0.95rem', height: '0.95rem' }} />}
-                {isProcessing ? 'Generating...' : 'Generate all'}
-              </button>
-            )}
-            
-            {window.electronAPI ? (
-              <button
-                className={`btn-glass-blue ${doneCount > 0 && !isProcessing && !isEmbedding ? 'animate-border-glow' : ''}`}
-                style={{ 
-                  padding: '0.38rem 0.8rem',
-                  transition: 'background-color 0.3s, border-color 0.3s'
-                }}
-                disabled={isEmbedding || doneCount === 0}
-                onClick={() => {
-                  setShowPermissionModal(true);
-                  localStorage.setItem('embedToastSeen', 'true');
-                }}
-                title="Embed Title & Keywords into your original files"
-              >
-                {isEmbedding ? <Loader2 style={{ width: '0.9rem', height: '0.9rem' }} className="animate-spin" /> : <Tag style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} />}
-                {isEmbedding ? 'Embedding...' : 'Embed to files'}
-              </button>
-            ) : (
-              <button
-                className="btn-glass-blue"
-                style={{ 
-                  padding: '0.38rem 0.8rem',
-                }}
-                onClick={() => alert("To embed metadata directly into files, run the app as a desktop application (npm run app:dev). This is not possible in standard web browsers.")}
-                title="Direct embedding is only supported in Desktop app mode"
-                disabled
-              >
-                <Tag style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Embed to files
-              </button>
-            )}
-
-            <button
-              className="btn-csv-grad"
-              style={{
-                padding: '0.38rem 0.8rem',
-              }}
-              disabled={isProcessing || doneCount === 0}
-              onClick={() => setShowExportModal(true)}
-            >
-              <FileSpreadsheet style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Export CSV ({doneCount})
-            </button>
-
-            {doneCount > 0 && !(autoEmbed && autoRemoveYellow) && (
-              <button
-                className="btn-glass-inactive"
-                style={{
-                  padding: '0.38rem 0.8rem',
-                  border: '1.5px solid rgba(245, 158, 11, 0.35)',
-                  color: '#e28704',
-                  background: 'rgba(245, 158, 11, 0.03)',
-                  cursor: isProcessing ? 'not-allowed' : 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  borderRadius: '0.375rem',
-                  fontSize: '0.875rem',
-                  fontWeight: 600,
-                  transition: 'all 0.2s',
-                }}
-                disabled={isProcessing}
-                onClick={() => {
-                  if (confirm("Are you sure you want to remove all Medium (Yellow) keywords across all files?")) {
-                    removeKeywordsByColor('yellow');
-                  }
-                }}
-                onMouseOver={(e: any) => {
-                  if (!isProcessing) {
-                    e.currentTarget.style.background = 'rgba(245, 158, 11, 0.08)';
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                  }
-                }}
-                onMouseOut={(e: any) => {
-                  e.currentTarget.style.background = 'rgba(245, 158, 11, 0.03)';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                }}
-              >
-                <Eraser style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Remove Yellow Keywords
-              </button>
-            )}
-
-            {doneCount > 0 && !(autoEmbed && autoRemoveRed) && (
-              <button
-                className="btn-glass-inactive"
-                style={{
-                  padding: '0.38rem 0.8rem',
-                  border: '1.5px solid rgba(239, 68, 68, 0.35)',
-                  color: '#dc2626',
-                  background: 'rgba(239, 68, 68, 0.03)',
-                  cursor: isProcessing ? 'not-allowed' : 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  borderRadius: '0.375rem',
-                  fontSize: '0.875rem',
-                  fontWeight: 600,
-                  transition: 'all 0.2s',
-                }}
-                disabled={isProcessing}
-                onClick={() => {
-                  if (confirm("Are you sure you want to remove all Low (Red) keywords across all files?")) {
-                    removeKeywordsByColor('red');
-                  }
-                }}
-                onMouseOver={(e: any) => {
-                  if (!isProcessing) {
-                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                  }
-                }}
-                onMouseOut={(e: any) => {
-                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.03)';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                }}
-              >
-                <Eraser style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Remove Red Keywords
-              </button>
-            )}
-          </div>
+          {/* Web-mode warning */}
           {!window.electronAPI && (
-            <div style={{ width: '100%', borderTop: '1px solid var(--glass-border)', marginTop: '0.75rem', paddingTop: '0.75rem' }}>
+            <div style={{ width: '100%', borderTop: '1px solid var(--glass-border)', paddingTop: '0.5rem' }}>
               <p style={{ fontSize: '0.75rem', color: 'var(--warning)', margin: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
                 ⚠️ To embed metadata directly into files, run the app in Desktop mode: <code style={{background: 'var(--surface-3)', padding: '2px 6px', borderRadius: '4px', color: 'var(--accent)'}}>npm run app:dev</code>
               </p>
@@ -2527,8 +2489,6 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           )}
         </div>
       )}
-
-
       {/* Policy Violation Summary Banner */}
       {images.some(img => img.result?.policyWarning) && (
         <div className="glass card animate-fade-in p-4" style={{ background: 'rgba(239, 68, 68, 0.05)', borderLeft: '4px solid #ef4444', marginBottom: '1.25rem' }}>

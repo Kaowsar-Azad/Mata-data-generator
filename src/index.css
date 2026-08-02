@@ -1224,14 +1224,14 @@ input[type="checkbox"].ios-toggle:disabled {
   cursor: pointer;
   transition: all 0.2s ease;
   text-decoration: none;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.6);
   color: #1e293b; /* Slate 800 (Very Dark slate) */
   border: 1px solid rgba(255, 255, 255, 0.2);
   backdrop-filter: blur(8px);
 }
 
 .btn-glass-inactive:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.8);
   border-color: rgba(255, 255, 255, 0.35);
   color: #0f172a; /* Slate 900 */
 }
@@ -1247,18 +1247,18 @@ input[type="checkbox"].ios-toggle:disabled {
   cursor: pointer;
   transition: all 0.2s ease;
   text-decoration: none;
-  background: rgba(22, 163, 74, 0.08);
+  background: rgba(22, 163, 74, 0.25);
   color: #15803D; /* Softer Active Green Text */
   border: 1px solid rgba(22, 163, 74, 0.45); /* Softened glass border */
   backdrop-filter: blur(8px);
 }
 .btn-glass-green-custom:hover:not(:disabled) {
-  background: rgba(22, 163, 74, 0.12);
+  background: rgba(22, 163, 74, 0.35);
   border-color: #15803D; /* Hover Green */
   color: #15803D;
 }
 .btn-glass-green-custom:active:not(:disabled) {
-  background: rgba(22, 163, 74, 0.18);
+  background: rgba(22, 163, 74, 0.3);
   border-color: #15803D; /* Pressed Green */
   color: #15803D;
 }

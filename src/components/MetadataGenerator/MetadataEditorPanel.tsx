@@ -67,7 +67,7 @@ export function MetadataEditorPanel({
           )}
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <h4 className="font-mono text-sm text-muted truncate" style={{ margin: 0 }} title={img.file?.name || img.renamedName}>
+          <h4 className="font-sans font-medium text-sm text-muted truncate" style={{ margin: 0 }} title={img.file?.name || img.renamedName}>
             {img.file?.name || img.renamedName}
           </h4>
           <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.25rem', alignItems: 'center', flexWrap: 'wrap' }}>

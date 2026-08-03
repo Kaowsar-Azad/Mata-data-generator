@@ -95,8 +95,6 @@ const MetadataCard = memo(({
               isTextArea isKeywords img={img}
             />
             
-            )}
-
 
 
             {/* IP / POLICY WARNING BANNER */}

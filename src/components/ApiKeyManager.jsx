@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Plus, Trash2, Key, CheckCircle, X, Shield, ExternalLink, Sparkles, Wind, Zap, Cpu, Network, Cloud } from "lucide-react";
 
 const PROVIDERS = [
-  { id: "gemini",     label: "Google Gemini", icon: Sparkles, iconColor: "#6366f1", desc: "Google's most capable multimodal AI models", url: "https://aistudio.google.com/app/apikey" },
+  { id: "gemini",     label: "Google Gemini", icon: Sparkles, iconColor: "#6366f1", desc: "Google's most capable multimodal AI models", url: "https://aistudio.google.com/app/apikey", recommended: true },
   { id: "cloudflare", label: "Cloudflare AI", icon: Cloud,    iconColor: "#f38020", desc: "Free AI inference via Cloudflare Workers", url: "https://dash.cloudflare.com/profile/api-tokens" },
   { id: "mistral",    label: "Mistral AI",    icon: Wind,     iconColor: "#f97316", desc: "High performance open models", url: "https://console.mistral.ai/api-keys/" },
   { id: "groq",       label: "Groq",          icon: Zap,      iconColor: "#f59e0b", desc: "Fast LLM inference with OpenAI-compatible API", url: "https://console.groq.com/keys" },
@@ -198,11 +198,24 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
                   />
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                     <IconComponent style={{ width: '1rem', height: '1rem', color: p.iconColor, flexShrink: 0 }} />
-                    <span style={{
-                      color: isViewed ? 'var(--text-1)' : 'var(--text-2)',
-                      fontWeight: isViewed ? 700 : 500,
-                      fontSize: '0.85rem'
-                    }}>{p.label}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{
+                        color: isViewed ? 'var(--text-1)' : 'var(--text-2)',
+                        fontWeight: isViewed ? 700 : 500,
+                        fontSize: '0.85rem',
+                        lineHeight: 1.2
+                      }}>{p.label}</span>
+                      {p.recommended && (
+                        <span style={{
+                          fontSize: '0.55rem',
+                          color: 'var(--primary)',
+                          fontWeight: 800,
+                          letterSpacing: '0.04em',
+                          marginTop: '0.15rem',
+                          textTransform: 'uppercase'
+                        }}>Recommended</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               )

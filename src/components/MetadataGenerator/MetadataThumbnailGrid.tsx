@@ -10,7 +10,7 @@ const ThumbnailCard = memo(({
   onSelectToggle,
   onActiveToggle,
   removeImage,
-}) => {
+}: any) => {
   return (
     <div 
       className="glass card animate-fade-in"
@@ -227,8 +227,8 @@ export function MetadataThumbnailGrid({
   setActiveCell,
   removeImage,
   editingImageId,
-}) {
-  const handleSelectToggle = (id) => {
+}: any) {
+  const handleSelectToggle = (id: string) => {
     const next = new Set(selectedRows);
     if (next.has(id)) {
       next.delete(id);
@@ -238,7 +238,7 @@ export function MetadataThumbnailGrid({
     setSelectedRows(next);
   };
 
-  const handleActiveToggle = (id) => {
+  const handleActiveToggle = (id: string) => {
     setActiveCell({ id, field: 'title' });
     if (!selectedRows.has(id)) {
       const next = new Set(selectedRows);

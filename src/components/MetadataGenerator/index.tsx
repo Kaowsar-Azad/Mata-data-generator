@@ -48,7 +48,7 @@ const ACCEPTED_TYPES =
   "application/postscript,application/eps,image/eps,application/x-eps,.eps,.epsf,.epsi," +
   "video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm,.mp4,.mov,.avi,.mkv,.webm";
 
-const isVideoFile = (file) => {
+const isVideoFile = (file: any) => {
   if (file.type && file.type.startsWith('video/')) return true;
   const ext = (file.name || '').split('.').pop().toLowerCase();
   return ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext);
@@ -61,7 +61,7 @@ const workerCallbacks = new Map();
 function getWorker() {
   if (!imageWorker) {
     imageWorker = new Worker(new URL('../../workers/imageWorker.js', import.meta.url), { type: 'module' });
-    imageWorker.onmessage = (e) => {
+    imageWorker.onmessage = (e: any) => {
       const { id, success, dataUrl, error } = e.data;
       const cb = workerCallbacks.get(id);
       if (cb) {
@@ -74,7 +74,7 @@ function getWorker() {
   return imageWorker;
 }
 
-const resizeImageToBase64Worker = (file, maxSize = 1024) => {
+const resizeImageToBase64Worker = (file: any, maxSize = 1024) => {
   return new Promise((resolve, reject) => {
     try {
       const worker = getWorker();
@@ -87,7 +87,7 @@ const resizeImageToBase64Worker = (file, maxSize = 1024) => {
   });
 };
 
-const PolicyViolationThumbnail = ({ img }) => {
+const PolicyViolationThumbnail = ({ img }: any) => {
   if (!img.preview) {
     return (
       <div style={{ display: 'flex', width: '100%', height: '100%', background: 'rgba(239, 68, 68, 0.15)', borderRadius: '0.2rem', alignItems: 'center', justifyContent: 'center' }}>
@@ -105,7 +105,7 @@ const PolicyViolationThumbnail = ({ img }) => {
   );
 };
 
-const filterMetadataKeywords = (metadata, removeYellow, removeRed) => {
+const filterMetadataKeywords = (metadata: any, removeYellow: boolean, removeRed: boolean) => {
   if (!metadata || !metadata.keywords) return metadata;
 
   const getKeywordScore = (keyword, scoreObj) => {
@@ -154,7 +154,7 @@ const filterMetadataKeywords = (metadata, removeYellow, removeRed) => {
   };
 };
 
-export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptSettings, ftpConfigs = [] }) {
+export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptSettings, ftpConfigs = [] }: any) {
   const [images, setImages] = useState([]);
   const imagesRef = useRef([]);
   imagesRef.current = images;
@@ -711,8 +711,19 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       }
     };
 
-    for (const img of toProcess) {
+    const activeProviderName = apiProviderRef.current || "gemini";
+    const isGroqBatch = Array.isArray(activeProviderName) ? activeProviderName.includes("groq") : activeProviderName === "groq";
+
+    for (let imgIndex = 0; imgIndex < toProcess.length; imgIndex++) {
+      const img = toProcess[imgIndex];
       if (cancelRef.current) break;
+
+      // Stagger Groq batch requests by 2.5s per item to stay within 30 RPM limits
+      if (isGroqBatch && imgIndex > 0) {
+        await new Promise(r => setTimeout(r, 2500));
+      }
+      if (cancelRef.current) break;
+
       setImages((prev) =>
         prev.map((item) =>
           item.id === img.id ? { ...item, status: "processing" } : item
@@ -790,8 +801,12 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               isPlaceholder = epsData.isPlaceholder ?? false;
             }
 
+            const currentProvider = apiProviderRef.current || "gemini";
+            const isGroq = Array.isArray(currentProvider) ? currentProvider.includes("groq") : currentProvider === "groq";
+
             if (cancelRef.current) return;
-            if (promptSettingsRef.current?.securityScanEnabled) {
+            // For Groq, safety/trademark scan is combined into single metadata call to reduce API usage by 50%
+            if (promptSettingsRef.current?.securityScanEnabled && !isGroq) {
               setImages((prev) =>
                 prev.map((item) =>
                   item.id === img.id
@@ -803,7 +818,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 base64,
                 mimeType,
                 apiKeysRef.current,
-                apiProviderRef.current || "gemini"
+                currentProvider
               );
               if (!securityRes.isSafe) {
                 throw new Error(`Policy Violation: ${securityRes.reason}`);
@@ -824,9 +839,14 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               base64,
               mimeType,
               apiKeysRef.current,
-              apiProviderRef.current || "gemini",
+              currentProvider,
               fileInfo
             );
+
+            // Check policy warning returned in single combined Groq call
+            if (promptSettingsRef.current?.securityScanEnabled && isGroq && metadata?.policyWarning) {
+              throw new Error(`Policy Violation: ${metadata.policyWarning}`);
+            }
 
             if (autoEmbed) {
               metadata = filterMetadataKeywords(metadata, autoRemoveYellow, autoRemoveRed);
@@ -1036,7 +1056,14 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         setIsProcessing(false);
         return;
       }
-      if (activePromises.size >= limit) {
+
+      if (isGroqBatch) {
+        // Groq rate limit protection (TPM/RPM): Wait for current image to complete + 8s cool-down before next image
+        await p;
+        if (imgIndex < toProcess.length - 1 && !cancelRef.current) {
+          await new Promise(r => setTimeout(r, 8000));
+        }
+      } else if (activePromises.size >= limit) {
         await Promise.race(activePromises);
       }
       if (cancelRef.current) break;
@@ -1294,12 +1321,12 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           const successCount = embeddedImages.length - failedCount;
 
           if (failedCount > 0) {
-            showToast(`মেটাডাটা এম্বেড হয়েছে, কিন্তু ${failedCount}টি ফাইল আপলোড ব্যর্থ হয়েছে।`, "error");
+            showToast(`Metadata embedded, but upload failed for ${failedCount} file${failedCount !== 1 ? 's' : ''}.`, "error");
           } else {
             if (successCount === 1) {
-              showToast(`"${embeddedImages[0].renamedName || embeddedImages[0].file.name}" সফলভাবে FTP-তে আপলোড করা হয়েছে!`, "success");
+              showToast(`"${embeddedImages[0].renamedName || embeddedImages[0].file.name}" successfully uploaded to FTP!`, "success");
             } else {
-              showToast(`${successCount}টি ফাইল সফলভাবে FTP-তে আপলোড করা হয়েছে!`, "success");
+              showToast(`${successCount} files successfully uploaded to FTP!`, "success");
             }
           }
 
@@ -1311,7 +1338,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             }
             return item;
           }));
-          showToast(`FTP আপলোড ব্যর্থ হয়েছে: ${uploadErr.message}`, "error");
+          showToast(`FTP upload failed: ${uploadErr.message}`, "error");
         } finally {
           setActiveJobId(null);
         }
@@ -1325,9 +1352,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           }
         } else {
           if (embeddedImages.length === 1) {
-            showToast(`"${embeddedImages[0].renamedName || embeddedImages[0].file.name}" ফাইলে মেটাডাটা সফলভাবে এম্বেড করা হয়েছে!`, "success");
+            showToast(`Metadata successfully embedded in "${embeddedImages[0].renamedName || embeddedImages[0].file.name}"!`, "success");
           } else if (embeddedImages.length > 1) {
-            showToast(`${embeddedImages.length}টি ফাইলে মেটাডাটা সফলভাবে এম্বেড করা হয়েছে!`, "success");
+            showToast(`Metadata successfully embedded in ${embeddedImages.length} files!`, "success");
           }
         }
       }
@@ -1378,7 +1405,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       try {
         const rows = parseCSV(text);
         if (rows.length < 2) {
-          showToast("CSV ফাইলে কোনো ডেটা পাওয়া যায়নি।", "error");
+          showToast("No data found in the CSV file.", "error");
           return;
         }
 
@@ -1390,7 +1417,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         const keywordsIdx = headers.findIndex(h => h.includes('keywords') || h.includes('tags') || h.includes('subject'));
 
         if (filenameIdx === -1) {
-          showToast("CSV ফাইলে 'Filename' কলামটি পাওয়া যায়নি।", "error");
+          showToast("Filename column not found in the CSV file.", "error");
           return;
         }
 
@@ -1431,12 +1458,12 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
         if (updateCount > 0) {
           setImages(newImages);
-          showToast(`${updateCount}টি ফাইলের মেটাডাটা CSV থেকে সফলভাবে ইমপোর্ট করা হয়েছে!`, "success");
+          showToast(`Metadata for ${updateCount} file${updateCount !== 1 ? 's' : ''} successfully imported from CSV!`, "success");
         } else {
-          showToast("CSV ফাইলের নামের সাথে রানিং কোনো ইমেজের মিল পাওয়া যায়নি।", "warning");
+          showToast("No matching files found in the CSV for current batch images.", "warning");
         }
       } catch (err) {
-        showToast(`CSV ইমপোর্ট করতে সমস্যা হয়েছে: ${err.message}`, "error");
+        showToast(`CSV import error: ${err.message}`, "error");
       }
     };
     reader.readAsText(file);
@@ -1634,7 +1661,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               {errorCount} File{errorCount !== 1 ? 's' : ''} Failed to Generate Metadata
             </h3>
             <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
-              এপিআই ডেলি কোটা লিমিট, রেট লিমিট বা ইন্টারনেট সংযোগ বিচ্ছিন্ন হওয়ার কারণে মেটাডেটা তৈরি হয়নি।
+              Metadata could not be generated due to API rate limits, daily quota limits, or internet connection issues.
             </p>
           </div>
           <button
@@ -1658,7 +1685,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               {localEmbedErrorCount} File{localEmbedErrorCount !== 1 ? 's' : ''} Failed to Embed (Local Save)
             </h3>
             <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
-              কম্পিউটারের ফাইলে মেটাডেটা এম্বেড ও সেভ করা সম্ভব হয়নি। পুনরায় চেষ্টা করুন।
+              Metadata could not be embedded or saved locally. Please try again.
             </p>
           </div>
           <button
@@ -1682,7 +1709,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               {ftpErrorCount} File{ftpErrorCount !== 1 ? 's' : ''} Failed to Upload to FTP
             </h3>
             <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
-              এফটিপি সার্ভারে ফাইল আপলোড সম্পূর্ণ হয়নি (নেটওয়ার্ক সংযোগ বিচ্ছিন্ন বা সার্ভার ডিসকানেক্ট)।
+              File upload to FTP server was not completed (network disconnect or server unreachable).
             </p>
           </div>
           <button
@@ -1706,7 +1733,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               {policyViolationCount} File{policyViolationCount !== 1 ? 's' : ''} Flagged for Copyright / Policy Issue
             </h3>
             <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
-              স্টক মার্কেটপ্লেস ব্র্যান্ড ট্রেডমার্ক বা পলিসি ভায়োলেশনের জন্য সংবেদনশীল ফাইল চিহ্নিত হয়েছে।
+              Files flagged as sensitive due to potential brand trademark or marketplace policy violations.
             </p>
           </div>
         </div>
@@ -2202,7 +2229,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 style={{ 
                   padding: '0.38rem 0.8rem',
                 }}
-                onClick={() => alert("ফাইলের ভেতর সরাসরি মেটাডেটা এম্বেড করতে অ্যাপটি ডেস্কটপ অ্যাপ্লিকেশন হিসেবে চালান (npm run app:dev)। ব্রাউজারে এটি সম্ভব নয়।")}
+                onClick={() => alert("To embed metadata directly into files, run the app as a desktop application (npm run app:dev). This is not possible in standard web browsers.")}
                 title="Direct embedding is only supported in Desktop app mode"
                 disabled
               >
@@ -2300,7 +2327,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           {!window.electronAPI && (
             <div style={{ width: '100%', borderTop: '1px solid var(--glass-border)', marginTop: '0.75rem', paddingTop: '0.75rem' }}>
               <p style={{ fontSize: '0.75rem', color: 'var(--warning)', margin: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                ⚠️ ফাইলের ভেতর সরাসরি মেটাডেটা এম্বেড করার জন্য অ্যাপটি ডেস্কটপ সংস্করণে চালান: <code style={{background: 'var(--surface-3)', padding: '2px 6px', borderRadius: '4px', color: 'var(--accent)'}}>npm run app:dev</code>
+                ⚠️ To embed metadata directly into files, run the app in Desktop mode: <code style={{background: 'var(--surface-3)', padding: '2px 6px', borderRadius: '4px', color: 'var(--accent)'}}>npm run app:dev</code>
               </p>
             </div>
           )}
@@ -2316,7 +2343,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             <div style={{ flex: 1 }}>
               <h4 style={{ margin: 0, fontSize: '0.95rem', color: '#ef4444', fontWeight: 800 }}>STOCK SITE POLICY VIOLATION DETECTED</h4>
               <p className="text-muted" style={{ fontSize: '0.8rem', margin: '2px 0 0 0', color: 'var(--text-2)' }}>
-                {images.filter(img => img.result?.policyWarning).length}টি ইমেজে পলিসি ভায়োলেশন পাওয়া গেছে। আপনি চাইলে এখান থেকেই ইমেজগুলো ডিলিট করে দিতে পারেন।
+                Policy violations detected in {images.filter(img => img.result?.policyWarning).length} file{images.filter(img => img.result?.policyWarning).length !== 1 ? 's' : ''}. You can delete them directly from here.
               </p>
             </div>
           </div>
@@ -2517,7 +2544,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               </div>
               <div style={{ flexGrow: 1, paddingTop: '0.15rem' }}>
                 <h3 style={{ fontWeight: 700, color: 'var(--text-1)', margin: 0, fontSize: '0.95rem', letterSpacing: '0.01em' }}>
-                  মেটাডেটা এম্বেড করুন
+                  Embed Metadata
                 </h3>
               </div>
               <button 
@@ -2549,7 +2576,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               marginBottom: '1.25rem',
               marginTop: '0'
             }}>
-              সবগুলো ফাইলের এআই মেটাডেটা তৈরি সফল হয়েছে। আপনি কি এই টাইটেল ও কিওয়ার্ড সরাসরি ফাইলগুলোর ভেতর (IPTC/XMP) এম্বেড করতে চান?
+              AI metadata has been successfully generated for all files. Do you want to embed these titles and keywords directly into the files (IPTC/XMP)?
             </p>
             
             <label 
@@ -2584,7 +2611,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 }}
               />
               <span style={{ fontSize: '0.75rem', color: 'var(--text-2)', lineHeight: 1.4, userSelect: 'none' }}>
-                ভবিষ্যতে মেটাডেটা জেনারেট হওয়ার পর স্বয়ংক্রিয়ভাবে পারমিশন ছাড়াই এম্বেড করুন
+                Always embed automatically without asking in the future
               </span>
             </label>
             
@@ -2609,7 +2636,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-3)'; e.currentTarget.style.color = 'var(--text-1)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.color = 'var(--text-2)'; }}
               >
-                না, থাক
+                No, Cancel
               </button>
               <button 
                 style={{ 
@@ -2635,7 +2662,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(6, 182, 212, 0.4), inset 0 1px 0 rgba(255,255,255,0.2)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(6, 182, 212, 0.3), inset 0 1px 0 rgba(255,255,255,0.2)'; }}
               >
-                হ্যাঁ, এম্বেড করুন
+                Yes, Embed
               </button>
             </div>
           </div>

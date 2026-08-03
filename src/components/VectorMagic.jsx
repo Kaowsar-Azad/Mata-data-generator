@@ -94,7 +94,7 @@ export function VectorMagic() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ svg: resultSvg, filename: base })
         });
-        if (!response.ok) throw new Error("EPS কনভার্ট ব্যর্থ হয়েছে। নিশ্চিত করুন Ghostscript ইনস্টল করা আছে।");
+        if (!response.ok) throw new Error("EPS conversion failed. Ensure Ghostscript is installed.");
         const epsBlob = await response.blob();
         const url = URL.createObjectURL(epsBlob);
         const a = document.createElement("a");
@@ -118,7 +118,7 @@ export function VectorMagic() {
           Vector Magic
         </h2>
         <p className="text-muted" style={{ fontSize: "0.88rem", maxWidth: "52rem" }}>
-          যেকোনো ছবিকে হাই-কোয়ালিটি <strong>SVG ভেক্টর</strong> ফাইলে কনভার্ট করুন। এটি লোগো বা ইলাস্ট্রেশনের জন্য সেরা।
+          Convert any image into a high-quality <strong>SVG vector</strong> file. Perfect for logos or illustrations.
         </p>
       </div>
 
@@ -201,9 +201,9 @@ export function VectorMagic() {
           <div className="upload-icon-wrap">
             <Upload style={{ width: "2rem", height: "2rem", color: "var(--primary-light)" }} />
           </div>
-          <h3 style={{ margin: "0.4rem 0", fontSize: "1.05rem" }}>ছবি নির্বাচন করুন</h3>
+          <h3 style={{ margin: "0.4rem 0", fontSize: "1.05rem" }}>Select Image</h3>
           <p className="text-muted" style={{ fontSize: "0.85rem" }}>
-            JPG, PNG, WebP — ক্লিক বা ড্র্যাগ করুন
+            JPG, PNG, WebP — Click or drag to upload
           </p>
         </div>
       </div>
@@ -212,11 +212,11 @@ export function VectorMagic() {
         <div className="glass card animate-fade-in" style={{ padding: "1rem" }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
             <div style={{ flex: "1 1 250px" }}>
-              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-3)", marginBottom: "0.35rem" }}>আসল ছবি</p>
+              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-3)", marginBottom: "0.35rem" }}>Original Image</p>
               <img src={previewUrl} alt="original" style={{ maxWidth: "100%", borderRadius: "0.5rem", border: "1px solid var(--glass-border)" }} />
             </div>
             <div style={{ flex: "1 1 250px" }}>
-              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-3)", marginBottom: "0.35rem" }}>ভেক্টর প্রিভিউ (SVG)</p>
+              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-3)", marginBottom: "0.35rem" }}>Vector Preview (SVG)</p>
               <div
                 style={{
                   minHeight: "150px",
@@ -236,7 +236,7 @@ export function VectorMagic() {
                     style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
                   />
                 ) : (
-                  <span style={{ fontSize: "0.75rem", color: "var(--text-3)" }}>প্রসেস করলে এখানে ভেক্টর দেখাবে</span>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-3)" }}>Vectorized preview will be displayed here</span>
                 )}
                 {loading && (
                   <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.1)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
@@ -256,7 +256,7 @@ export function VectorMagic() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "1rem" }}>
             <button type="button" className="btn-primary" disabled={loading} onClick={runVectorize}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              {loading ? "ভেক্টর হচ্ছে…" : "ভেক্টর করুন"}
+              {loading ? "Vectorizing..." : "Vectorize"}
             </button>
             <button type="button" className="btn-outline" disabled={!resultBlob || loading} onClick={() => downloadFile('svg')}>
               <Download className="w-4 h-4" /> SVG
@@ -271,7 +271,7 @@ export function VectorMagic() {
               disabled={loading}
               onClick={reset}
             >
-              <Trash2 className="w-4 h-4" /> মুছুন
+              <Trash2 className="w-4 h-4" /> Delete
             </button>
           </div>
         </div>

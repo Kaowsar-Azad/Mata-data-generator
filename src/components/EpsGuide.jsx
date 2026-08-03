@@ -89,14 +89,14 @@ export function EpsGuide() {
         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
           <FileCode2 style={{ width: "1.1rem", height: "1.1rem", color: "#f59e0b" }} />
           <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "#f59e0b" }}>
-            EPS ফাইলের জন্য AI Vision সক্রিয় করবেন কীভাবে?
+            How to enable AI Vision for EPS files?
           </span>
           <span style={{
             fontSize: "10px", fontWeight: 700, padding: "2px 7px",
             background: "rgba(245,158,11,0.2)", color: "#f59e0b",
             borderRadius: "9999px", border: "1px solid rgba(245,158,11,0.3)"
           }}>
-            ১ মিনিটের সেটআপ
+            1-Minute Setup
           </span>
         </div>
         {isOpen
@@ -118,29 +118,29 @@ export function EpsGuide() {
             fontSize: "0.8rem",
             color: "#fca5a5"
           }}>
-            <strong>⚠ সমস্যা কী?</strong> ব্রাউজার EPS ফাইল রেন্ডার করতে পারে না। তাই AI সরাসরি আপনার ডিজাইন "দেখতে" পায় না। সমাধান হলো Adobe Illustrator দিয়ে একটি JPG Preview তৈরি করা।
+            <strong>⚠ What is the issue?</strong> Browsers cannot render EPS files directly, meaning the AI cannot "see" your design. The solution is to create a JPG preview alongside the EPS using Adobe Illustrator.
           </div>
 
           {/* Steps */}
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginBottom: "1.25rem" }}>
-            <Step number="১" icon={<Download style={{ width: "1rem", height: "1rem" }} />}
-              title="Script ডাউনলোড করুন"
-              desc='নিচের বাটনে ক্লিক করে "eps_preview_exporter.jsx" ফাইলটি ডাউনলোড করুন।'
+            <Step number="1" icon={<Download style={{ width: "1rem", height: "1rem" }} />}
+              title="Download the Script"
+              desc='Click the button below to download the "eps_preview_exporter.jsx" file.'
             />
             <Arrow />
-            <Step number="২" icon={<Terminal style={{ width: "1rem", height: "1rem" }} />}
-              title="Illustrator-এ Script চালান"
-              desc='Adobe Illustrator খুলুন। আপনার EPS ফাইলগুলো Open করুন। তারপর: File → Scripts → Other Script → ডাউনলোড করা .jsx ফাইলটি সিলেক্ট করুন।'
+            <Step number="2" icon={<Terminal style={{ width: "1rem", height: "1rem" }} />}
+              title="Run the Script in Illustrator"
+              desc='Open Adobe Illustrator, open your EPS files, and then go to: File → Scripts → Other Script → select the downloaded .jsx file.'
             />
             <Arrow />
-            <Step number="৩" icon={<ImageIcon style={{ width: "1rem", height: "1rem" }} />}
-              title="EPS + JPG একসাথে আপলোড করুন"
-              desc='Script রান হলে প্রতিটি EPS-এর পাশে একটি JPG তৈরি হবে (icon-1.eps → icon-1.jpg)। এখন উপরের Upload Zone-এ EPS এবং JPG দুটো ফাইলই একসাথে আপলোড করুন।'
+            <Step number="3" icon={<ImageIcon style={{ width: "1rem", height: "1rem" }} />}
+              title="Upload EPS + JPG Together"
+              desc='Once the script runs, a JPG will be created next to each EPS (e.g., icon-1.eps → icon-1.jpg). Upload both EPS and JPG files together into the upload zone.'
             />
             <Arrow />
-            <Step number="৪" icon={<FileCode2 style={{ width: "1rem", height: "1rem" }} />}
-              title="AI আপনার আসল ডিজাইন দেখে Metadata তৈরি করবে"
-              desc='App টি স্বয়ংক্রিয়ভাবে JPG ব্যবহার করে AI দিয়ে ডিজাইন বিশ্লেষণ করবে, কিন্তু CSV-এ EPS ফাইলের নামই থাকবে।'
+            <Step number="4" icon={<FileCode2 style={{ width: "1rem", height: "1rem" }} />}
+              title="AI analyzes JPG, outputs EPS"
+              desc='The app will automatically use the JPG preview for AI analysis, but the generated metadata will keep the EPS filename.'
               highlight
             />
           </div>
@@ -168,11 +168,11 @@ export function EpsGuide() {
             onMouseOut={e => e.currentTarget.style.opacity = "1"}
           >
             <Download style={{ width: "1.1rem", height: "1.1rem" }} />
-            Illustrator Script ডাউনলোড করুন (.jsx)
+            Download Illustrator Script (.jsx)
           </button>
 
           <p style={{ textAlign: "center", fontSize: "11px", color: "#64748b", marginTop: "0.6rem" }}>
-            Adobe Illustrator CS6, CC 2015–2026 সাপোর্টেড • ফ্রি • ওপেন সোর্স
+            Supports Adobe Illustrator CS6, CC 2015–2026 • Free • Open Source
           </p>
         </div>
       )}

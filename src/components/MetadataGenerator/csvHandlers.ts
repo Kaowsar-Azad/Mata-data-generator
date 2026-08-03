@@ -1,6 +1,6 @@
-export const parseCSV = (text) => {
-  let lines = [];
-  let row = [""];
+export const parseCSV = (text: string): string[][] => {
+  let lines: string[][] = [];
+  let row: string[] = [""];
   let inQuotes = false;
   for (let i = 0; i < text.length; i++) {
     let c = text[i];
@@ -38,7 +38,7 @@ const adobeCategoryMap = {
   "Transport": 20, "Travel": 21
 };
 
-const getCategoryCode = (categories) => {
+const getCategoryCode = (categories: any) => {
   if (!categories) return "11"; // default Landscape
   const cats = Array.isArray(categories) ? categories : [categories];
   for (const cat of cats) {
@@ -49,7 +49,7 @@ const getCategoryCode = (categories) => {
   return "11";
 };
 
-export const downloadCSV = (targetPlatform, images, promptSettings) => {
+export const downloadCSV = (targetPlatform: string, images: any[], promptSettings: any) => {
   const doneImages = images.filter((img) => img.status === "done");
   if (doneImages.length === 0) return;
 
@@ -57,22 +57,42 @@ export const downloadCSV = (targetPlatform, images, promptSettings) => {
   const safe = (s) => `"${String(s || '').replace(/"/g, '""')}"`;
   const delimiter = platform === 'FreePik' ? ';' : ',';
 
-  let headers = [];
-  let rows = [];
+  let headers: string[] = [];
+  let rows: string[] = [];
 
   doneImages.forEach((img) => {
     const { title = "", description = "", keywords = "" } = img.result || {};
-    const filename = img.renamedName || img.file?.name || "";
-    const categoriesStr = Array.isArray(img.result?.categories) ? img.result.categories.join(", ") : (img.result?.categories || "");
+    const filename = img.file?.name || img.renamedName || "";
 
-    let row = [];
+    // Detect if file is an Illustration/Vector vs Photo
+    const isIllustration = Boolean(
+      img.isEps || 
+      img.isPlaceholder ||
+      promptSettings?.mediaTypeHint === 'Illustration / Vector' ||
+      (img.result?.categories && Array.isArray(img.result.categories) && img.result.categories.some(c => /illustration|clip-art|graphic|abstract/i.test(c))) ||
+      (filename && /vector|illustration|flat|clipart|draw|graphic|render|3d/i.test(filename)) ||
+      (title && /illustration|vector|flat design|3d render|drawing|cartoon|clipart/i.test(title))
+    );
+
+    const illustrationYesNo = isIllustration ? "Yes" : "No";
+    const mediaTypeStr = isIllustration ? "Illustration" : "Photo";
+
+    let row: string[] = [];
     if (platform === 'Adobe Stock') {
       headers = ["filename", "title", "keywords", "category", "releases"];
       const categoryCode = getCategoryCode(img.result?.categories);
       row = [filename, title, keywords, categoryCode, ""];
     } else if (platform === 'Shutterstock') {
-      headers = ["Filename", "Description", "Keywords", "Categories"];
-      row = [filename, description, keywords, categoriesStr];
+      headers = ["Filename", "Description", "Keywords", "Categories", "Illustration"];
+      let catList = [];
+      if (Array.isArray(img.result?.categories)) {
+        catList = img.result.categories;
+      } else if (typeof img.result?.categories === 'string') {
+        catList = img.result.categories.split(',').map(c => c.trim()).filter(Boolean);
+      }
+      // Shutterstock strictly allows a maximum of 2 categories
+      const cleanCats = catList.slice(0, 2).join(', ');
+      row = [filename, description, keywords, cleanCats, illustrationYesNo];
     } else if (platform === 'FreePik') {
       headers = ["File name", "Title", "Keywords"];
       row = [filename, title, keywords];
@@ -92,12 +112,12 @@ export const downloadCSV = (targetPlatform, images, promptSettings) => {
       headers = ["Filename", "description", "Keywords", "Nudity", "Editorial"];
       row = [filename, description, keywords, "No", "No"];
     } else if (platform === 'Extended metadata') {
-      headers = ["Filename", "Title", "Description", "Keywords", "Categories", "Releases"];
-      row = [filename, title, description, keywords, categoriesStr, ""];
+      headers = ["Filename", "Title", "Description", "Keywords", "Categories", "MediaType", "Releases"];
+      row = [filename, title, description, keywords, categoriesStr, mediaTypeStr, ""];
     } else {
       // General
-      headers = ["Filename", "Title", "Description", "Keywords"];
-      row = [filename, title, description, keywords];
+      headers = ["Filename", "Title", "Description", "Keywords", "Categories", "MediaType"];
+      row = [filename, title, description, keywords, categoriesStr, mediaTypeStr];
     }
     rows.push(row.map(safe).join(delimiter));
   });

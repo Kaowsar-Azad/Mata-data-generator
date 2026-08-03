@@ -117,7 +117,7 @@ export function BackgroundRemover() {
       } else if (mode === "hf") {
         const trimmed = hfToken.trim();
         if (!trimmed) {
-          throw new Error("Hugging Face API Token দিন (নিচের ঘরে)।");
+          throw new Error("Please provide your Hugging Face API Token (in the input box below).");
         }
         const blob = await removeBackgroundViaHfSpace(file, trimmed);
         setResultBlob(blob);
@@ -125,7 +125,7 @@ export function BackgroundRemover() {
       } else {
         const trimmed = apiKey.trim();
         if (!trimmed) {
-          throw new Error("remove.bg API কি দিন (নিচের ঘরে)।");
+          throw new Error("Please provide your remove.bg API Key (in the input box below).");
         }
         const blob = await removeBackgroundViaRemoveBgProxy(file, trimmed);
         setResultBlob(blob);
@@ -156,7 +156,7 @@ export function BackgroundRemover() {
           Background Remover
         </h2>
         <p className="text-muted" style={{ fontSize: "0.88rem", maxWidth: "52rem" }}>
-          তিনটি মোড: <strong>লোকাল</strong> (সম্পূর্ণ ফ্রি), <strong>Hugging Face AI</strong> (সম্পূর্ণ ফ্রি ও প্রিমিয়াম কোয়ালিটি) এবং <strong>remove.bg API</strong> (সেরা মান)।
+          Three modes: <strong>Local</strong> (completely free), <strong>Hugging Face AI</strong> (completely free & premium quality), and <strong>remove.bg API</strong> (best quality).
         </p>
       </div>
 
@@ -165,7 +165,7 @@ export function BackgroundRemover() {
         className="glass card"
         style={{ padding: "0.75rem 1rem", display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}
       >
-        <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-2)" }}>মোড</span>
+        <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-2)" }}>Mode</span>
         <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
           <button
             type="button"
@@ -174,7 +174,7 @@ export function BackgroundRemover() {
             style={{ fontSize: "0.78rem", padding: "0.4rem 0.75rem", display: "flex", alignItems: "center", gap: "0.35rem" }}
           >
             <Sparkles style={{ width: "0.85rem", height: "0.85rem" }} />
-            লোকাল (ফ্রি & অফলাইন)
+            Local (Free & Offline)
           </button>
 
           <button
@@ -184,7 +184,7 @@ export function BackgroundRemover() {
             style={{ fontSize: "0.78rem", padding: "0.4rem 0.75rem", display: "flex", alignItems: "center", gap: "0.35rem" }}
           >
             <Sparkles style={{ width: "0.85rem", height: "0.85rem", color: "var(--secondary)" }} />
-            Hugging Face AI (ফ্রি & প্রিমিয়াম)
+            Hugging Face AI (Free & Premium)
           </button>
 
           <button
@@ -204,7 +204,7 @@ export function BackgroundRemover() {
               type="password"
               value={hfToken}
               onChange={(e) => persistHfToken(e.target.value)}
-              placeholder="hf_... টোকেন পেস্ট করুন (সম্পূর্ণ ফ্রি)"
+              placeholder="Paste hf_... token (completely free)"
               style={{
                 width: "100%",
                 padding: "0.45rem 0.55rem",
@@ -219,12 +219,12 @@ export function BackgroundRemover() {
         )}
         {mode === "api" && (
           <div style={{ flex: "1 1 220px", minWidth: "200px", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-            <label style={{ fontSize: "0.65rem", color: "var(--primary)", fontWeight: 700 }}>remove.bg API Key (Gemini key নয়)</label>
+            <label style={{ fontSize: "0.65rem", color: "var(--primary)", fontWeight: 700 }}>remove.bg API Key (Not Gemini key)</label>
             <input
               type="password"
               value={apiKey}
               onChange={(e) => persistKey(e.target.value)}
-              placeholder="remove.bg থেকে key এনে পেস্ট করুন…"
+              placeholder="Paste key from remove.bg..."
               style={{
                 width: "100%",
                 padding: "0.45rem 0.55rem",
@@ -236,7 +236,7 @@ export function BackgroundRemover() {
               }}
             />
             <span style={{ fontSize: "0.6rem", color: "var(--text-3)" }}>
-              প্রক্সি: <strong>{getRemoveBgProxyBase()}</strong>
+              Proxy: <strong>{getRemoveBgProxyBase()}</strong>
             </span>
           </div>
         )}
@@ -254,9 +254,9 @@ export function BackgroundRemover() {
           <div className="upload-icon-wrap">
             <Upload style={{ width: "2rem", height: "2rem", color: "var(--primary-light)" }} />
           </div>
-          <h3 style={{ margin: "0.4rem 0", fontSize: "1.05rem" }}>ছবি নির্বাচন করুন</h3>
+          <h3 style={{ margin: "0.4rem 0", fontSize: "1.05rem" }}>Select Image</h3>
           <p className="text-muted" style={{ fontSize: "0.85rem" }}>
-            JPG, PNG, WebP — ক্লিক বা ড্র্যাগ করুন
+            JPG, PNG, WebP — Click or drag to upload
           </p>
         </div>
       </div>
@@ -265,11 +265,11 @@ export function BackgroundRemover() {
         <div className="glass card animate-fade-in" style={{ padding: "1rem" }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-start" }}>
             <div style={{ flex: "1 1 200px" }}>
-              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-3)", marginBottom: "0.35rem" }}>আসল</p>
+              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-3)", marginBottom: "0.35rem" }}>Original</p>
               <img src={previewUrl} alt="original" style={{ maxWidth: "100%", borderRadius: "0.5rem", border: "1px solid var(--glass-border)" }} />
             </div>
             <div style={{ flex: "1 1 200px" }}>
-              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-3)", marginBottom: "0.35rem" }}>ফলাফল</p>
+              <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--text-3)", marginBottom: "0.35rem" }}>Result</p>
               <div
                 style={{
                   minHeight: "120px",
@@ -287,7 +287,7 @@ export function BackgroundRemover() {
                 {resultUrl ? (
                   <img src={resultUrl} alt="removed" style={{ maxWidth: "100%", display: "block" }} />
                 ) : (
-                  <span style={{ fontSize: "0.75rem", color: "var(--text-3)" }}>প্রসেস করলে এখানে দেখাবে</span>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-3)" }}>Resulting image will be displayed here</span>
                 )}
               </div>
             </div>
@@ -311,10 +311,10 @@ export function BackgroundRemover() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "1rem" }}>
             <button type="button" className="btn-primary" disabled={loading} onClick={runRemove}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eraser className="w-4 h-4" />}
-              {loading ? "প্রসেস হচ্ছে…" : "ব্যাকগ্রাউন্ড সরান"}
+              {loading ? "Processing..." : "Remove Background"}
             </button>
             <button type="button" className="btn-outline" disabled={!resultBlob} onClick={downloadPng}>
-              <Download className="w-4 h-4" /> PNG ডাউনলোড
+              <Download className="w-4 h-4" /> Download PNG
             </button>
             <button
               type="button"
@@ -323,18 +323,18 @@ export function BackgroundRemover() {
               disabled={loading}
               onClick={reset}
             >
-              <Trash2 className="w-4 h-4" /> মুছুন
+              <Trash2 className="w-4 h-4" /> Delete
             </button>
           </div>
 
           {mode === "local" && (
             <p style={{ marginTop: "0.65rem", fontSize: "0.68rem", color: "var(--text-3)" }}>
-              প্রথম চালানোতে এআই মডেল ডাউনলোড হতে পারে। ডেস্কটপে সম্পূর্ণ অফলাইনে চলবে; ব্রাউজারে চালাতে সার্ভার রানিং আছে কিনা নিশ্চিত করুন।
+              AI models may download on first execution. Runs completely offline on desktop; ensure server is running to execute in browser.
             </p>
           )}
           {mode === "hf" && (
             <p style={{ marginTop: "0.65rem", fontSize: "0.68rem", color: "var(--text-3)" }}>
-              Hugging Face API সম্পূর্ণ ফ্রি এবং এটি BRIA RMBG-1.4 ব্যবহার করে স্টুডিও-কোয়ালিটি ব্যাকগ্রাউন্ড রিমুভাল প্রদান করে। টোকেন পেতে <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer" style={{ color: "var(--primary)" }}>এখানে ক্লিক করুন</a>।
+              Hugging Face API is completely free and provides studio-quality background removal using BRIA RMBG-1.4. Click <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer" style={{ color: "var(--primary)" }}>here</a> to get your token.
             </p>
           )}
         </div>

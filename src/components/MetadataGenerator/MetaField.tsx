@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { CheckCircle2, Copy } from "lucide-react";
 
-export function MetaField({ label, value, onChange, isTextArea, isKeywords, img, onApplyToSelected }) {
+export function MetaField({ label, value, onChange, isTextArea, isKeywords, img, onApplyToSelected }: any) {
   const [copied, setCopied] = useState(false);
   const [isTextMode, setIsTextMode] = useState(false);
   const [newKeyword, setNewKeyword] = useState("");
@@ -12,7 +12,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const getKeywordScore = (keyword, img) => {
+  const getKeywordScore = (keyword: string, img: any) => {
     const kl = keyword.toLowerCase().trim();
     
     // Check if AI provided a real SEO score
@@ -38,13 +38,13 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
     return 50; // default exact middle score (Yellow)
   };
 
-  const removeKeyword = (idxToRemove) => {
+  const removeKeyword = (idxToRemove: number) => {
     const keywords = (value || '').split(',').map(k => k.trim()).filter(Boolean);
     const newKws = keywords.filter((_, idx) => idx !== idxToRemove);
     onChange(newKws.join(', '));
   };
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = (e: any) => {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
       const trimmed = newKeyword.trim();
@@ -140,7 +140,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
              }
           }}
         >
-          {(value || '').split(',').map(k => k.trim()).filter(Boolean).map((kw, idx) => {
+          {(value || '').split(',').map((k: string) => k.trim()).filter(Boolean).map((kw: string, idx: number) => {
             const cleanedKw = kw.replace(/\s+\d+$/, '');
             const score = getKeywordScore(cleanedKw, img);
             let colorStr = score >= 70 ? '#10b981' : score >= 30 ? '#f59e0b' : '#ef4444';
@@ -165,12 +165,12 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                   transform: 'scale(1)',
                   cursor: 'default'
                 }}
-                onMouseOver={(e) => {
+                onMouseOver={(e: any) => {
                   e.currentTarget.style.transform = 'scale(1.03)';
                   e.currentTarget.style.boxShadow = `0 4px 10px ${colorStr}30`;
                   e.currentTarget.style.borderColor = colorStr;
                 }}
-                onMouseOut={(e) => {
+                onMouseOut={(e: any) => {
                   e.currentTarget.style.transform = 'scale(1)';
                   e.currentTarget.style.boxShadow = '0 2px 5px rgba(0,0,0,0.05)';
                   e.currentTarget.style.borderColor = `${colorStr}40`;
@@ -191,7 +191,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                 <span className="select-none" style={{ letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>{cleanedKw}</span>
                 <span 
                   role="button"
-                  onClick={(e) => { e.stopPropagation(); removeKeyword(idx); }}
+                  onClick={(e: any) => { e.stopPropagation(); removeKeyword(idx); }}
                   className="flex items-center justify-center rounded-full transition-all"
                   style={{ 
                     cursor: 'pointer',
@@ -206,12 +206,12 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                     flexShrink: 0,
                     marginLeft: '2px'
                   }}
-                  onMouseOver={(e) => { 
+                  onMouseOver={(e: any) => { 
                     e.currentTarget.style.color = '#fff';
                     e.currentTarget.style.background = colorStr;
                     e.currentTarget.style.opacity = '1';
                   }}
-                  onMouseOut={(e) => { 
+                  onMouseOut={(e: any) => { 
                     e.currentTarget.style.color = colorStr;
                     e.currentTarget.style.background = 'transparent';
                     e.currentTarget.style.opacity = '0.7';
@@ -226,7 +226,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
           <input
             type="text"
             value={newKeyword}
-            onChange={(e) => setNewKeyword(e.target.value)}
+            onChange={(e: any) => setNewKeyword(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="+ Add keyword..."
             style={{
@@ -246,7 +246,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
       ) : isTextArea ? (
         <textarea
           value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e: any) => onChange(e.target.value)}
           className="meta-textarea"
           style={{ width: '100%', minHeight: '90px' }}
         />
@@ -254,7 +254,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
         <input
           type="text"
           value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e: any) => onChange(e.target.value)}
           className="meta-input"
           style={{ width: '100%' }}
         />

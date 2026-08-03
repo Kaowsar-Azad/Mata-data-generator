@@ -6,7 +6,7 @@ import { MetaField } from "./MetaField";
 
 const MetadataCard = memo(({ 
   img, hasDuplicateBadge, removeImage, handleMetaChange, activeProviderName, upscaleScale, ftpConfigs
-}) => {
+}: any) => {
   return (
     <div className="glass card animate-fade-in file-row">
       {/* Preview thumbnail */}
@@ -107,32 +107,7 @@ const MetadataCard = memo(({
               </div>
             )}
 
-            {/* SELLING SCORE GAUGE */}
-            {img.result.sellingScore !== undefined && img.result.sellingScore !== null && (() => {
-              const sc = Math.max(0, Math.min(100, Number(img.result.sellingScore)));
-              const meta = getScoreMeta(sc);
-              const R = 22; const cx = 28; const cy = 28; const circ = 2 * Math.PI * R;
-              const offset = circ - (sc / 100) * circ;
-              return (
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.65rem', padding: '0.55rem 0.8rem',
-                  background: meta.bg, border: `1px solid ${meta.border}`, borderRadius: '0.6rem',
-                }}>
-                  <svg width="56" height="56" style={{ flexShrink: 0, filter: `drop-shadow(0 0 5px ${meta.trackColor}66)` }}>
-                    <circle cx={cx} cy={cy} r={R} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="5" />
-                    <circle cx={cx} cy={cy} r={R} fill="none" stroke={meta.trackColor} strokeWidth="5" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset} transform={`rotate(-90 ${cx} ${cy})`} style={{ transition: 'stroke-dashoffset 1.1s cubic-bezier(.4,0,.2,1)' }} />
-                    <text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="middle" fontSize="11" fontWeight="800" fill={meta.trackColor}>{sc}</text>
-                  </svg>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                      <span style={{ fontSize: '0.7rem', fontWeight: 800, color: meta.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{meta.emoji} {meta.label} Score</span>
-                      <span style={{ fontSize: '0.63rem', color: 'var(--text-3)', fontWeight: 500 }}>/ 100</span>
-                    </div>
-                    {img.result.scoreReason && <p style={{ fontSize: '0.72rem', color: 'var(--text-2)', margin: '0.18rem 0 0', lineHeight: 1.4, fontStyle: 'italic' }}>{img.result.scoreReason}</p>}
-                  </div>
-                </div>
-              );
-            })()}
+
 
             {/* IP / POLICY WARNING BANNER */}
             {img.result.policyWarning && (
@@ -252,7 +227,7 @@ const MetadataCard = memo(({
          prevProps.ftpConfigs === nextProps.ftpConfigs;
 });
 
-export function MetadataCardList({ images, duplicatePairs, removeImage, handleMetaChange, activeProviderName, upscaleScale, ftpConfigs }) {
+export function MetadataCardList({ images, duplicatePairs, removeImage, handleMetaChange, activeProviderName, upscaleScale, ftpConfigs }: any) {
   return (
     <div className="grid grid-cols-1 gap-4">
       {images.map((img) => {

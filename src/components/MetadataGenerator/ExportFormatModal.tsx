@@ -2,7 +2,7 @@ import React from "react";
 import { X } from "lucide-react";
 import downloadIcon from "../../assets/icons/download.png";
 
-export function ExportFormatModal({ isOpen, onClose, onSelect, activePlatform }) {
+export function ExportFormatModal({ isOpen, onClose, onSelect, activePlatform }: any) {
   if (!isOpen) return null;
 
   const allPlatforms = [
@@ -99,7 +99,7 @@ export function ExportFormatModal({ isOpen, onClose, onSelect, activePlatform })
           </div>
           
           <p className="text-muted" style={{ fontSize: '0.85rem', marginBottom: '1.25rem', lineHeight: 1.45 }}>
-            অনুগ্রহ করে যে এজেন্সির জন্য সিএসভি ফাইলটি ডাউনলোড করতে চান তা নির্বাচন করুন। প্রতিটি ফরম্যাট তাদের নিজস্ব গাইডলাইন অনুযায়ী সাজানো হয়েছে।
+            Please select the agency format you wish to export the CSV file for. Each format is structured according to the agency's specific guidelines.
           </p>
 
           <div style={{ 

@@ -1,6 +1,6 @@
 export const DUPLICATE_THRESHOLD = 5;
 
-export const computePHash = (src, shouldRevoke = true) =>
+export const computePHash = (src: string, shouldRevoke: boolean = true): Promise<string | null> =>
   new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
@@ -16,7 +16,7 @@ export const computePHash = (src, shouldRevoke = true) =>
         ctxD.drawImage(img, 0, 0, 9, 8);
         const imgDataD = ctxD.getImageData(0, 0, 9, 8).data;
 
-        const grays = [];
+        const grays: number[] = [];
         for (let i = 0; i < imgDataD.length; i += 4) {
           grays.push(0.299 * imgDataD[i] + 0.587 * imgDataD[i + 1] + 0.114 * imgDataD[i + 2]);
         }
@@ -38,7 +38,7 @@ export const computePHash = (src, shouldRevoke = true) =>
         ctxC.drawImage(img, 0, 0, 4, 4);
         const imgDataC = ctxC.getImageData(0, 0, 4, 4).data;
 
-        const rs = [], gs = [], bs = [];
+        const rs: number[] = [], gs: number[] = [], bs: number[] = [];
         for (let i = 0; i < imgDataC.length; i += 4) {
           rs.push(imgDataC[i]);
           gs.push(imgDataC[i + 1]);
@@ -71,14 +71,14 @@ export const computePHash = (src, shouldRevoke = true) =>
     img.src = src;
   });
 
-export const hammingDistance = (a, b) => {
+export const hammingDistance = (a: string, b: string): number => {
   if (!a || !b || a.length !== b.length) return Infinity;
   let dist = 0;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) dist++;
   return dist;
 };
 
-export const computeHashForEntry = async (entry) => {
+export const computeHashForEntry = async (entry: any): Promise<string | null> => {
   try {
     let src = null;
     let shouldRevoke = false;
@@ -99,10 +99,10 @@ export const computeHashForEntry = async (entry) => {
   }
 };
 
-export const detectDuplicates = (existingImages, newEntries, hashMap) => {
+export const detectDuplicates = (existingImages: any[], newEntries: any[], hashMap: Record<string, string>): any[] => {
   const allEntries = [...existingImages, ...newEntries];
-  const pairs = [];
-  const seenPairs = new Set();
+  const pairs: any[] = [];
+  const seenPairs = new Set<string>();
   for (let i = 0; i < allEntries.length; i++) {
     const hashA = hashMap[allEntries[i].id];
     if (!hashA) continue;

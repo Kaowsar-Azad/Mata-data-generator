@@ -83,7 +83,7 @@ export const BackgroundRemover = () => {
       } else {
         const trimmed = apiKey.trim();
         if (!trimmed) {
-          throw new Error("দয়া করে remove.bg API key প্রবেশ করান।");
+          throw new Error("Please enter your remove.bg API key.");
         }
         resultBlob = await removeBackgroundViaRemoveBgProxy(originalFile, trimmed);
       }
@@ -135,7 +135,7 @@ export const BackgroundRemover = () => {
           borderRadius: '12px', padding: '12px 24px', flexWrap: 'wrap',
           backdropFilter: 'blur(20px)',
         }}>
-          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-1)' }}>মোড:</span>
+          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-1)' }}>Mode:</span>
           
           <button
             onClick={() => setMode('local')}
@@ -149,7 +149,7 @@ export const BackgroundRemover = () => {
               transition: 'all 0.2s'
             }}
           >
-            <Sparkles size={14} /> লোকাল ইঞ্জিন (অফলাইন)
+            <Sparkles size={14} /> Local Engine (Offline)
           </button>
           
           <button
@@ -179,7 +179,7 @@ export const BackgroundRemover = () => {
               transition: 'all 0.2s'
             }}
           >
-            <Sparkles size={14} /> সলিড কালার (লোগো/আইকন)
+            <Sparkles size={14} /> Solid Color (Logo/Icon)
           </button>
 
           <button
@@ -194,7 +194,7 @@ export const BackgroundRemover = () => {
               transition: 'all 0.2s'
             }}
           >
-            <Sparkles size={14} /> remove.bg API (প্রিমিয়াম)
+            <Sparkles size={14} /> remove.bg API (Premium)
           </button>
 
           {/* Dynamic Settings Inputs */}
@@ -355,7 +355,7 @@ export const BackgroundRemover = () => {
                         opacity: isProcessing ? 0.7 : 1
                       }}
                     >
-                      <RefreshCw size={16} /> {isProcessing ? 'Removing...' : 'পুনরায় রিমুভ করুন'}
+                      <RefreshCw size={16} /> {isProcessing ? 'Removing...' : 'Remove Background Again'}
                     </button>
                     <button
                       aria-label="Download PNG"
@@ -378,7 +378,7 @@ export const BackgroundRemover = () => {
               <p style={{
                 marginTop: '16px', fontSize: '0.8rem', color: 'var(--text-3)', textAlign: 'center', width: '100%'
               }}>
-                টিপস: জলছাপ আঁকা বা ফিতার মতো ছবির নিখুঁত ব্যাকগ্রাউন্ড রিমুভালের জন্য উপরে <strong>Recraft AI (প্রিমিয়াম ও নিখুঁত)</strong> মোডটি সিলেক্ট করুন।
+                Tip: For perfect background removal of images with watermarks or fine details, use remove.bg API (Premium) mode above.
               </p>
             )}
           </div>

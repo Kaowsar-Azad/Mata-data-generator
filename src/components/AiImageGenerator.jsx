@@ -143,7 +143,7 @@ export function AiImageGenerator({ apiKeys }) {
   }, []);
 
   const clearHistory = () => {
-    if (!confirm("সমস্ত Generation History মুছে ফেলবেন?")) return;
+    if (!confirm("Are you sure you want to delete all Generation History?")) return;
     setHistory([]);
     setCurrentImage(null);
     localStorage.removeItem("ai_image_history");
@@ -153,7 +153,7 @@ export function AiImageGenerator({ apiKeys }) {
   const handleEnhancePrompt = async () => {
     if (!prompt.trim()) return;
     const keyInfo = apiKeys?.find(k => k.provider === "google");
-    if (!keyInfo?.key) { setError("Gemini API Key যোগ করুন Prompt Enhancement ব্যবহার করতে।"); return; }
+    if (!keyInfo?.key) { setError("Please add a Gemini API Key in Settings to use Prompt Enhancement."); return; }
     setIsEnhancing(true);
     setError(null);
     try {
@@ -165,7 +165,7 @@ export function AiImageGenerator({ apiKeys }) {
       ]);
       setPrompt(result.response.text().trim());
     } catch (err) {
-      setError("Prompt enhancement ব্যর্থ: " + err.message);
+      setError("Prompt enhancement failed: " + err.message);
     } finally {
       setIsEnhancing(false);
     }
@@ -182,7 +182,7 @@ export function AiImageGenerator({ apiKeys }) {
 
   // ── Core generation ───────────────────────────────────────────────────
   const handleGenerate = async () => {
-    if (!prompt.trim()) { setError("একটি Prompt লিখুন।"); return; }
+    if (!prompt.trim()) { setError("Please enter a prompt."); return; }
     
     cancelRef.current = false;
     setIsGenerating(true);
@@ -198,17 +198,17 @@ export function AiImageGenerator({ apiKeys }) {
       
       const keyObj = apiKeys?.find(k => k.provider === "cloudflare");
       if (!keyObj || !keyObj.key || !keyObj.key.includes(":")) {
-        setError("Cloudflare AI ব্যবহার করতে সেটিংসে গিয়ে ACCOUNT_ID:API_TOKEN ফরমেটে আপনার কি (Key) যোগ করুন।");
+        setError("To use Cloudflare AI, go to Settings and add your credentials in the ACCOUNT_ID:API_TOKEN format.");
         setIsGenerating(false);
         return;
       }
       const [accountId, apiToken] = keyObj.key.split(":");
       
-      setGenStatus("Cloudflare Workers-এ রিকোয়েস্ট পাঠানো হচ্ছে...");
+      setGenStatus("Sending request to Cloudflare Workers...");
       for (let i = 0; i < batchCount; i++) {
         if (cancelRef.current) break;
         const currentImageIndex = i + 1;
-        setGenStatus(batchCount > 1 ? `Flux ইমেজ তৈরি করছে (${currentImageIndex}/${batchCount})...` : "Flux ইমেজ তৈরি করছে...");
+        setGenStatus(batchCount > 1 ? `Flux is generating image (${currentImageIndex}/${batchCount})...` : "Flux is generating image...");
         
         // Flux-1-schnell model via Local Proxy
         const proxyUrl = `http://localhost:3002/api/cloudflare-generate`;
@@ -241,15 +241,15 @@ export function AiImageGenerator({ apiKeys }) {
             batch: batchCount > 1 ? `${i+1}/${batchCount}` : "1"
           });
         } catch (err) {
-          throw new Error("Cloudflare থেকে ছবি তৈরি ব্যর্থ হয়েছে: " + err.message);
+          throw new Error("Cloudflare image generation failed: " + err.message);
         }
       }
-      if (!cancelRef.current) setGenStatus("✅ সব ইমেজ তৈরি সম্পন্ন!");
+      if (!cancelRef.current) setGenStatus("✅ Image generation complete!");
       return;
     } catch (err) {
       if (err.name === 'AbortError') {
-        setError("ছবি তৈরি বাতিল করা হয়েছে।");
-      } else if (!cancelRef.current || err.message !== "বাতিল করা হয়েছে।") {
+        setError("Image generation cancelled.");
+      } else if (!cancelRef.current || err.message !== "cancelled") {
         console.error("[Generate]", err);
         setError(err.message);
       }
@@ -264,7 +264,7 @@ export function AiImageGenerator({ apiKeys }) {
     setIsGenerating(false);
     abortControllerRef.current?.abort();
     
-    setGenStatus("বাতিল করা হয়েছে।");
+    setGenStatus("Cancelled.");
     setTimeout(() => setGenStatus(""), 2000);
   };
 
@@ -282,13 +282,13 @@ export function AiImageGenerator({ apiKeys }) {
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     const filePath = `${folder}\\image_${Date.now()}.png`;
     const result   = await window.electronAPI.saveFile(filePath, bytes.buffer);
-    alert(result.success ? "✅ ছবি সংরক্ষিত হয়েছে!" : "❌ সংরক্ষণ ব্যর্থ: " + result.error);
+    alert(result.success ? "✅ Image saved successfully!" : "❌ Save failed: " + result.error);
   };
 
   const settingsContent = (
     <div style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "1.25rem", flex: 1 }}>
       <h3 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 800, display: "flex", alignItems: "center", gap: "0.4rem" }}>
-        <Settings2 size={15} color="var(--primary)" /> সেটিংস
+        <Settings2 size={15} color="var(--primary)" /> Settings
       </h3>
 
       <div>
@@ -305,7 +305,7 @@ export function AiImageGenerator({ apiKeys }) {
       </div>
 
       <div>
-        <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-2)", marginBottom: "0.5rem" }}>ছবির পরিমাণ (Batch)</label>
+        <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-2)", marginBottom: "0.5rem" }}>Batch Quantity (Images)</label>
             <div style={{ display: "flex", background: "var(--surface-2)", borderRadius: "0.5rem", padding: "0.2rem" }}>
               {[1, 2, 3, 4].map(num => (
                 <button key={num} onClick={() => setBatchCount(num)} style={{ flex: 1, padding: "0.45rem", border: "none", background: batchCount === num ? "var(--primary)" : "transparent", color: batchCount === num ? "#fff" : "var(--text-2)", borderRadius: "0.35rem", fontWeight: 600, fontSize: "0.78rem", cursor: "pointer", transition: "all 0.15s" }}>
@@ -317,7 +317,7 @@ export function AiImageGenerator({ apiKeys }) {
 
       {/* Common Settings: Style & Ratio */}
       <div>
-        <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-2)", marginBottom: "0.5rem" }}>স্টাইল</label>
+        <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-2)", marginBottom: "0.5rem" }}>Style</label>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
           {STYLES.map(s => (
             <button key={s.id} onClick={() => setSelectedStyle(s)} style={{ padding: "0.6rem 0.85rem", background: selectedStyle.id === s.id ? "rgba(37,99,235,0.12)" : "var(--surface-2)", border: `1px solid ${selectedStyle.id === s.id ? "var(--primary)" : "var(--glass-border)"}`, color: selectedStyle.id === s.id ? "var(--text-1)" : "var(--text-2)", borderRadius: "0.45rem", textAlign: "left", fontSize: "0.8rem", fontWeight: selectedStyle.id === s.id ? 700 : 500, cursor: "pointer", transition: "all 0.12s" }}>
@@ -328,7 +328,7 @@ export function AiImageGenerator({ apiKeys }) {
       </div>
 
       <div>
-        <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-2)", marginBottom: "0.5rem" }}>অনুপাত (Aspect Ratio)</label>
+        <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "var(--text-2)", marginBottom: "0.5rem" }}>Aspect Ratio</label>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.35rem" }}>
           {ASPECT_RATIOS.map(r => (
             <button key={r.label} onClick={() => setAspectRatio(r)} style={{ padding: "0.5rem", background: aspectRatio.label === r.label ? "var(--primary)" : "var(--surface-2)", color: aspectRatio.label === r.label ? "#fff" : "var(--text-1)", border: `1px solid ${aspectRatio.label === r.label ? "var(--primary)" : "var(--glass-border)"}`, borderRadius: "0.45rem", fontSize: "0.82rem", fontWeight: 600, cursor: "pointer", transition: "all 0.12s" }}>
@@ -360,12 +360,12 @@ export function AiImageGenerator({ apiKeys }) {
                   </div>
                   <div style={{ textAlign: "center" }}>
                     <div style={{ fontWeight: 700, fontSize: "1rem", marginBottom: "0.4rem" }}>
-                      {engine === "cloudflare" ? "Flux কাজ করছে..." : "SDXL 1.0 কাজ করছে..."}
+                      {engine === "cloudflare" ? "Flux is generating..." : "SDXL 1.0 is generating..."}
                     </div>
                     <div style={{ color: "var(--text-2)", fontSize: "0.82rem" }}>{genStatus}</div>
                   </div>
                   <button onClick={handleCancel} style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", color: "#ef4444", padding: "0.4rem 1rem", borderRadius: "0.5rem", cursor: "pointer", fontWeight: 600, fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                    <X size={12} /> বাতিল করুন
+                    <X size={12} /> Cancel
                   </button>
                 </div>
               ) : currentImage ? (
@@ -373,19 +373,19 @@ export function AiImageGenerator({ apiKeys }) {
                   {!imgLoaded && currentImage.imageUrl.startsWith("http") && (
                     <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.1)", backdropFilter: "blur(5px)", zIndex: 10 }}>
                       <Loader2 size={40} className="spin" color="var(--primary)" />
-                      <div style={{ marginTop: "1rem", fontWeight: 700, color: "var(--primary)", fontSize: "0.85rem" }}>ছবি ডাউনলোড হচ্ছে...</div>
+                      <div style={{ marginTop: "1rem", fontWeight: 700, color: "var(--primary)", fontSize: "0.85rem" }}>Downloading image...</div>
                     </div>
                   )}
                   <img src={currentImage.imageUrl} alt="Generated" onLoad={() => setImgLoaded(true)} style={{ width: "100%", height: "100%", objectFit: "contain", opacity: imgLoaded ? 1 : 0, transition: "opacity 0.3s" }} />
                   <div style={{ position: "absolute", top: "0.75rem", right: "0.75rem", display: "flex", gap: "0.4rem", zIndex: 20 }}>
-                    <button onClick={() => handleSave(currentImage.imageUrl)} title="সেভ করুন" style={{ background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "0.45rem", borderRadius: "0.45rem", cursor: "pointer", backdropFilter: "blur(4px)" }}><Download size={15} /></button>
-                    <button onClick={() => window.electronAPI?.openExternal(currentImage.imageUrl)} title="বড় করে দেখুন" style={{ background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "0.45rem", borderRadius: "0.45rem", cursor: "pointer", backdropFilter: "blur(4px)" }}><Maximize2 size={15} /></button>
+                    <button onClick={() => handleSave(currentImage.imageUrl)} title="Save Image" style={{ background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "0.45rem", borderRadius: "0.45rem", cursor: "pointer", backdropFilter: "blur(4px)" }}><Download size={15} /></button>
+                    <button onClick={() => window.electronAPI?.openExternal(currentImage.imageUrl)} title="View Fullscreen" style={{ background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "0.45rem", borderRadius: "0.45rem", cursor: "pointer", backdropFilter: "blur(4px)" }}><Maximize2 size={15} /></button>
                   </div>
                 </>
               ) : (
                 <div style={{ color: "var(--text-3)", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
                   <ImageIcon size={52} style={{ opacity: 0.3 }} />
-                  <span style={{ fontSize: "0.9rem" }}>আপনার তৈরি ছবি এখানে দেখাবে</span>
+                  <span style={{ fontSize: "0.9rem" }}>Generated images will be displayed here</span>
                 </div>
               )}
             </div>
@@ -393,16 +393,16 @@ export function AiImageGenerator({ apiKeys }) {
             {/* Prompt Box */}
             <div style={{ flexShrink: 0, background: "var(--surface-1)", border: "1px solid var(--glass-border)", borderRadius: "1rem", padding: "1.25rem", display: "flex", flexDirection: "column", gap: "0.85rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <label style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--text-2)" }}>ছবির বিবরণ (Prompt)</label>
-                <button onClick={handleEnhancePrompt} disabled={isEnhancing || !prompt.trim()} title="Gemini AI দিয়ে প্রম্পট উন্নত করুন" style={{ background: "rgba(168,85,247,0.1)", border: "1px solid rgba(168,85,247,0.35)", color: "#a855f7", padding: "0.35rem 0.7rem", borderRadius: "0.5rem", fontSize: "0.75rem", fontWeight: 700, cursor: isEnhancing || !prompt.trim() ? "not-allowed" : "pointer", opacity: !prompt.trim() ? 0.5 : 1, display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                <label style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--text-2)" }}>Image Description (Prompt)</label>
+                <button onClick={handleEnhancePrompt} disabled={isEnhancing || !prompt.trim()} title="Improve prompt with Gemini AI" style={{ background: "rgba(168,85,247,0.1)", border: "1px solid rgba(168,85,247,0.35)", color: "#a855f7", padding: "0.35rem 0.7rem", borderRadius: "0.5rem", fontSize: "0.75rem", fontWeight: 700, cursor: isEnhancing || !prompt.trim() ? "not-allowed" : "pointer", opacity: !prompt.trim() ? 0.5 : 1, display: "flex", alignItems: "center", gap: "0.35rem" }}>
                   {isEnhancing ? <Loader2 size={12} className="spin" /> : <Sparkles size={12} />}
-                  AI দিয়ে উন্নত করুন
+                  Improve with AI
                 </button>
               </div>
 
               <textarea
                 value={prompt} onChange={e => setPrompt(e.target.value)}
-                placeholder="ছবিটি কেমন হবে তা বাংলা বা English-এ লিখুন... যেমন: a cat sitting on a wooden table in golden sunlight"
+                placeholder="Describe the image you want to generate... e.g., a cat sitting on a wooden table in golden sunlight"
                 rows={4}
                 style={{ width: "100%", padding: "0.85rem", background: "var(--surface-2)", border: "1px solid var(--glass-border)", borderRadius: "0.6rem", color: "var(--text-1)", fontSize: "0.9rem", resize: "vertical", boxSizing: "border-box", fontFamily: "inherit", lineHeight: 1.6 }}
               />
@@ -421,7 +421,7 @@ export function AiImageGenerator({ apiKeys }) {
                 }}
               >
                 {isGenerating
-                  ? <><Loader2 size={18} className="spin" /> তৈরি হচ্ছে...</>
+                  ? <><Loader2 size={18} className="spin" /> Generating...</>
                   : <><Wand2 size={18} /> {engine === "pollinations" ? "Generate with Pollinations.ai" : "Generate with SDXL 1.0"}</>
                 }
               </button>
@@ -451,14 +451,14 @@ export function AiImageGenerator({ apiKeys }) {
             <History size={16} color="var(--primary)" /> History
           </span>
           {history.length > 0 && (
-            <button onClick={clearHistory} title="সব হিস্ট্রি মুছুন" style={{ background: "none", border: "none", color: "var(--text-3)", cursor: "pointer", display: "flex" }}>
+            <button onClick={clearHistory} title="Clear History" style={{ background: "none", border: "none", color: "var(--text-3)", cursor: "pointer", display: "flex" }}>
               <Trash2 size={16} />
             </button>
           )}
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "1rem" }}>
           {history.length === 0 ? (
-            <div style={{ color: "var(--text-3)", fontSize: "0.8rem", textAlign: "center", marginTop: "2rem" }}>কোনো হিস্ট্রি নেই</div>
+            <div style={{ color: "var(--text-3)", fontSize: "0.8rem", textAlign: "center", marginTop: "2rem" }}>No history available</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               {history.map(item => (

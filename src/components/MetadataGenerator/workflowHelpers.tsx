@@ -1,7 +1,7 @@
 import React from "react";
 
-export function StatusBadge({ status, progress, upscaleModel }) {
-  const map = {
+export function StatusBadge({ status, progress, upscaleModel }: any) {
+  const map: Record<string, string> = {
     done: "bg-green-500/20 text-green-400",
     processing: "bg-primary/20 text-primary",
     upscaling: "bg-indigo-500/20 text-indigo-400",
@@ -22,7 +22,7 @@ export function StatusBadge({ status, progress, upscaleModel }) {
   );
 }
 
-export const getScoreMeta = (score) => {
+export const getScoreMeta = (score: number) => {
   if (score >= 80) return { label: 'Hot', emoji: '🔥', color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.3)', trackColor: '#10b981' };
   if (score >= 60) return { label: 'Good', emoji: '✅', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)', border: 'rgba(59,130,246,0.3)', trackColor: '#3b82f6' };
   if (score >= 40) return { label: 'Average', emoji: '⚠️', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', trackColor: '#f59e0b' };

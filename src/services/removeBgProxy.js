@@ -47,7 +47,7 @@ export async function removeBackgroundViaRemoveBgProxy(file, apiKey) {
     });
   } catch (err) {
     if (err?.message?.includes('Failed to fetch')) {
-      throw new Error("সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না (Failed to fetch)। অনুগ্রহ করে নিশ্চিত করুন যে আপনার PC-তে ব্যাকএন্ড সার্ভারটি (node server/index.js) পোর্ট 3001-এ চালু আছে।");
+      throw new Error("Unable to connect to the server (Failed to fetch). Please ensure that the backend server (node server/index.js) is running on port 3001 on your PC.");
     }
     throw err;
   }
@@ -110,7 +110,7 @@ export async function removeBackgroundViaLocalServer(file) {
     });
   } catch (err) {
     if (err?.message?.includes('Failed to fetch')) {
-      throw new Error("সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না (Failed to fetch)। অনুগ্রহ করে নিশ্চিত করুন যে আপনার PC-তে ব্যাকএন্ড সার্ভারটি (node server/index.js) পোর্ট 3001-এ চালু আছে।");
+      throw new Error("Unable to connect to the server (Failed to fetch). Please ensure that the backend server (node server/index.js) is running on port 3001 on your PC.");
     }
     throw err;
   }
@@ -151,7 +151,7 @@ export async function removeBackgroundViaBria(file) {
     });
   } catch (err) {
     if (err?.message?.includes('Failed to fetch')) {
-      throw new Error("সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না (Failed to fetch)। অনুগ্রহ করে নিশ্চিত করুন যে আপনার PC-তে ব্যাকএন্ড সার্ভারটি (node server/index.js) পোর্ট 3001-এ চালু আছে।");
+      throw new Error("Unable to connect to the server (Failed to fetch). Please ensure that the backend server (node server/index.js) is running on port 3001 on your PC.");
     }
     throw err;
   }
@@ -192,7 +192,7 @@ export async function removeBackgroundViaSolid(file) {
     });
   } catch (err) {
     if (err?.message?.includes('Failed to fetch')) {
-      throw new Error("সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না (Failed to fetch)। অনুগ্রহ করে নিশ্চিত করুন যে আপনার PC-তে ব্যাকএন্ড সার্ভারটি (node server/index.js) পোর্ট 3001-এ চালু আছে।");
+      throw new Error("Unable to connect to the server (Failed to fetch). Please ensure that the backend server (node server/index.js) is running on port 3001 on your PC.");
     }
     throw err;
   }
@@ -233,7 +233,7 @@ export async function removeBackgroundViaHybrid(file) {
     });
   } catch (err) {
     if (err?.message?.includes('Failed to fetch')) {
-      throw new Error("সার্ভারের সাথে যোগাযোগ করা যাচ্ছে না (Failed to fetch)। অনুগ্রহ করে নিশ্চিত করুন যে আপনার PC-তে ব্যাকএন্ড সার্ভারটি (node server/index.js) পোর্ট 3001-এ চালু আছে।");
+      throw new Error("Unable to connect to the server (Failed to fetch). Please ensure that the backend server (node server/index.js) is running on port 3001 on your PC.");
     }
     throw err;
   }

@@ -17,7 +17,7 @@ const MetadataGridRow = memo(({
   getDescriptionCounterClass,
   getKeywordsCounterClass,
   removeImage
-}) => {
+}: any) => {
   return (
     <tr className={isSelected ? 'row-selected' : ''}>
       {/* Row checkbox */}
@@ -131,23 +131,7 @@ const MetadataGridRow = memo(({
         <div className="grid-status-stack">
           <StatusBadge status={img.status} progress={img.upscaleProgress} upscaleModel={img.upscaleModel} />
 
-          {/* Selling Score */}
-          {img.result?.sellingScore !== undefined && img.result?.sellingScore !== null && (() => {
-            const sc = Number(img.result.sellingScore);
-            const meta = getScoreMeta(sc);
-            return (
-              <div
-                title={img.result.scoreReason || `Selling Score: ${sc}/100`}
-                style={{
-                  background: meta.bg, border: `1px solid ${meta.border}`, color: meta.color,
-                  borderRadius: '999px', padding: '1px 6px', fontSize: '0.65rem',
-                  fontWeight: 800, cursor: 'default',
-                }}
-              >
-                {meta.emoji} {sc}
-              </div>
-            );
-          })()}
+
 
           {/* Embedding Status */}
           {img.embeddingStatus && img.embeddingStatus !== 'none' && (
@@ -184,10 +168,10 @@ export function MetadataGrid({
   images, gridImages, selectedRows, setSelectedRows, gridSort, toggleSort,
   activeCell, setActiveCell, cellRefs, handleMetaChange, applyToSelected,
   removeImage, getTitleCounterClass, getDescriptionCounterClass, getKeywordsCounterClass
-}) {
+}: any) {
   const allSelected = gridImages.length > 0 && selectedRows.size === gridImages.length;
   
-  const SortIcon = ({ field }) => {
+  const SortIcon = ({ field }: any) => {
     if (gridSort.field !== field) return <span className="grid-sort-arrow idle">⇅</span>;
     return <span className="grid-sort-arrow active">{gridSort.dir === 'asc' ? '↑' : '↓'}</span>;
   };

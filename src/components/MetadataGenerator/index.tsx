@@ -1643,7 +1643,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           }}>
             <MdCloudUpload style={{ width: '2.5rem', height: '2.5rem', color: '#ffffff' }} />
           </div>
-          <h2 style={{ marginBottom: '0.4rem', fontSize: '1.2rem', fontWeight: 600 }}>Upload Media, EPS or Video Files</h2>
+          <h2 style={{ marginBottom: '0.4rem', fontSize: '1.2rem', fontWeight: 500 }}>Upload Media, EPS or Video Files</h2>
           <p className="text-muted" style={{ marginBottom: '1rem' }}>
             Drag & drop or click — JPG, PNG, WebP, GIF, SVG, <span style={{ color: 'var(--accent)', fontWeight: 700 }}>EPS</span> & MP4/MOV
           </p>
@@ -1778,11 +1778,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                       flexWrap: 'wrap',
                     }}
                   >
-                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-1)', fontFamily: 'monospace', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={pair.name1}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-1)', fontFamily: 'monospace', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={pair.name1}>
                       {pair.name1}
                     </span>
                     <span style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: 700 }}>≈</span>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-1)', fontFamily: 'monospace', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={pair.name2}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-1)', fontFamily: 'monospace', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={pair.name2}>
                       {pair.name2}
                     </span>
                     <span style={{ fontSize: '0.65rem', background: pair.similarity >= 95 ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)', color: pair.similarity >= 95 ? '#ef4444' : '#f59e0b', borderRadius: '999px', padding: '1px 7px', fontWeight: 700, marginLeft: 'auto' }}>
@@ -1798,7 +1798,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                         borderRadius: '0.35rem',
                         padding: '2px 8px',
                         fontSize: '0.7rem',
-                        fontWeight: 600,
+                        fontWeight: 500,
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
@@ -1819,7 +1819,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                         borderRadius: '0.35rem',
                         padding: '2px 8px',
                         fontSize: '0.7rem',
-                        fontWeight: 600,
+                        fontWeight: 500,
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
@@ -2148,8 +2148,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                             color: '#15803D',
                             border: '1px solid rgba(22, 163, 74, 0.3)',
                             borderRadius: '0.35rem',
-                            fontSize: '0.82rem',
-                            fontWeight: 600,
+                            fontSize: '0.75rem',
+                            fontWeight: 500,
                             cursor: 'pointer',
                             outline: 'none',
                             padding: '0.15rem 0.4rem'
@@ -2173,8 +2173,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                             color: '#15803D',
                             border: '1px solid rgba(22, 163, 74, 0.3)',
                             borderRadius: '0.35rem',
-                            fontSize: '0.82rem',
-                            fontWeight: 600,
+                            fontSize: '0.75rem',
+                            fontWeight: 500,
                             cursor: 'pointer',
                             outline: 'none',
                             padding: '0.15rem 0.4rem'
@@ -2216,7 +2216,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               <button
                 className={`btn-glass-blue ${doneCount > 0 && !isProcessing && !isEmbedding ? 'animate-border-glow' : ''}`}
                 style={{ 
-                  padding: '0.38rem 0.8rem',
+                  padding: '0.25rem 0.6rem',
                   transition: 'background-color 0.3s, border-color 0.3s'
                 }}
                 disabled={isEmbedding || doneCount === 0}
@@ -2233,7 +2233,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               <button
                 className="btn-glass-blue"
                 style={{ 
-                  padding: '0.38rem 0.8rem',
+                  padding: '0.25rem 0.6rem',
                 }}
                 onClick={() => alert("To embed metadata directly into files, run the app as a desktop application (npm run app:dev). This is not possible in standard web browsers.")}
                 title="Direct embedding is only supported in Desktop app mode"
@@ -2246,7 +2246,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             <button
               className="btn-csv-grad"
               style={{
-                padding: '0.38rem 0.8rem',
+                padding: '0.25rem 0.6rem',
               }}
               disabled={isProcessing || doneCount === 0}
               onClick={() => setShowExportModal(true)}
@@ -2258,7 +2258,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               <button
                 className="btn-glass-inactive"
                 style={{
-                  padding: '0.38rem 0.8rem',
+                  padding: '0.25rem 0.6rem',
                   border: '1.5px solid rgba(245, 158, 11, 0.35)',
                   color: '#e28704',
                   background: 'rgba(245, 158, 11, 0.03)',
@@ -2267,8 +2267,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   alignItems: 'center',
                   gap: '6px',
                   borderRadius: '0.375rem',
-                  fontSize: '0.875rem',
-                  fontWeight: 600,
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
                   transition: 'all 0.2s',
                 }}
                 disabled={isProcessing}
@@ -2296,7 +2296,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               <button
                 className="btn-glass-inactive"
                 style={{
-                  padding: '0.38rem 0.8rem',
+                  padding: '0.25rem 0.6rem',
                   border: '1.5px solid rgba(239, 68, 68, 0.35)',
                   color: '#dc2626',
                   background: 'rgba(239, 68, 68, 0.03)',
@@ -2305,8 +2305,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   alignItems: 'center',
                   gap: '6px',
                   borderRadius: '0.375rem',
-                  fontSize: '0.875rem',
-                  fontWeight: 600,
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
                   transition: 'all 0.2s',
                 }}
                 disabled={isProcessing}
@@ -2393,7 +2393,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 background: '#f0f2f5',
                 color: 'var(--text-1)',
                 outline: 'none',
-                fontSize: '0.82rem',
+                fontSize: '0.75rem',
                 boxSizing: 'border-box'
               }}
             />
@@ -2437,7 +2437,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               padding: '0.35rem 0.8rem',
               borderRadius: '99px',
               fontSize: '0.78rem',
-              fontWeight: 600
+              fontWeight: 500
             }}>
               {selectedRows.size} selected · Ctrl+Enter to apply
             </span>
@@ -2577,7 +2577,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             
             <p style={{ 
               color: 'var(--text-2)', 
-              fontSize: '0.82rem', 
+              fontSize: '0.75rem', 
               lineHeight: 1.6, 
               marginBottom: '1.25rem',
               marginTop: '0'
@@ -2630,7 +2630,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   border: '1px solid var(--glass-border)',
                   color: 'var(--text-2)', 
                   fontSize: '0.8rem', 
-                  fontWeight: 600, 
+                  fontWeight: 500, 
                   borderRadius: '0.65rem', 
                   cursor: 'pointer',
                   display: 'flex',
@@ -2652,7 +2652,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   border: 'none', 
                   color: 'white', 
                   fontSize: '0.8rem', 
-                  fontWeight: 600, 
+                  fontWeight: 500, 
                   borderRadius: '0.65rem', 
                   cursor: 'pointer', 
                   display: 'flex', 
@@ -2749,7 +2749,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               }}
             >
               <IconComponent style={{ width: '1.2rem', height: '1.2rem', color: iconColor, flexShrink: 0, marginTop: '1px' }} />
-              <span style={{ fontSize: '0.8rem', fontWeight: 600, flexGrow: 1, wordBreak: 'break-word', lineHeight: '1.4' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 500, flexGrow: 1, wordBreak: 'break-word', lineHeight: '1.4' }}>
                 {t.message}
               </span>
               <button 

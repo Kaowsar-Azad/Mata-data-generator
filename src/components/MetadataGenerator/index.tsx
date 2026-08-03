@@ -2200,7 +2200,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               <button
                 className="btn-glass-blue"
                 style={{
-                  padding: '0.45rem 1.1rem',
+                  padding: '0.38rem 0.8rem',
                   boxShadow: 'none'
                 }}
                 disabled={isProcessing}

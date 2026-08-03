@@ -94,17 +94,7 @@ const MetadataCard = memo(({
               onChange={(val: any) => handleMetaChange(img.id, "keywords", val)}
               isTextArea isKeywords img={img}
             />
-            {img.result.categories && img.result.categories.length > 0 && (
-              <div className="flex gap-2 items-center mt-2">
-                <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Categories:</span>
-                <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                  {img.result.categories.map((cat: any, idx: any) => (
-                    <span key={idx} className="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-semibold border border-primary/20">
-                      {cat}
-                    </span>
-                  ))}
-                </div>
-              </div>
+            
             )}
 
 

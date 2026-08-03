@@ -2207,7 +2207,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 onClick={() => processBatch(false)}
                 title="Keyboard shortcut: Enter"
               >
-                {isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles style={{ width: '0.95rem', height: '0.95rem' }} />}
+                {isProcessing ? <Loader2 style={{ width: '0.95rem', height: '0.95rem' }} className="animate-spin" /> : <Sparkles style={{ width: '0.95rem', height: '0.95rem' }} />}
                 {isProcessing ? 'Generating...' : 'Generate all'}
               </button>
             )}
@@ -2226,7 +2226,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 }}
                 title="Embed Title & Keywords into your original files"
               >
-                {isEmbedding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Tag style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} />}
+                {isEmbedding ? <Loader2 style={{ width: '0.9rem', height: '0.9rem' }} className="animate-spin" /> : <Tag style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} />}
                 {isEmbedding ? 'Embedding...' : 'Embed to files'}
               </button>
             ) : (

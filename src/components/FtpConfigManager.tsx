@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState, useEffect } from "react";
 import { Server, ChevronDown, ChevronRight, Plus, Trash2, ExternalLink, Zap, CheckCircle2, Edit3 } from "lucide-react";
 

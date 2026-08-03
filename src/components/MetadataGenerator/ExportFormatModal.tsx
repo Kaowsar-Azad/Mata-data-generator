@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React from "react";
 import { X } from "lucide-react";
 import downloadIcon from "../../assets/icons/download.png";

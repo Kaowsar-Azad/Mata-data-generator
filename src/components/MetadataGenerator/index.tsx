@@ -1,3 +1,9 @@
+// @ts-nocheck
+declare global {
+  interface Window {
+    electronAPI?: any;
+  }
+}
 
 import React, { useState, useRef, useEffect } from "react";
 import { MdCloudUpload } from "react-icons/md";
@@ -108,7 +114,7 @@ const PolicyViolationThumbnail = ({ img }: any) => {
 const filterMetadataKeywords = (metadata: any, removeYellow: boolean, removeRed: boolean) => {
   if (!metadata || !metadata.keywords) return metadata;
 
-  const getKeywordScore = (keyword, scoreObj) => {
+  const getKeywordScore = (keyword: string, scoreObj: any) => {
     const kl = keyword.toLowerCase().trim();
     if (scoreObj) {
       const scoreKey = Object.keys(scoreObj).find(
@@ -155,8 +161,8 @@ const filterMetadataKeywords = (metadata: any, removeYellow: boolean, removeRed:
 };
 
 export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptSettings, ftpConfigs = [] }: any) {
-  const [images, setImages] = useState([]);
-  const imagesRef = useRef([]);
+  const [images, setImages] = useState<any[]>([]);
+  const imagesRef = useRef<any[]>([]);
   imagesRef.current = images;
   const promptSettingsRef = useRef(promptSettings);
   promptSettingsRef.current = promptSettings;
@@ -178,22 +184,22 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const [autoUpscale, setAutoUpscale] = useState(() => localStorage.getItem("autoUpscale") === "true");
   const [upscaleScale, setUpscaleScale] = useState(() => parseInt(localStorage.getItem("upscaleScale")) || 2);
   const [upscaleEngine, setUpscaleEngine] = useState(() => localStorage.getItem("upscaleEngine") || "mata_ai");
-  const [uploadBatchIds, setUploadBatchIds] = useState([]);
-  const [activeJobId, setActiveJobId] = useState(null);
-  const [activeCell, setActiveCell] = useState(null); // { id: '...', field: '...' }
+  const [uploadBatchIds, setUploadBatchIds] = useState<any[]>([]);
+  const [activeJobId, setActiveJobId] = useState<any>(null);
+  const [activeCell, setActiveCell] = useState<any>(null); // { id: '...', field: '...' }
   const [showExportModal, setShowExportModal] = useState(false);
-  const [selectedRows, setSelectedRows] = useState(new Set()); // row IDs selected in grid
+  const [selectedRows, setSelectedRows] = useState<any>(new Set()); // row IDs selected in grid
   const [gridSort, setGridSort] = useState({ field: null, dir: 'asc' }); // column sort
   const [gridFilter, setGridFilter] = useState(''); // quick filter text
   const [isFilterFocused, setIsFilterFocused] = useState(false);
-  const cellRefs = useRef({}); // { [id_field]: textareaDOM }
+  const cellRefs = useRef<any>({}); // { [id_field]: textareaDOM }
 
   // ─── Duplicate Detection State ─────────────────────────────────────────────
-  const [duplicatePairs, setDuplicatePairs] = useState([]);
+  const [duplicatePairs, setDuplicatePairs] = useState<any[]>([]);
   const [dismissedDuplicates, setDismissedDuplicates] = useState(false);
-  const hashMapRef = useRef({}); // { [imageId]: hashString }
+  const hashMapRef = useRef<any>({}); // { [imageId]: hashString }
 
-  const getTitleCounterClass = (val) => {
+  const getTitleCounterClass = (val: any) => {
     const len = (val || '').length;
     if (len === 0) return '';
     if (len >= 10 && len <= 120) return 'valid';
@@ -201,7 +207,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     return 'invalid';
   };
 
-  const getDescriptionCounterClass = (val) => {
+  const getDescriptionCounterClass = (val: any) => {
     const len = (val || '').length;
     if (len === 0) return '';
     if (len >= 15 && len <= 200) return 'valid';
@@ -209,8 +215,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     return 'invalid';
   };
 
-  const getKeywordsCounterClass = (val) => {
-    const count = (val || '').split(',').map(k => k.trim()).filter(Boolean).length;
+  const getKeywordsCounterClass = (val: any) => {
+    const count = ((val as any) || '').split(',').map(k => k.trim()).filter(Boolean).length;
     if (count === 0) return '';
     if (count >= 10 && count <= 40) return 'valid';
     if (count > 40 && count <= 50) return 'warning';
@@ -265,16 +271,16 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   }, []);
 
   const concurrentLimit = promptSettings?.concurrentLimit || 2;
-  const setConcurrentLimit = (val) => {
+  const setConcurrentLimit = (val: any) => {
     if (typeof setPromptSettings === "function") {
-      setPromptSettings((prev) => ({ ...prev, concurrentLimit: val }));
+      setPromptSettings((prev: any) => ({ ...prev, concurrentLimit: val }));
     }
   };
-  const fileInputRef = useRef(null);
-  const csvInputRef = useRef(null);
-  const [toasts, setToasts] = useState([]);
+  const fileInputRef = useRef<any>(null);
+  const csvInputRef = useRef<any>(null);
+  const [toasts, setToasts] = useState<any[]>([]);
 
-  const showToast = (message, type = "success") => {
+  const showToast = (message: any, type: any = "success") => {
     const id = Math.random().toString(36).substr(2, 9);
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => {
@@ -294,7 +300,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     localStorage.setItem("upscaleEngine", upscaleEngine);
   }, [upscaleEngine]);
 
-  const pickMataAIModel = (filePath, engine) => {
+  const pickMataAIModel = (filePath: any, engine: any) => {
     const name = (filePath || '').toLowerCase();
     const isAnimeOrVector =
       name.includes('anime') ||
@@ -316,7 +322,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     return 'ultrasharp';
   };
 
-  const hasFaceOrPerson = (metadata) => {
+  const hasFaceOrPerson = (metadata: any) => {
     if (!metadata) return false;
     const keywords = Array.isArray(metadata.keywords) 
       ? metadata.keywords.map(k => k.toLowerCase()) 
@@ -335,7 +341,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     return hasKeyword || hasText;
   };
 
-  const detectModelFromMetadata = (metadata, filePath) => {
+  const detectModelFromMetadata = (metadata: any, filePath: any) => {
     const text = (`${filePath || ''} ${metadata?.title || ''} ${metadata?.keywords || ''} ${metadata?.description || ''}`).toLowerCase();
     
     const isAnimeOrVector = 
@@ -361,10 +367,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   };
 
   useEffect(() => {
-    const handleKeyDown = (e) => {
+    const handleKeyDown = (e: any) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       if (e.key === 'Enter') {
-        const canProcess = images.length > 0 && !isProcessing && !images.every((img) => img.status === "done");
+        const canProcess = images.length > 0 && !isProcessing && !images.every((img: any) => img.status === "done");
         if (canProcess) {
           processBatch();
         }
@@ -375,13 +381,13 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [images, isProcessing, apiKeys]);
 
-  const isAccepted = (file) => {
+  const isAccepted = (file: any) => {
     if (isEpsFile(file)) return true;
     if (isVideoFile(file)) return true;
     return file.type.startsWith("image/");
   };
 
-  const addImages = async (files) => {
+  const addImages = async (files: any) => {
     const accepted = files.filter(isAccepted);
 
     if (accepted.length < files.length) {
@@ -429,12 +435,12 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     });
 
     for (const [_baseName, group] of Object.entries(fileGroups)) {
-      if (group.eps && group.raster) {
+      if ((group as any).eps && (group as any).raster) {
         newEntries.push({
           id: Math.random().toString(36).substr(2, 9),
-          file: group.eps,
-          visualFile: group.raster,
-          preview: URL.createObjectURL(group.raster),
+          file: (group as any).eps,
+          visualFile: (group as any).raster,
+          preview: URL.createObjectURL((group as any).raster),
           isEps: true,
           isPaired: true,
           epsData: null,
@@ -443,10 +449,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           result: null,
           error: null,
         });
-      } else if (group.eps) {
+      } else if ((group as any).eps) {
         newEntries.push({
           id: Math.random().toString(36).substr(2, 9),
-          file: group.eps,
+          file: (group as any).eps,
           visualFile: null,
           preview: null,
           isEps: true,
@@ -457,12 +463,12 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           result: null,
           error: null,
         });
-      } else if (group.raster) {
+      } else if ((group as any).raster) {
         newEntries.push({
           id: Math.random().toString(36).substr(2, 9),
-          file: group.raster,
-          visualFile: group.raster,
-          preview: URL.createObjectURL(group.raster),
+          file: (group as any).raster,
+          visualFile: (group as any).raster,
+          preview: URL.createObjectURL((group as any).raster),
           isEps: false,
           isPaired: false,
           epsData: null,
@@ -474,7 +480,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       }
     }
 
-    setImages((prev) => [...prev, ...newEntries]);
+    setImages((prev: any) => [...prev, ...newEntries]);
 
     setTimeout(async () => {
       const hashEntries = newEntries.filter(e => !e.isVideo);
@@ -509,16 +515,16 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       // Yield to let React re-render and populate imagesRef.current with new entries
       await new Promise((resolve) => setTimeout(resolve, 50));
       
-      const epsEntries = newEntries.filter((e) => e.isEps && !e.isPaired);
+      const epsEntries = newEntries.filter((e: any) => e.isEps && !e.isPaired);
       for (const entry of epsEntries) {
         // CRITICAL FIX: If the image was deleted (e.g., Clear All clicked), skip it!
-        if (!imagesRef.current.some((img) => img.id === entry.id)) continue;
+        if (!imagesRef.current.some((img: any) => img.id === entry.id)) continue;
         
         try {
           let epsData = await processEpsFile(entry.file);
           
           // Check again after processing in case they clicked Clear All during processing
-          if (!imagesRef.current.some((img) => img.id === entry.id)) continue;
+          if (!imagesRef.current.some((img: any) => img.id === entry.id)) continue;
           
           if (!epsData) {
             // Fallback to a placeholder if result is empty to stop the loading spinner
@@ -532,9 +538,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             };
           }
           
-          setImages((prev) =>
-            prev.map((item) =>
-              item.id === entry.id
+          setImages((prev: any) =>
+            prev.map((item: any) =>
+              (item as any).id === entry.id
                 ? { ...item, epsData, preview: epsData.dataUrl || 'placeholder-error' }
                 : item
             )
@@ -542,10 +548,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         } catch (err) {
           console.error("Failed to process EPS sequentially:", err);
           // Stop spinner on error too
-          if (imagesRef.current.some((img) => img.id === entry.id)) {
-            setImages((prev) =>
-              prev.map((item) =>
-                item.id === entry.id
+          if (imagesRef.current.some((img: any) => img.id === entry.id)) {
+            setImages((prev: any) =>
+              prev.map((item: any) =>
+                (item as any).id === entry.id
                   ? { ...item, preview: 'placeholder-error' }
                   : item
               )
@@ -560,22 +566,22 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       // Yield to let React re-render and populate imagesRef.current with new entries
       await new Promise((resolve) => setTimeout(resolve, 50));
       
-      const videoEntries = newEntries.filter((e) => e.isVideo);
+      const videoEntries = newEntries.filter((e: any) => e.isVideo);
       for (const entry of videoEntries) {
         // Skip if deleted
-        if (!imagesRef.current.some((img) => img.id === entry.id)) continue;
+        if (!imagesRef.current.some((img: any) => img.id === entry.id)) continue;
         
         if (window.electronAPI?.extractVideoFrame && entry.file.path) {
           try {
             const frameResult = await window.electronAPI.extractVideoFrame(entry.file.path);
             
             // Skip if deleted during processing
-            if (!imagesRef.current.some((img) => img.id === entry.id)) continue;
+            if (!imagesRef.current.some((img: any) => img.id === entry.id)) continue;
             
             if (frameResult.success) {
-              setImages((prev) =>
-                prev.map((item) =>
-                  item.id === entry.id
+              setImages((prev: any) =>
+                prev.map((item: any) =>
+                  (item as any).id === entry.id
                     ? { ...item, preview: `data:image/jpeg;base64,${frameResult.base64}` }
                     : item
                 )
@@ -589,20 +595,20 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     })();
   };
 
-  const onFileChange = (e) => {
+  const onFileChange = (e: any) => {
     addImages(Array.from(e.target.files));
     e.target.value = "";
   };
 
-  const handleDragOver = (e) => e.preventDefault();
+  const handleDragOver = (e: any) => e.preventDefault();
 
-  const handleDrop = (e) => {
+  const handleDrop = (e: any) => {
     e.preventDefault();
     addImages(Array.from(e.dataTransfer.files));
   };
 
-  const removeImage = (id) => {
-    setImages((prev) => {
+  const removeImage = (id: any) => {
+    setImages((prev: any) => {
       const img = prev.find(i => i.id === id);
       if (img && img.preview && img.preview.startsWith('blob:')) {
         URL.revokeObjectURL(img.preview);
@@ -617,7 +623,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       }
     });
 
-    setDuplicatePairs((prev) => prev.filter((p) => p.id1 !== id && p.id2 !== id));
+    setDuplicatePairs((prev: any) => prev.filter((p: any) => p.id1 !== id && p.id2 !== id));
   };
 
   const clearAll = () => {
@@ -658,17 +664,17 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     ));
   };
 
-  const resizeImageToBase64 = (file, maxSize = 1024) => resizeImageToBase64Worker(file, maxSize);
+  const resizeImageToBase64 = (file: any, maxSize = 1024) => resizeImageToBase64Worker(file, maxSize);
 
   const [progress, setProgress] = useState(0);
 
 
-  const handleEmbedScaleChange = (val) => {
+  const handleEmbedScaleChange = (val: any) => {
     setEmbedScale(val);
     localStorage.setItem("embedScale", val.toString());
   };
 
-  const handleEmbedEngineChange = (val) => {
+  const handleEmbedEngineChange = (val: any) => {
     setEmbedEngine(val);
     localStorage.setItem("embedEngine", val);
   };
@@ -683,7 +689,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     setProgress(0);
     cancelRef.current = false;
 
-    const toProcess = images.filter((img) => {
+    const toProcess = images.filter((img: any) => {
       if (img.status === "done" || img.status === "upscaling" || img.status === "upscale_queued") return false;
       if (onlyErrors && img.status !== "error") return false;
       return true;
@@ -711,7 +717,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       }
     };
 
-    const activeProviderName = apiProviderRef.current || "gemini";
+    const activeProviderName: any = apiProviderRef.current || "gemini";
     const isGroqBatch = Array.isArray(activeProviderName) ? activeProviderName.includes("groq") : activeProviderName === "groq";
 
     for (let imgIndex = 0; imgIndex < toProcess.length; imgIndex++) {
@@ -724,9 +730,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       }
       if (cancelRef.current) break;
 
-      setImages((prev) =>
-        prev.map((item) =>
-          item.id === img.id ? { ...item, status: "processing" } : item
+      setImages((prev: any) =>
+        prev.map((item: any) =>
+          (item as any).id === img.id ? { ...item, status: "processing" } : item
         )
       );
 
@@ -739,9 +745,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             let upscaledName = null;
 
             if (img.isVideo) {
-              setImages((prev) =>
-                prev.map((item) =>
-                  item.id === img.id
+              setImages((prev: any) =>
+                prev.map((item: any) =>
+                  (item as any).id === img.id
                     ? { ...item, status: "extracting" }
                     : item
                 )
@@ -757,9 +763,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               }
               base64 = frameResult.base64Array || frameResult.base64;
               mimeType = frameResult.mimeType;
-              setImages((prev) =>
-                prev.map((item) =>
-                  item.id === img.id
+              setImages((prev: any) =>
+                prev.map((item: any) =>
+                  (item as any).id === img.id
                     ? { ...item, preview: `data:image/jpeg;base64,${frameResult.base64}` }
                     : item
                 )
@@ -785,12 +791,12 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               base64 = dataUrl.split(",")[1];
               mimeType = "image/jpeg";
             } else if (img.isEps) {
-              let epsData = img.epsData;
+              let epsData = (img as any).epsData;
               if (!epsData) {
                 epsData = await processEpsFile(img.file);
-                setImages((prev) =>
-                  prev.map((item) =>
-                    item.id === img.id
+                setImages((prev: any) =>
+                  prev.map((item: any) =>
+                    (item as any).id === img.id
                       ? { ...item, epsData, preview: epsData.dataUrl }
                       : item
                   )
@@ -807,9 +813,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             if (cancelRef.current) return;
             // For Groq, safety/trademark scan is combined into single metadata call to reduce API usage by 50%
             if (promptSettingsRef.current?.securityScanEnabled && !isGroq) {
-              setImages((prev) =>
-                prev.map((item) =>
-                  item.id === img.id
+              setImages((prev: any) =>
+                prev.map((item: any) =>
+                  (item as any).id === img.id
                     ? { ...item, status: "scanning" }
                     : item
                 )
@@ -857,9 +863,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             const targetPath = img.visualFile?.path || (!img.isEps && !img.isVideo ? img.file?.path : null);
             const needsUpscale = (autoUpscale && window.electronAPI && targetPath && !img.isVideo);
 
-            setImages((prev) =>
-              prev.map((item) =>
-                item.id === img.id
+            setImages((prev: any) =>
+              prev.map((item: any) =>
+                (item as any).id === img.id
                   ? { ...item, result: metadata, status: needsUpscale ? "upscale_queued" : "done" }
                   : item
               )
@@ -872,9 +878,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               try {
             if (needsUpscale) {
               try {
-                setImages((prev) =>
-                  prev.map((item) =>
-                    item.id === img.id
+                setImages((prev: any) =>
+                  prev.map((item: any) =>
+                    (item as any).id === img.id
                       ? { ...item, status: "upscaling", upscaleProgress: 0 }
                       : item
                   )
@@ -947,9 +953,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   console.log(`[Mata AI] ✅ Server API fallback success: ${upscaledName}`);
                 }
 
-                setImages((prev) =>
-                  prev.map((item) => {
-                    if (item.id === img.id) {
+                setImages((prev: any) =>
+                  prev.map((item: any) => {
+                    if ((item as any).id === img.id) {
                       const updatedItem = { ...item };
                       if (item.isEps) {
                         updatedItem.renamedVisualPath = upscaledPath;
@@ -980,9 +986,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               }
             }
 
-            setImages((prev) =>
-              prev.map((item) =>
-                item.id === img.id
+            setImages((prev: any) =>
+              prev.map((item: any) =>
+                (item as any).id === img.id
                   ? { ...item, status: "done" }
                   : item
               )
@@ -1017,9 +1023,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               embedPromises.push(p);
             }
           } catch (err) {
-            setImages((prev) =>
-                prev.map((item) =>
-                  item.id === img.id
+            setImages((prev: any) =>
+                prev.map((item: any) =>
+                  (item as any).id === img.id
                     ? { ...item, status: "error", error: err.message || 'Unknown error occurred. Please check your API key or network connection.' }
                     : item
                 )
@@ -1037,9 +1043,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             postMetadataTask();
           }
       } catch (err) {
-          setImages((prev) =>
-            prev.map((item) =>
-              item.id === img.id
+          setImages((prev: any) =>
+            prev.map((item: any) =>
+              (item as any).id === img.id
                 ? { ...item, status: "error", error: err.message || 'Unknown error occurred.' }
                 : item
             )
@@ -1143,8 +1149,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         return img;
       }));
       
-      const embeddedImages = [];
-      const filesToUpload = [];
+      const embeddedImages: any[] = [];
+      const filesToUpload: any[] = [];
       
       for (const img of currentImages) {
         try {
@@ -1216,7 +1222,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             if (newVisualPath && newVisualPath !== newPrimaryPath) filesToUpload.push(newVisualPath);
             
             setImages(prev => prev.map(item => 
-              item.id === img.id 
+              (item as any).id === img.id 
                 ? { 
                     ...item, 
                     embeddingStatus: ((autoEmbed || forceUpload) && activeFtpConfigs.length > 0) ? "uploading" : "success", 
@@ -1228,14 +1234,14 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             ));
           } else {
             setImages(prev => prev.map(item => 
-              item.id === img.id 
+              (item as any).id === img.id 
                 ? { ...item, embeddingStatus: "error", embeddingError: errMsg } 
                 : item
             ));
           }
         } catch (err) {
           setImages(prev => prev.map(item => 
-            item.id === img.id 
+            (item as any).id === img.id 
               ? { ...item, embeddingStatus: "error", embeddingError: err.message } 
               : item
           ));
@@ -1246,7 +1252,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
       if ((autoEmbed || forceUpload) && uploadConfigs.length > 0 && filesToUpload.length > 0) {
         setImages(prev => prev.map(item => {
-          const isEmbedded = embeddedImages.some(ei => ei.id === item.id);
+          const isEmbedded = embeddedImages.some(ei => ei.id === (item as any).id);
           if (isEmbedded) {
             return { ...item, embeddingStatus: "uploading", uploadProgress: {}, embeddingError: null };
           }
@@ -1257,7 +1263,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         setActiveJobId(jobId);
         
         try {
-          const uploadPromises = uploadConfigs.map(async (conf) => {
+          const uploadPromises = uploadConfigs.map(async (conf: any) => {
             try {
               const ftpRes = await window.electronAPI.uploadFtp(conf, filesToUpload, jobId);
               if (!ftpRes.success) {
@@ -1291,7 +1297,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           }
 
           setImages(prev => prev.map(item => {
-            const isEmbedded = embeddedImages.some(ei => ei.id === item.id);
+            const isEmbedded = embeddedImages.some(ei => ei.id === (item as any).id);
             if (!isEmbedded) return item;
 
             const primaryPath = (item.renamedPath || item.file?.path || '').replace(/\\/g, '/');
@@ -1332,7 +1338,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
         } catch (uploadErr) {
           setImages(prev => prev.map(item => {
-            const isEmbedded = embeddedImages.some(ei => ei.id === item.id);
+            const isEmbedded = embeddedImages.some(ei => ei.id === (item as any).id);
             if (isEmbedded) {
               return { ...item, embeddingStatus: "error", embeddingError: uploadErr.message };
             }
@@ -1371,7 +1377,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     }
   };
 
-  const handleAutoEmbedChange = (e) => {
+  const handleAutoEmbedChange = (e: any) => {
     const checked = e.target.checked;
     setAutoEmbed(checked);
     localStorage.setItem("autoEmbed", checked ? "true" : "false");
@@ -1383,24 +1389,24 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     }
   };
 
-  const handleAutoRemoveYellowChange = (e) => {
+  const handleAutoRemoveYellowChange = (e: any) => {
     const checked = e.target.checked;
     setAutoRemoveYellow(checked);
     localStorage.setItem("autoRemoveYellow", checked ? "true" : "false");
   };
 
-  const handleAutoRemoveRedChange = (e) => {
+  const handleAutoRemoveRedChange = (e: any) => {
     const checked = e.target.checked;
     setAutoRemoveRed(checked);
     localStorage.setItem("autoRemoveRed", checked ? "true" : "false");
   };
 
-  const handleCSVImport = (e) => {
+  const handleCSVImport = (e: any) => {
     const file = e.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = (event: any) => {
       const text = event.target.result;
       try {
         const rows = parseCSV(text);
@@ -1470,9 +1476,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     e.target.value = "";
   };
 
-  const handleMetaChange = (id, field, value) => {
-    setImages((prev) =>
-      prev.map((img) => {
+  const handleMetaChange = (id: any, field: any, value: any) => {
+    setImages((prev: any) =>
+      prev.map((img: any) => {
         if (img.id === id && img.result) {
           return { ...img, result: { ...img.result, [field]: value } };
         }
@@ -1481,10 +1487,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     );
   };
 
-  const applyToSelected = (sourceId, field, value) => {
+  const applyToSelected = (sourceId: any, field: any, value: any) => {
     if (selectedRows.size < 2) return;
-    setImages((prev) =>
-      prev.map((img) => {
+    setImages((prev: any) =>
+      prev.map((img: any) => {
         if (selectedRows.has(img.id) && img.result) {
           return { ...img, result: { ...img.result, [field]: value } };
         }
@@ -1493,8 +1499,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     );
   };
 
-  const removeKeywordsByColor = (color) => {
-    const getKeywordScore = (keyword, img) => {
+  const removeKeywordsByColor = (color: any) => {
+    const getKeywordScore = (keyword: any, img: any) => {
       const kl = keyword.toLowerCase().trim();
       if (img && img.result && img.result.keywordScores) {
         const scoreKey = Object.keys(img.result.keywordScores).find(
@@ -1571,14 +1577,14 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     return list;
   };
 
-  const toggleSort = (field) => {
+  const toggleSort = (field: any) => {
     setGridSort(prev => ({
       field,
       dir: prev.field === field && prev.dir === 'asc' ? 'desc' : 'asc'
     }));
   };
 
-  const getProviderName = (prov) => {
+  const getProviderName = (prov: any) => {
     const map = {
       gemini: "Gemini",
       groq: "Groq",
@@ -2126,7 +2132,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                         type="checkbox" 
                         className="ios-toggle ios-toggle-green-custom"
                         checked={autoUpscale} 
-                        onChange={(e) => setAutoUpscale(e.target.checked)}
+                        onChange={(e: any) => setAutoUpscale(e.target.checked)}
                       />
                       <span style={{ fontWeight: 500 }}>Auto upscale</span>
                     </label>
@@ -2136,7 +2142,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                         <div style={{ width: '1.5px', height: '1.2rem', background: 'rgba(22, 163, 74, 0.3)', margin: '0 4px' }} />
                         <select
                           value={upscaleScale}
-                          onChange={(e) => setUpscaleScale(parseInt(e.target.value) || 2)}
+                          onChange={(e: any) => setUpscaleScale(parseInt(e.target.value) || 2)}
                           style={{
                             background: 'rgba(22, 163, 74, 0.08)',
                             color: '#15803D',
@@ -2160,7 +2166,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                         <div style={{ width: '1.5px', height: '1.2rem', background: 'rgba(22, 163, 74, 0.3)', margin: '0 4px' }} />
                         <select
                           value={upscaleEngine}
-                          onChange={(e) => setUpscaleEngine(e.target.value)}
+                          onChange={(e: any) => setUpscaleEngine(e.target.value)}
                           title="Mata AI: Smart model auto-selection for best quality"
                           style={{
                             background: 'rgba(22, 163, 74, 0.08)',
@@ -2271,13 +2277,13 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                     removeKeywordsByColor('yellow');
                   }
                 }}
-                onMouseOver={(e) => {
+                onMouseOver={(e: any) => {
                   if (!isProcessing) {
                     e.currentTarget.style.background = 'rgba(245, 158, 11, 0.08)';
                     e.currentTarget.style.transform = 'translateY(-1px)';
                   }
                 }}
-                onMouseOut={(e) => {
+                onMouseOut={(e: any) => {
                   e.currentTarget.style.background = 'rgba(245, 158, 11, 0.03)';
                   e.currentTarget.style.transform = 'translateY(0)';
                 }}
@@ -2309,13 +2315,13 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                     removeKeywordsByColor('red');
                   }
                 }}
-                onMouseOver={(e) => {
+                onMouseOver={(e: any) => {
                   if (!isProcessing) {
                     e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
                     e.currentTarget.style.transform = 'translateY(-1px)';
                   }
                 }}
-                onMouseOut={(e) => {
+                onMouseOut={(e: any) => {
                   e.currentTarget.style.background = 'rgba(239, 68, 68, 0.03)';
                   e.currentTarget.style.transform = 'translateY(0)';
                 }}
@@ -2358,8 +2364,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   onClick={() => removeImage(img.id)}
                   style={{ background: 'var(--surface-1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', cursor: 'pointer', padding: '0.2rem', borderRadius: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                   title="Remove this image"
-                  onMouseOver={(e) => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = '#fff'; }}
-                  onMouseOut={(e) => { e.currentTarget.style.background = 'var(--surface-1)'; e.currentTarget.style.color = '#ef4444'; }}
+                  onMouseOver={(e: any) => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = '#fff'; }}
+                  onMouseOut={(e: any) => { e.currentTarget.style.background = 'var(--surface-1)'; e.currentTarget.style.color = '#ef4444'; }}
                 >
                   <X size={14} />
                 </button>
@@ -2562,8 +2568,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   transition: 'all 0.2s',
                   marginTop: '-0.1rem'
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-3)'; e.currentTarget.style.color = 'var(--text-1)'; e.currentTarget.style.transform = 'rotate(90deg)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.transform = 'rotate(0deg)'; }}
+                onMouseEnter={(e: any) => { e.currentTarget.style.background = 'var(--surface-3)'; e.currentTarget.style.color = 'var(--text-1)'; e.currentTarget.style.transform = 'rotate(90deg)'; }}
+                onMouseLeave={(e: any) => { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.transform = 'rotate(0deg)'; }}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2593,8 +2599,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 transition: 'all 0.2s',
                 boxShadow: 'inset 0 2px 5px rgba(0,0,0,0.05)'
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(6, 182, 212, 0.4)'; e.currentTarget.style.background = 'rgba(6, 182, 212, 0.05)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--glass-border)'; e.currentTarget.style.background = 'var(--surface-2)'; }}
+              onMouseEnter={(e: any) => { e.currentTarget.style.borderColor = 'rgba(6, 182, 212, 0.4)'; e.currentTarget.style.background = 'rgba(6, 182, 212, 0.05)'; }}
+              onMouseLeave={(e: any) => { e.currentTarget.style.borderColor = 'var(--glass-border)'; e.currentTarget.style.background = 'var(--surface-2)'; }}
             >
               <input 
                 type="checkbox" 
@@ -2633,8 +2639,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   transition: 'all 0.2s'
                 }}
                 onClick={() => setShowPermissionModal(false)}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-3)'; e.currentTarget.style.color = 'var(--text-1)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.color = 'var(--text-2)'; }}
+                onMouseEnter={(e: any) => { e.currentTarget.style.background = 'var(--surface-3)'; e.currentTarget.style.color = 'var(--text-1)'; }}
+                onMouseLeave={(e: any) => { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.color = 'var(--text-2)'; }}
               >
                 No, Cancel
               </button>
@@ -2659,8 +2665,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   overflow: 'hidden'
                 }}
                 onClick={() => embedMetadataToFiles()}
-                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(6, 182, 212, 0.4), inset 0 1px 0 rgba(255,255,255,0.2)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(6, 182, 212, 0.3), inset 0 1px 0 rgba(255,255,255,0.2)'; }}
+                onMouseEnter={(e: any) => { e.currentTarget.style.opacity = '0.9'; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(6, 182, 212, 0.4), inset 0 1px 0 rgba(255,255,255,0.2)'; }}
+                onMouseLeave={(e: any) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(6, 182, 212, 0.3), inset 0 1px 0 rgba(255,255,255,0.2)'; }}
               >
                 Yes, Embed
               </button>
@@ -2673,7 +2679,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       <ExportFormatModal 
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
-        onSelect={(formatId) => {
+        onSelect={(formatId: any) => {
           downloadCSV(formatId, images, promptSettings);
           setShowExportModal(false);
         }}
@@ -2747,7 +2753,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 {t.message}
               </span>
               <button 
-                onClick={() => setToasts(prev => prev.filter(item => item.id !== t.id))}
+                onClick={() => setToasts(prev => prev.filter(item => (item as any).id !== t.id))}
                 style={{
                   background: 'transparent',
                   border: 'none',

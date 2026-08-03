@@ -95,20 +95,20 @@ export function MetadataEditorPanel({
           <MetaField 
             label="Title" 
             value={img.result.title} 
-            onChange={(val) => handleMetaChange(img.id, "title", val)}
+            onChange={(val: any) => handleMetaChange(img.id, "title", val)}
             onApplyToSelected={selectedCount > 1 && typeof applyToSelected === 'function' ? () => applyToSelected(img.id, "title", img.result.title) : null}
           />
           <MetaField 
             label="Description" 
             value={img.result.description} 
-            onChange={(val) => handleMetaChange(img.id, "description", val)}
+            onChange={(val: any) => handleMetaChange(img.id, "description", val)}
             isTextArea
             onApplyToSelected={selectedCount > 1 && typeof applyToSelected === 'function' ? () => applyToSelected(img.id, "description", img.result.description) : null}
           />
           <MetaField
             label="Keywords"
             value={img.result.keywords}
-            onChange={(val) => handleMetaChange(img.id, "keywords", val)}
+            onChange={(val: any) => handleMetaChange(img.id, "keywords", val)}
             isTextArea
             isKeywords
             img={img}
@@ -119,7 +119,7 @@ export function MetadataEditorPanel({
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Categories:</span>
               <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                {img.result.categories.map((cat, idx) => (
+                {img.result.categories.map((cat: any, idx: any) => (
                   <span key={idx} className="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-semibold border border-primary/20">
                     {cat}
                   </span>

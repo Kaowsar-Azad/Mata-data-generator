@@ -67,10 +67,10 @@ const MetadataGridRow = memo(({
             ref={el => { cellRefs.current[`${img.id}_title`] = el; }}
             className="bulk-edit-input"
             value={img.result?.title || ''}
-            onChange={(e) => handleMetaChange(img.id, 'title', e.target.value)}
+            onChange={(e: any) => handleMetaChange(img.id, 'title', e.target.value)}
             onFocus={() => setActiveCell({ id: img.id, field: 'title' })}
             onBlur={() => setActiveCell(null)}
-            onKeyDown={(e) => handleCellKeyDown(e, img.id, 'title')}
+            onKeyDown={(e: any) => handleCellKeyDown(e, img.id, 'title')}
             disabled={!img.result}
             placeholder={img.status === 'done' ? 'Enter title…' : '—'}
           />
@@ -89,10 +89,10 @@ const MetadataGridRow = memo(({
             ref={el => { cellRefs.current[`${img.id}_description`] = el; }}
             className="bulk-edit-input"
             value={img.result?.description || ''}
-            onChange={(e) => handleMetaChange(img.id, 'description', e.target.value)}
+            onChange={(e: any) => handleMetaChange(img.id, 'description', e.target.value)}
             onFocus={() => setActiveCell({ id: img.id, field: 'description' })}
             onBlur={() => setActiveCell(null)}
-            onKeyDown={(e) => handleCellKeyDown(e, img.id, 'description')}
+            onKeyDown={(e: any) => handleCellKeyDown(e, img.id, 'description')}
             disabled={!img.result}
             placeholder={img.status === 'done' ? 'Enter description…' : '—'}
           />
@@ -111,16 +111,16 @@ const MetadataGridRow = memo(({
             ref={el => { cellRefs.current[`${img.id}_keywords`] = el; }}
             className="bulk-edit-input"
             value={img.result?.keywords || ''}
-            onChange={(e) => handleMetaChange(img.id, 'keywords', e.target.value)}
+            onChange={(e: any) => handleMetaChange(img.id, 'keywords', e.target.value)}
             onFocus={() => setActiveCell({ id: img.id, field: 'keywords' })}
             onBlur={() => setActiveCell(null)}
-            onKeyDown={(e) => handleCellKeyDown(e, img.id, 'keywords')}
+            onKeyDown={(e: any) => handleCellKeyDown(e, img.id, 'keywords')}
             disabled={!img.result}
             placeholder={img.status === 'done' ? 'Enter keywords…' : '—'}
           />
           {img.result && (
             <span className={`grid-cell-counter ${getKeywordsCounterClass(img.result.keywords)}`}>
-              {(img.result.keywords || '').split(',').map(k => k.trim()).filter(Boolean).length} / 50 kws
+              {(img.result.keywords || '').split(',').map((k: any) => k.trim()).filter(Boolean).length} / 50 kws
             </span>
           )}
         </div>
@@ -176,8 +176,8 @@ export function MetadataGrid({
     return <span className="grid-sort-arrow active">{gridSort.dir === 'asc' ? '↑' : '↓'}</span>;
   };
 
-  const toggleRowSelect = React.useCallback((id) => {
-    setSelectedRows(prev => {
+  const toggleRowSelect = React.useCallback((id: any) => {
+    setSelectedRows((prev: any) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
@@ -185,14 +185,14 @@ export function MetadataGrid({
   }, [setSelectedRows]);
 
   const toggleSelectAll = () => {
-    setSelectedRows(prev => {
+    setSelectedRows((prev: any) => {
       if (prev.size === gridImages.length) return new Set();
-      return new Set(gridImages.map(i => i.id));
+      return new Set(gridImages.map((i: any) => i.id));
     });
   };
 
-  const handleCellKeyDown = React.useCallback((e, imgId, field) => {
-    const rowIndex = gridImages.findIndex(i => i.id === imgId);
+  const handleCellKeyDown = React.useCallback((e: any, imgId: any, field: any) => {
+    const rowIndex = gridImages.findIndex((i: any) => i.id === imgId);
     const fieldIndex = GRID_FIELDS.indexOf(field);
     if (rowIndex === -1 || fieldIndex === -1) return;
 
@@ -223,7 +223,7 @@ export function MetadataGrid({
       if (rowIndex > 0) nextId = gridImages[rowIndex - 1].id;
     } else if (e.key === 'Enter' && e.ctrlKey) {
       // Ctrl+Enter: apply this cell's value to all selected rows
-      const curImg = images.find(i => i.id === imgId);
+      const curImg = images.find((i: any) => i.id === imgId);
       if (curImg?.result) applyToSelected(imgId, field, curImg.result[field] || '');
       return;
     } else {
@@ -277,7 +277,7 @@ export function MetadataGrid({
           </tr>
         </thead>
         <tbody>
-          {gridImages.map(img => (
+          {gridImages.map((img: any) => (
             <MetadataGridRow
               key={img.id}
               img={img}

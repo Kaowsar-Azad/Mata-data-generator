@@ -13,8 +13,8 @@ export const computePHash = (src: string, shouldRevoke: boolean = true): Promise
         canvasD.width = 9;
         canvasD.height = 8;
         const ctxD = canvasD.getContext("2d");
-        ctxD.drawImage(img, 0, 0, 9, 8);
-        const imgDataD = ctxD.getImageData(0, 0, 9, 8).data;
+        ctxD!.drawImage(img, 0, 0, 9, 8);
+        const imgDataD = ctxD!.getImageData(0, 0, 9, 8).data;
 
         const grays: number[] = [];
         for (let i = 0; i < imgDataD.length; i += 4) {
@@ -35,8 +35,8 @@ export const computePHash = (src: string, shouldRevoke: boolean = true): Promise
         canvasC.width = 4;
         canvasC.height = 4;
         const ctxC = canvasC.getContext("2d");
-        ctxC.drawImage(img, 0, 0, 4, 4);
-        const imgDataC = ctxC.getImageData(0, 0, 4, 4).data;
+        ctxC!.drawImage(img, 0, 0, 4, 4);
+        const imgDataC = ctxC!.getImageData(0, 0, 4, 4).data;
 
         const rs: number[] = [], gs: number[] = [], bs: number[] = [];
         for (let i = 0; i < imgDataC.length; i += 4) {

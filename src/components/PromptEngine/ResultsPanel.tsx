@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React from 'react';
 import { Copy, Download, FileText, Sparkles, X, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';

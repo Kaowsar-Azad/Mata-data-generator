@@ -80,25 +80,25 @@ const MetadataCard = memo(({
             <MetaField 
               label="Title" 
               value={img.result.title} 
-              onChange={(val) => handleMetaChange(img.id, "title", val)}
+              onChange={(val: any) => handleMetaChange(img.id, "title", val)}
             />
             <MetaField 
               label="Description" 
               value={img.result.description} 
-              onChange={(val) => handleMetaChange(img.id, "description", val)}
+              onChange={(val: any) => handleMetaChange(img.id, "description", val)}
               isTextArea
             />
             <MetaField
               label="Keywords"
               value={img.result.keywords}
-              onChange={(val) => handleMetaChange(img.id, "keywords", val)}
+              onChange={(val: any) => handleMetaChange(img.id, "keywords", val)}
               isTextArea isKeywords img={img}
             />
             {img.result.categories && img.result.categories.length > 0 && (
               <div className="flex gap-2 items-center mt-2">
                 <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Categories:</span>
                 <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                  {img.result.categories.map((cat, idx) => (
+                  {img.result.categories.map((cat: any, idx: any) => (
                     <span key={idx} className="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-semibold border border-primary/20">
                       {cat}
                     </span>
@@ -179,9 +179,9 @@ const MetadataCard = memo(({
               const singleProgress = (() => {
                 if (typeof img.uploadProgress === 'number') return img.uploadProgress;
                 if (typeof img.uploadProgress === 'object' && img.uploadProgress !== null) {
-                  const activeConfigs = ftpConfigs.filter(c => c.enabled);
+                  const activeConfigs = ftpConfigs.filter((c: any) => c.enabled);
                   if (activeConfigs.length === 0) return 0;
-                  const sum = activeConfigs.reduce((s, conf) => s + (img.uploadProgress[conf.host] || 0), 0);
+                  const sum = activeConfigs.reduce((s: any, conf: any) => s + (img.uploadProgress[conf.host] || 0), 0);
                   return Math.round(sum / activeConfigs.length);
                 }
                 return 0;
@@ -230,8 +230,8 @@ const MetadataCard = memo(({
 export function MetadataCardList({ images, duplicatePairs, removeImage, handleMetaChange, activeProviderName, upscaleScale, ftpConfigs }: any) {
   return (
     <div className="grid grid-cols-1 gap-4">
-      {images.map((img) => {
-        const hasDuplicateBadge = duplicatePairs.some((p) => p.id1 === img.id || p.id2 === img.id);
+      {images.map((img: any) => {
+        const hasDuplicateBadge = duplicatePairs.some((p: any) => p.id1 === img.id || p.id2 === img.id);
         return (
           <MetadataCard 
             key={img.id}

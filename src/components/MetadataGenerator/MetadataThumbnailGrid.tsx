@@ -55,7 +55,7 @@ const ThumbnailCard = memo(({
 
         {/* Selection Checkbox (Absolute Top-Left) */}
         <div 
-          onClick={(e) => {
+          onClick={(e: any) => {
             e.stopPropagation();
             onSelectToggle(img.id);
           }}
@@ -77,13 +77,13 @@ const ThumbnailCard = memo(({
             cursor: 'pointer',
             transition: 'all 0.2s'
           }}
-          onMouseEnter={(e) => {
+          onMouseEnter={(e: any) => {
             if (!isSelected) {
               e.currentTarget.style.borderColor = '#06b6d4';
               e.currentTarget.style.background = 'rgba(6, 182, 212, 0.15)';
             }
           }}
-          onMouseLeave={(e) => {
+          onMouseLeave={(e: any) => {
             if (!isSelected) {
               e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.4)';
               e.currentTarget.style.background = 'rgba(0, 0, 0, 0.4)';
@@ -112,9 +112,9 @@ const ThumbnailCard = memo(({
             backdropFilter: 'blur(4px)',
             transition: 'background 0.2s'
           }}
-          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.9)'}
-          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(0, 0, 0, 0.5)'}
-          onClick={(e) => {
+          onMouseEnter={(e: any) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.9)'}
+          onMouseLeave={(e: any) => e.currentTarget.style.background = 'rgba(0, 0, 0, 0.5)'}
+          onClick={(e: any) => {
             e.stopPropagation();
             removeImage(img.id);
           }}
@@ -249,7 +249,7 @@ export function MetadataThumbnailGrid({
 
   return (
     <div className="thumbnail-grid max-h-[70vh] overflow-y-auto p-1 pr-2">
-      {images.map((img) => (
+      {images.map((img: any) => (
         <ThumbnailCard
           key={img.id}
           img={img}

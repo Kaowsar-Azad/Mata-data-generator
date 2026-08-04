@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Helmet, HelmetProvider } from 'react-helmet-async';
 import { Upload, Download, Trash2, Loader2, Sparkles, Image as ImageIcon, KeyRound, RefreshCw } from 'lucide-react';
-import { removeBackgroundViaRemoveBgProxy, removeBackgroundViaLocalServer, removeBackgroundViaBria, removeBackgroundViaSolid, removeBackgroundViaHybrid } from '../../services/removeBgProxy.js';
+import { removeBackgroundViaRemoveBgProxy, removeBackgroundViaLocalServer } from '../../services/removeBgProxy.js';
 import { saveKeySecurely, getKeySecurely } from '../../services/secureStorage.js';
 
 /* ─── Light Glassmorphism Tokens ──────────────────────────── */
@@ -76,10 +76,6 @@ export const BackgroundRemover = () => {
       let resultBlob;
       if (mode === 'local') {
         resultBlob = await removeBackgroundViaLocalServer(originalFile);
-      } else if (mode === 'bria') {
-        resultBlob = await removeBackgroundViaBria(originalFile);
-      } else if (mode === 'solid') {
-        resultBlob = await removeBackgroundViaHybrid(originalFile);
       } else {
         const trimmed = apiKey.trim();
         if (!trimmed) {
@@ -150,36 +146,6 @@ export const BackgroundRemover = () => {
             }}
           >
             <Sparkles size={14} /> Local Engine (Offline)
-          </button>
-          
-          <button
-            onClick={() => setMode('bria')}
-            style={{
-              padding: '6px 14px', borderRadius: '8px',
-              border: mode === 'bria' ? '1px solid var(--primary)' : `1px solid ${FIELD_BORDER}`,
-              background: mode === 'bria' ? 'var(--primary)' : FIELD_BG,
-              color: mode === 'bria' ? 'white' : 'var(--text-1)',
-              fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem',
-              display: 'flex', alignItems: 'center', gap: '6px',
-              transition: 'all 0.2s'
-            }}
-          >
-            <Sparkles size={14} /> BRIA AI (RMBG-1.4)
-          </button>
-
-          <button
-            onClick={() => setMode('solid')}
-            style={{
-              padding: '6px 14px', borderRadius: '8px',
-              border: mode === 'solid' ? '1px solid var(--primary)' : `1px solid ${FIELD_BORDER}`,
-              background: mode === 'solid' ? 'var(--primary)' : FIELD_BG,
-              color: mode === 'solid' ? 'white' : 'var(--text-1)',
-              fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem',
-              display: 'flex', alignItems: 'center', gap: '6px',
-              transition: 'all 0.2s'
-            }}
-          >
-            <Sparkles size={14} /> Solid Color (Logo/Icon)
           </button>
 
           <button

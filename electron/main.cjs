@@ -783,6 +783,77 @@ ipcMain.handle('get-hardware-tier', async () => {
   }
 });
 
+function patchEpsTitleAndXmp(filePath, title) {
+  try {
+    if (!title || typeof title !== 'string' || !title.trim()) return;
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext !== '.eps') return;
+    if (!fs.existsSync(filePath)) return;
+
+    const cleanTitle = title.trim();
+    const buf = fs.readFileSync(filePath);
+    const isDosEps = buf.length > 30 && buf[0] === 0xC5 && buf[1] === 0xD0 && buf[2] === 0xD3 && buf[3] === 0xC6;
+
+    let content;
+    let encoding = 'utf8';
+    if (isDosEps) {
+      content = buf.toString('latin1');
+      encoding = 'latin1';
+    } else {
+      content = buf.toString('utf8');
+      encoding = 'utf8';
+    }
+
+    let modified = false;
+
+    // 1. Update %%Title: in PostScript DSC header
+    const titleRegex = /^(%%Title:\s*)(.*)$/m;
+    if (titleRegex.test(content)) {
+      content = content.replace(titleRegex, `$1(${cleanTitle})`);
+      modified = true;
+    } else {
+      content = content.replace(/^(%!PS-Adobe[^\r\n]*[\r\n]+)/m, `$1%%Title: (${cleanTitle})\n`);
+      modified = true;
+    }
+
+    // 2. Update embedded XMP packet if present (especially in Adobe Illustrator EPS files)
+    const xmpStart = content.indexOf('<x:xmpmeta');
+    const xmpEnd = content.indexOf('</x:xmpmeta>');
+    if (xmpStart !== -1 && xmpEnd !== -1 && xmpEnd > xmpStart) {
+      let xmp = content.substring(xmpStart, xmpEnd + 12);
+      const originalXmp = xmp;
+
+      const escapedTitle = cleanTitle
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+
+      const dcTitleRegex = /<dc:title>[\s\S]*?<\/dc:title>/i;
+      const newDcTitle = `<dc:title><rdf:Alt><rdf:li xml:lang="x-default">${escapedTitle}</rdf:li></rdf:Alt></dc:title>`;
+
+      if (dcTitleRegex.test(xmp)) {
+        xmp = xmp.replace(dcTitleRegex, newDcTitle);
+      } else {
+        xmp = xmp.replace(/(<rdf:Description[^>]*>)/i, `$1\n         ${newDcTitle}`);
+      }
+
+      if (xmp !== originalXmp) {
+        content = content.substring(0, xmpStart) + xmp + content.substring(xmpEnd + 12);
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      fs.writeFileSync(filePath, Buffer.from(content, encoding));
+      fileLog('[patchEpsTitleAndXmp] Successfully updated EPS header & XMP title for:', filePath);
+    }
+  } catch (err) {
+    fileLog('[patchEpsTitleAndXmp error]', err);
+  }
+}
+
 ipcMain.handle('write-metadata', async (event, filePath, title, description, keywords, categories) => {
   fileLog('[write-metadata] Called with:', { filePath, title, description, keywords, categories });
   try {
@@ -840,7 +911,12 @@ ipcMain.handle('write-metadata', async (event, filePath, title, description, key
     // Append categories to keywords for maximum stock compatibility and limit to 49 for Adobe Stock
     const finalKeywordsArray = [...new Set([...keywordsArray, ...categoriesArray])].slice(0, 49);
       
+    // Pre-patch EPS PostScript DSC header and embedded XMP to guarantee title embedding for Illustrator & Stock sites
+    patchEpsTitleAndXmp(filePath, title);
+
     const tags = {
+      "Title": title,
+      "PostScript:Title": title,
       "XMP-dc:Title": title,
       "XMP-dc:Description": description,
       "XMP-dc:Subject": finalKeywordsArray,
@@ -1546,8 +1622,13 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
             finalTitleToSave = finalTitle;
             finalKeywordsToSave = finalKeywordsArray.join(', ');
 
+            // If file is EPS, pre-patch PostScript DSC header & embedded XMP
+            patchEpsTitleAndXmp(filePath, finalTitle);
+
             // Re-write in correct standard XMP and IPTC formats with UTF-8 encoding
             const writeTags = {
+              "Title": finalTitle,
+              "PostScript:Title": finalTitle,
               "XMP-dc:Title": finalTitle,
               "XMP-dc:Subject": finalKeywordsArray,
               "IPTC:ObjectName": finalTitle,

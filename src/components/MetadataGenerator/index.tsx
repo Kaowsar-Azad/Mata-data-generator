@@ -1856,8 +1856,21 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           }
         }
       }
-      const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]);
+      const isEpsAsset = Boolean(img?.isEps || (img?.file?.name && /\.(eps|epsf|epsi)$/i.test(img.file.name)));
+      const junk = new Set(isEpsAsset
+        ? ["image", "photo", "picture", "file", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]
+        : ["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]
+      );
       if (junk.has(kl) || kl.length < 3) return -1;
+      if (img && img.result && img.result.keywords) {
+        const allKws = img.result.keywords.split(',').map((k: string) => k.toLowerCase().trim());
+        const kwIdx = allKws.indexOf(kl);
+        if (kwIdx !== -1) {
+          if (kwIdx < 15) return Math.max(70, Math.round(95 - (kwIdx * 1.6)));
+          if (kwIdx < 35) return Math.max(30, Math.round(68 - ((kwIdx - 15) * 1.8)));
+          return Math.max(5, Math.round(28 - ((kwIdx - 35) * 1.5)));
+        }
+      }
       return -1;
     };
 
@@ -2356,15 +2369,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 </button>
               </div>
 
-              {/* Badges (EPS/Errors) right next to view toggle if they exist */}
-              {(epsCount > 0 || localEmbedErrorCount > 0 || ftpErrorCount > 0 || policyViolationCount > 0) && (
+              {/* Badges (Errors) right next to view toggle if they exist */}
+              {(localEmbedErrorCount > 0 || ftpErrorCount > 0) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <div style={{ width: '1px', height: '1.4rem', background: 'var(--glass-border, #e2e8f0)', margin: '0 2px' }} />
-                  {epsCount > 0 && (
-                    <span className="eps-badge" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>
-                      {epsCount} EPS
-                    </span>
-                  )}
                   {localEmbedErrorCount > 0 && (
                     <span style={{ color: '#f43f5e', display: 'inline-flex', alignItems: 'center', gap: '3px', background: 'rgba(244, 63, 94, 0.08)', padding: '2px 8px', borderRadius: '5px', border: '1px solid rgba(244, 63, 94, 0.2)', fontSize: '0.75rem', fontWeight: 600 }} title="Failed Local Embed">
                       <AlertTriangle style={{ width: '0.8rem', height: '0.8rem' }} /> {localEmbedErrorCount}

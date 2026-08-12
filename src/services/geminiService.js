@@ -405,7 +405,11 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
       const kl = kw.toLowerCase().trim();
 
       // 1. Hard rejection: empty, length < 2, banned, or generic junk words
-      const hardJunk = new Set(["image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]);
+      const isEpsAsset = Boolean(fileInfo?.isEps || (fileInfo?.fileName && /\.(eps|epsf|epsi)$/i.test(fileInfo.fileName)));
+      const hardJunk = new Set(isEpsAsset
+        ? ["image", "photo", "picture", "file", "thing", "item", "nice", "great", "good", "look", "use"]
+        : ["image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]
+      );
       if (kl.length < 2 || banned.includes(kl) || hardJunk.has(kl) || /^(a|an|the|and|or|of|in|on|at|to|for|with|by)$/i.test(kl)) {
         continue;
       }
@@ -504,8 +508,10 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
       }
 
       // Fallback if AI didn't score it (e.g., padded keywords from title/desc)
-      const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual",
-        "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]);
+      const junk = new Set(isEpsAsset
+        ? ["image", "photo", "picture", "file", "thing", "item", "nice", "great", "good", "look", "use"]
+        : ["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]
+      );
       if (junk.has(kl) || kl.length < 3) return -1;
       
       return -1; // Missing score
@@ -515,19 +521,23 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
     kws.sort((a, b) => getKeywordScore(b) - getKeywordScore(a));
     safeFallbackKws.sort((a, b) => getKeywordScore(b) - getKeywordScore(a));
 
-    // Force Exact Count
-    let finalKws = kws.filter(k => getKeywordScore(k) >= 40);
+    // Keep all valid keywords across all relevance tiers (1-100)
+    let finalKws = kws.filter(k => getKeywordScore(k) >= 1);
     
-    // Safety guard: If strict score filter dropped too many keywords, keep top kws regardless of score
-    if (finalKws.length < 15 && kws.length > 0) {
-      finalKws = [...kws];
+    // If some keywords had missing score (-1) but are valid non-junk keywords, keep them too
+    if (finalKws.length < kws.length) {
+      const unscored = kws.filter(k => getKeywordScore(k) < 1);
+      finalKws.push(...unscored);
     }
     
     if (s.keywordCount) {
       // Fallback 1: If singleWordKeywords is active, split multi-word keywords into individual words
       remainingNeeds = s.keywordCount - finalKws.length;
       if (remainingNeeds > 0 && s.singleWordKeywords && multiWordKwsToSplit.length > 0) {
-        const hardJunk = new Set(["image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]);
+        const hardJunk = new Set(isEpsAsset
+          ? ["image", "photo", "picture", "file", "thing", "item", "nice", "great", "good", "look", "use"]
+          : ["image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]
+        );
         let splitWords = [];
         for (const phrase of multiWordKwsToSplit) {
           const words = phrase.split(/\s+/);
@@ -574,7 +584,7 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
       kws = rawKws.slice(0, s.keywordCount || 49);
     }
 
-    // Final strict sort by score (descending) to ensure Green >= 80 comes before Yellow >= 40
+    // Final strict sort by score (descending) to ensure Green >= 70 comes before Yellow >= 30, then Red < 30
     kws.sort((a, b) => getKeywordScore(b) - getKeywordScore(a));
     result.keywords = kws.join(", ");
   }
@@ -597,7 +607,14 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
     const finalKeyList = result.keywords.split(',').map(k => k.trim()).filter(Boolean);
     finalKeyList.forEach((k, idx) => {
       if (result.keywordScores[k] === undefined || result.keywordScores[k] === null || isNaN(Number(result.keywordScores[k]))) {
-        result.keywordScores[k] = Math.max(75, Math.round(95 - (idx * 0.4)));
+        // Natural distribution based on keyword ranking order (Top = Green, Mid = Yellow, Lower = Red)
+        if (idx < 15) {
+          result.keywordScores[k] = Math.max(70, Math.round(95 - (idx * 1.6)));
+        } else if (idx < 35) {
+          result.keywordScores[k] = Math.max(30, Math.round(68 - ((idx - 15) * 1.8)));
+        } else {
+          result.keywordScores[k] = Math.max(5, Math.round(28 - ((idx - 35) * 1.5)));
+        }
       }
     });
   }

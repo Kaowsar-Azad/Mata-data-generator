@@ -74,8 +74,23 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
     }
 
     // Fallback heuristic based on specific image content relevance
-    const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]);
+    const isEpsAsset = Boolean(img?.isEps || (img?.file?.name && /\.(eps|epsf|epsi)$/i.test(img.file.name)));
+    const junk = new Set(isEpsAsset
+      ? ["image", "photo", "picture", "file", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]
+      : ["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]
+    );
     if (junk.has(kl) || kl.length < 3) return -1; 
+    
+    // Natural fallback based on keyword position if present in keywords string
+    if (img && img.result && img.result.keywords) {
+      const allKws = img.result.keywords.split(',').map((k: string) => k.toLowerCase().trim());
+      const kwIdx = allKws.indexOf(kl);
+      if (kwIdx !== -1) {
+        if (kwIdx < 15) return Math.max(70, Math.round(95 - (kwIdx * 1.6)));
+        if (kwIdx < 35) return Math.max(30, Math.round(68 - ((kwIdx - 15) * 1.8)));
+        return Math.max(5, Math.round(28 - ((kwIdx - 35) * 1.5)));
+      }
+    }
     
     return -1; // Missing score
   };

@@ -812,6 +812,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     for (let imgIndex = 0; imgIndex < toProcess.length; imgIndex++) {
       const img = toProcess[imgIndex];
       if (cancelRef.current) break;
+      if (!imagesRef.current.some((i: any) => i.id === img.id)) {
+        processed++;
+        updateProgress();
+        continue;
+      }
 
       // Stagger Groq batch requests by 2.5s per item to stay within 30 RPM limits
       if (isGroqBatch && imgIndex > 0) {
@@ -828,6 +833,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       const p = (async () => {
         try {
             if (cancelRef.current) return;
+            if (!imagesRef.current.some((i: any) => i.id === img.id)) {
+              throw new Error("Image was removed");
+            }
             let base64, mimeType;
             let isPlaceholder = false;
             let upscaledPath = null;
@@ -965,6 +973,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             const postMetadataTask = async () => {
               if (cancelRef.current) return;
               try {
+                if (!imagesRef.current.some((i: any) => i.id === img.id)) {
+                  throw new Error("Image was removed");
+                }
             if (needsUpscale) {
               try {
                 setImages((prev: any) =>
@@ -1246,6 +1257,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       for (const img of currentImages) {
         try {
           if (cancelRef.current) return;
+          if (!imagesRef.current.some((i: any) => i.id === img.id)) continue;
           const pathsToEmbed = [];
 
           // Resolve primary path — verify it exists on disk, fallback to original if renamed path is gone
@@ -1654,8 +1666,14 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         (img.result?.keywords || '').toLowerCase().includes(q)
       );
     }
-    if (gridSort.field) {
-      list.sort((a, b) => {
+    list.sort((a, b) => {
+      const aHasError = a.status === 'error' || a.embeddingStatus === 'error' || !!a.result?.policyWarning;
+      const bHasError = b.status === 'error' || b.embeddingStatus === 'error' || !!b.result?.policyWarning;
+      
+      if (aHasError && !bHasError) return -1;
+      if (!aHasError && bHasError) return 1;
+
+      if (gridSort.field) {
         let av = '', bv = '';
         if (gridSort.field === 'filename') { av = a.file?.name || ''; bv = b.file?.name || ''; }
         else if (gridSort.field === 'status') { av = a.status || ''; bv = b.status || ''; }
@@ -1663,8 +1681,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         else if (gridSort.field === 'score') { av = Number(a.result?.sellingScore ?? -1); bv = Number(b.result?.sellingScore ?? -1); }
         if (typeof av === 'number') return gridSort.dir === 'asc' ? av - bv : bv - av;
         return gridSort.dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-      });
-    }
+      }
+      return 0;
+    });
+
     return list;
   };
 

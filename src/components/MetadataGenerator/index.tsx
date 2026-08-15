@@ -1956,10 +1956,29 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   ? (progressStats.isRetry ? `Retrying ${progressStats.processed} of ${progressStats.total} failed files` : `Processing ${progressStats.processed} of ${progressStats.total}`)
                   : (progressStats.isRetry ? `Retry Summary (${progressStats.processed} of ${progressStats.total} files)` : `Batch Summary (${progressStats.processed} of ${progressStats.total} files)`)}
               </span>
-              {progressStats.success > 0 && (
-                <span style={{ color: '#10b981', fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.12)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}>
-                  ✓ {progressStats.success} Success ({Math.round(progressStats.successPercent)}%)
+              {allDoneCount === images.length && images.length > 0 ? (
+                <span style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                  <CheckCircle2 style={{ width: '0.85rem', height: '0.85rem' }} /> {allDoneCount} All done
                 </span>
+              ) : (
+                <>
+                  <span style={{ color: '#06b6d4', background: 'transparent', border: '1px solid rgba(6, 182, 212, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                    <UploadCloud style={{ width: '0.85rem', height: '0.85rem' }} /> {images.length} Upload file
+                  </span>
+                  <span style={{ color: '#3b82f6', background: 'transparent', border: '1px solid rgba(59, 130, 246, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                    <FileCode2 style={{ width: '0.85rem', height: '0.85rem' }} /> {metadataDoneCount} Metadata done
+                  </span>
+                  {autoUpscale && (
+                    <span style={{ color: '#6366f1', background: 'transparent', border: '1px solid rgba(99, 102, 241, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                      <ImagePlus style={{ width: '0.85rem', height: '0.85rem' }} /> {upscaleDoneCount} Upscale done
+                    </span>
+                  )}
+                  {autoEmbed && (
+                    <span style={{ color: '#8b5cf6', background: 'transparent', border: '1px solid rgba(139, 92, 246, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                      <Server style={{ width: '0.85rem', height: '0.85rem' }} /> {embeddingSuccessCount} Server Synced
+                    </span>
+                  )}
+                </>
               )}
               {progressStats.error > 0 && (
                 <span style={{ color: '#ef4444', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.12)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}>
@@ -2019,78 +2038,6 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
 
             <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', width: '100%', flexWrap: 'nowrap', overflowX: 'auto' }} className="text-xs font-medium">
-              <span style={{
-                color: '#06b6d4',
-                background: 'transparent',
-                border: '1.5px solid rgba(6, 182, 212, 0.35)',
-                padding: '0.2rem 0.6rem',
-                borderRadius: '99px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                flexShrink: 0
-              }} title="Waiting to process">
-                <UploadCloud style={{ width: '0.9rem', height: '0.9rem' }} /> {images.length} Upload file
-              </span>
-              <span style={{
-                color: '#3b82f6',
-                background: 'transparent',
-                border: '1.5px solid rgba(59, 130, 246, 0.35)',
-                padding: '0.2rem 0.6rem',
-                borderRadius: '99px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                flexShrink: 0
-              }} title="Metadata Generated">
-                <FileCode2 style={{ width: '0.9rem', height: '0.9rem' }} /> {metadataDoneCount} Metadata done
-              </span>
-              {autoUpscale && (
-                <span style={{
-                  color: '#6366f1',
-                  background: 'transparent',
-                  border: '1.5px solid rgba(99, 102, 241, 0.35)',
-                  padding: '0.2rem 0.6rem',
-                  borderRadius: '99px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  flexShrink: 0
-                }} title="Successfully Upscaled">
-                  <ImagePlus style={{ width: '0.9rem', height: '0.9rem' }} /> {upscaleDoneCount} Upscale done
-                </span>
-              )}
-              {autoEmbed && (
-                <span style={{
-                  color: '#8b5cf6',
-                  background: 'transparent',
-                  border: '1.5px solid rgba(139, 92, 246, 0.35)',
-                  padding: '0.2rem 0.6rem',
-                  borderRadius: '99px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  flexShrink: 0
-                }} title="Successfully uploaded to server">
-                  <Server style={{ width: '0.9rem', height: '0.9rem' }} /> {embeddingSuccessCount} Server Synced
-                </span>
-              )}
-              {(autoEmbed || autoUpscale) && (
-                <span style={{
-                  color: '#10b981',
-                  background: 'transparent',
-                  border: '1.5px solid rgba(16, 185, 129, 0.35)',
-                  padding: '0.2rem 0.6rem',
-                  borderRadius: '99px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  flexShrink: 0
-                }} title="Successfully generated and upscaled">
-                  <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem' }} /> {allDoneCount} All done
-                </span>
-              )}
-
               {localEmbedErrorCount > 0 && (
                 <span style={{ color: '#f43f5e', flexShrink: 0 }} className="flex items-center gap-1" title="Failed Local Embed">
                   <AlertTriangle style={{ width: '0.9rem', height: '0.9rem', stroke: 'rgba(244, 63, 94, 0.8)' }} /> {localEmbedErrorCount} Failed Embed

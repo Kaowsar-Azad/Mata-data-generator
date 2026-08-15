@@ -658,6 +658,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     cancelRef.current = true;
     setIsProcessing(false);
     setProgress(0);
+    setProgressStats({ total: 0, success: 0, error: 0, processed: 0, percent: 0, successPercent: 0, errorPercent: 0 });
     
     // Also cancel active FTP upload
     if (activeJobId && window.electronAPI?.cancelFtp) {
@@ -682,6 +683,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     cancelRef.current = true;
     setIsProcessing(false);
     setProgress(0);
+    setProgressStats({ total: 0, success: 0, error: 0, processed: 0, percent: 0, successPercent: 0, errorPercent: 0 });
     if (activeJobId && window.electronAPI?.cancelFtp) {
       window.electronAPI.cancelFtp(activeJobId).catch(console.error);
     }
@@ -695,6 +697,15 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const resizeImageToBase64 = (file: any, maxSize = 1024) => resizeImageToBase64Worker(file, maxSize);
 
   const [progress, setProgress] = useState(0);
+  const [progressStats, setProgressStats] = useState({
+    total: 0,
+    success: 0,
+    error: 0,
+    processed: 0,
+    percent: 0,
+    successPercent: 0,
+    errorPercent: 0
+  });
 
 
   const handleEmbedScaleChange = (val: any) => {
@@ -723,10 +734,40 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       return true;
     });
 
+    const totalItems = toProcess.length;
+    let successCount = 0;
+    let errorCount = 0;
+    let processed = 0;
+
+    const updateProgress = () => {
+      const sPct = totalItems > 0 ? (successCount / totalItems) * 100 : 0;
+      const ePct = totalItems > 0 ? (errorCount / totalItems) * 100 : 0;
+      const totalPct = totalItems > 0 ? Math.round((processed / totalItems) * 100) : 0;
+      setProgress(totalPct);
+      setProgressStats({
+        total: totalItems,
+        success: successCount,
+        error: errorCount,
+        processed,
+        percent: totalPct,
+        successPercent: sPct,
+        errorPercent: ePct
+      });
+    };
+
+    setProgressStats({
+      total: totalItems,
+      success: 0,
+      error: 0,
+      processed: 0,
+      percent: 0,
+      successPercent: 0,
+      errorPercent: 0
+    });
+
     const limit = concurrentLimit;
     const embedPromises = [];
 
-    let processed = 0;
     const activePromises = new Set();
     
     const upscaleQueue = [];
@@ -1050,7 +1091,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               const p = embedMetadataToFiles([doneImg], false, false);
               embedPromises.push(p);
             }
-          } catch (err) {
+            successCount++;
+          } catch (err: any) {
             setImages((prev: any) =>
                 prev.map((item: any) =>
                   (item as any).id === img.id
@@ -1058,19 +1100,20 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                     : item
                 )
               );
-            } finally {
-              processed++;
-              setProgress(Math.round((processed / toProcess.length) * 100));
-            }
-          };
-
-          if (needsUpscale) {
-            upscaleQueue.push(postMetadataTask);
-            runUpscaleQueue();
-          } else {
-            postMetadataTask();
+            errorCount++;
+          } finally {
+            processed++;
+            updateProgress();
           }
-      } catch (err) {
+        };
+
+        if (needsUpscale) {
+          upscaleQueue.push(postMetadataTask);
+          runUpscaleQueue();
+        } else {
+          postMetadataTask();
+        }
+      } catch (err: any) {
           setImages((prev: any) =>
             prev.map((item: any) =>
               (item as any).id === img.id
@@ -1078,8 +1121,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 : item
             )
           );
+          errorCount++;
           processed++;
-          setProgress(Math.round((processed / toProcess.length) * 100));
+          updateProgress();
       }
     })();
 
@@ -1123,7 +1167,6 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     }
 
     setIsProcessing(false);
-    setTimeout(() => setProgress(0), 1000);
     
     if (autoEmbed && window.electronAPI && embedPromises.length > 0) {
       await Promise.allSettled(embedPromises);
@@ -1883,13 +1926,60 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         </div>
       )}
 
-      {/* Progress Bar */}
-      {isProcessing && progress > 0 && (
-        <div style={{ width: '100%', margin: '10px 0' }}>
-          <div style={{ height: '8px', background: '#eee', borderRadius: '4px', overflow: 'hidden' }}>
-            <div style={{ width: `${progress}%`, height: '100%', background: 'linear-gradient(90deg, #3b82f6, #06b6d4)', transition: 'width 0.3s' }} />
+      {/* Dual Progress Bar (Success + Error Split) */}
+      {progressStats.total > 0 && images.length > 0 && (
+        <div style={{ width: '100%', margin: '10px 0', padding: '10px 14px', background: 'var(--surface-2, rgba(255,255,255,0.03))', borderRadius: '10px', border: '1px solid var(--border-subtle, rgba(255,255,255,0.08))' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '7px', fontSize: '0.82rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500, flexWrap: 'wrap' }}>
+              <span style={{ color: 'var(--text-1)' }}>
+                {isProcessing ? `Processing ${progressStats.processed} of ${progressStats.total}` : `Batch Summary (${progressStats.processed} of ${progressStats.total} files)`}
+              </span>
+              {progressStats.success > 0 && (
+                <span style={{ color: '#10b981', fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.12)', padding: '2px 7px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                  ✓ {progressStats.success} Success ({Math.round(progressStats.successPercent)}%)
+                </span>
+              )}
+              {progressStats.error > 0 && (
+                <span style={{ color: '#ef4444', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.12)', padding: '2px 7px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                  ✕ {progressStats.error} Failed ({Math.round(progressStats.errorPercent)}%)
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ fontWeight: 600, color: 'var(--text-2)', fontSize: '0.85rem' }}>
+                {progressStats.percent}%
+              </div>
+              {!isProcessing && (
+                <button
+                  onClick={() => setProgressStats({ total: 0, success: 0, error: 0, processed: 0, percent: 0, successPercent: 0, errorPercent: 0 })}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: '2px', display: 'flex', alignItems: 'center' }}
+                  title="Dismiss summary"
+                >
+                  <X style={{ width: '0.8rem', height: '0.8rem' }} />
+                </button>
+              )}
+            </div>
           </div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-3)', marginTop: '2px', textAlign: 'right' }}>{progress}%</div>
+          <div style={{ height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden', display: 'flex', width: '100%' }}>
+            {/* Success Segment (Cyan/Green Gradient) */}
+            <div
+              style={{
+                width: `${progressStats.successPercent}%`,
+                height: '100%',
+                background: 'linear-gradient(90deg, #3b82f6, #10b981)',
+                transition: 'width 0.3s ease'
+              }}
+            />
+            {/* Error Segment (Red/Crimson) */}
+            <div
+              style={{
+                width: `${progressStats.errorPercent}%`,
+                height: '100%',
+                background: 'linear-gradient(90deg, #ef4444, #dc2626)',
+                transition: 'width 0.3s ease'
+              }}
+            />
+          </div>
         </div>
       )}
 

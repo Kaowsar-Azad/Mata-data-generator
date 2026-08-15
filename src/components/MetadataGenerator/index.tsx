@@ -735,10 +735,22 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       return true;
     });
 
-    const totalItems = toProcess.length;
+    const totalItems = images.length;
     let successCount = 0;
     let errorCount = 0;
-    let processed = 0;
+
+    images.forEach((img: any) => {
+      const willBeProcessed = toProcess.some((p: any) => p.id === img.id);
+      if (!willBeProcessed) {
+        if (img.status === "done" || img.status === "upscaling" || img.status === "upscale_queued") {
+          successCount++;
+        } else if (img.status === "error") {
+          errorCount++;
+        }
+      }
+    });
+
+    let processed = successCount + errorCount;
 
     const updateProgress = () => {
       const sPct = totalItems > 0 ? (successCount / totalItems) * 100 : 0;
@@ -757,16 +769,21 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       });
     };
 
+    const initialSPct = totalItems > 0 ? (successCount / totalItems) * 100 : 0;
+    const initialEPct = totalItems > 0 ? (errorCount / totalItems) * 100 : 0;
+    const initialTotalPct = totalItems > 0 ? Math.round((processed / totalItems) * 100) : 0;
+
     setProgressStats({
       total: totalItems,
-      success: 0,
-      error: 0,
-      processed: 0,
-      percent: 0,
-      successPercent: 0,
-      errorPercent: 0,
+      success: successCount,
+      error: errorCount,
+      processed: processed,
+      percent: initialTotalPct,
+      successPercent: initialSPct,
+      errorPercent: initialEPct,
       isRetry: Boolean(onlyErrors)
     });
+
 
     const limit = concurrentLimit;
     const embedPromises = [];

@@ -32,7 +32,11 @@ import {
   ImagePlus,
   Server,
   Square,
-  Eraser
+  Eraser,
+  Zap,
+  Target,
+  ChevronDown,
+  Check
 } from "lucide-react";
 
 import { generateMetadata, analyzeImageSecurity } from "../../services/geminiService";
@@ -153,6 +157,11 @@ const filterMetadataKeywords = (metadata: any, removeYellow: boolean, removeRed:
     }
   });
 
+  // Zero-Keywords Protection: If filter removed all keywords, retain original list
+  if (newKws.length === 0 && kws.length > 0) {
+    return metadata;
+  }
+
   return {
     ...metadata,
     keywords: newKws.join(', '),
@@ -184,6 +193,25 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const [autoUpscale, setAutoUpscale] = useState(() => localStorage.getItem("autoUpscale") === "true");
   const [upscaleScale, setUpscaleScale] = useState(() => parseInt(localStorage.getItem("upscaleScale")) || 2);
   const [upscaleEngine, setUpscaleEngine] = useState(() => localStorage.getItem("upscaleEngine") || "mata_ai");
+  const [engineDropdownOpen, setEngineDropdownOpen] = useState(false);
+  const engineDropdownRef = useRef<any>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: any) => {
+      if (engineDropdownRef.current && !engineDropdownRef.current.contains(e.target)) {
+        setEngineDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const UPSCALE_ENGINE_OPTIONS = [
+    { id: 'mata_ai', label: 'Mata AI', icon: Sparkles, color: '#16a34a', desc: 'Smart AI Auto-Selection' },
+    { id: 'auto_detect', label: 'Auto Detect', icon: Target, color: '#2563eb', desc: 'Auto Photo / Anime / 3D' },
+    { id: 'fast', label: 'Fast', icon: Zap, color: '#d97706', desc: 'High-Speed Performance' },
+  ];
+
   const [uploadBatchIds, setUploadBatchIds] = useState<any[]>([]);
   const [activeJobId, setActiveJobId] = useState<any>(null);
   const [activeCell, setActiveCell] = useState<any>(null); // { id: '...', field: '...' }
@@ -2164,26 +2192,107 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                           <option value="10" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>10x</option>
                         </select>
                         <div style={{ width: '1.5px', height: '1.2rem', background: 'rgba(22, 163, 74, 0.3)', margin: '0 4px' }} />
-                        <select
-                          value={upscaleEngine}
-                          onChange={(e: any) => setUpscaleEngine(e.target.value)}
-                          title="Mata AI: Smart model auto-selection for best quality"
-                          style={{
-                            background: 'rgba(22, 163, 74, 0.08)',
-                            color: '#15803D',
-                            border: '1px solid rgba(22, 163, 74, 0.3)',
-                            borderRadius: '0.35rem',
-                            fontSize: '0.82rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            outline: 'none',
-                            padding: '0.15rem 0.4rem'
-                          }}
-                        >
-                          <option value="mata_ai" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>✨ Mata AI</option>
-                          <option value="auto_detect" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>🔍 Auto Detect</option>
-                          <option value="fast" style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>⚡ Fast</option>
-                        </select>
+                        <div ref={engineDropdownRef} style={{ position: 'relative' }}>
+                          <button
+                            type="button"
+                            onClick={() => setEngineDropdownOpen(!engineDropdownOpen)}
+                            title="Select AI Upscale Model"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              background: 'rgba(22, 163, 74, 0.08)',
+                              color: '#15803D',
+                              border: '1px solid rgba(22, 163, 74, 0.3)',
+                              borderRadius: '0.35rem',
+                              fontSize: '0.82rem',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              outline: 'none',
+                              padding: '0.15rem 0.45rem',
+                              lineHeight: '1.2',
+                              userSelect: 'none'
+                            }}
+                          >
+                            {upscaleEngine === 'mata_ai' && <Sparkles style={{ width: '0.82rem', height: '0.82rem', color: '#16a34a' }} />}
+                            {upscaleEngine === 'auto_detect' && <Target style={{ width: '0.82rem', height: '0.82rem', color: '#2563eb' }} />}
+                            {upscaleEngine === 'fast' && <Zap style={{ width: '0.82rem', height: '0.82rem', color: '#d97706' }} />}
+                            <span>
+                              {upscaleEngine === 'mata_ai' ? 'Mata AI' : (upscaleEngine === 'auto_detect' ? 'Auto Detect' : 'Fast')}
+                            </span>
+                            <ChevronDown style={{ width: '0.75rem', height: '0.75rem', transform: engineDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s ease', opacity: 0.7 }} />
+                          </button>
+
+                          {engineDropdownOpen && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: 'calc(100% + 5px)',
+                                left: 0,
+                                minWidth: '150px',
+                                background: 'var(--surface-1, #ffffff)',
+                                border: '1px solid var(--glass-border, rgba(22, 163, 74, 0.25))',
+                                borderRadius: '0.5rem',
+                                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.18)',
+                                backdropFilter: 'blur(12px)',
+                                zIndex: 1000,
+                                padding: '4px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '2px'
+                              }}
+                            >
+                              {UPSCALE_ENGINE_OPTIONS.map((item) => {
+                                const IconComponent = item.icon;
+                                const isSelected = upscaleEngine === item.id;
+                                return (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setUpscaleEngine(item.id);
+                                      localStorage.setItem('upscaleEngine', item.id);
+                                      setEngineDropdownOpen(false);
+                                    }}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      gap: '8px',
+                                      padding: '0.4rem 0.55rem',
+                                      borderRadius: '0.35rem',
+                                      border: 'none',
+                                      background: isSelected ? 'rgba(22, 163, 74, 0.12)' : 'transparent',
+                                      color: isSelected ? '#15803D' : 'var(--text-1)',
+                                      fontSize: '0.8rem',
+                                      fontWeight: isSelected ? 600 : 500,
+                                      cursor: 'pointer',
+                                      textAlign: 'left',
+                                      width: '100%',
+                                      transition: 'all 0.15s ease'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (!isSelected) {
+                                        e.currentTarget.style.background = 'var(--surface-2, rgba(0,0,0,0.05))';
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (!isSelected) {
+                                        e.currentTarget.style.background = 'transparent';
+                                      }
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                      <IconComponent style={{ width: '0.85rem', height: '0.85rem', color: item.color }} />
+                                      <span>{item.label}</span>
+                                    </div>
+                                    {isSelected && <Check style={{ width: '0.75rem', height: '0.75rem', color: '#16a34a' }} />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                       </>
                     )}
                   </div>

@@ -704,7 +704,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     processed: 0,
     percent: 0,
     successPercent: 0,
-    errorPercent: 0
+    errorPercent: 0,
+    isRetry: false
   });
 
 
@@ -751,7 +752,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         processed,
         percent: totalPct,
         successPercent: sPct,
-        errorPercent: ePct
+        errorPercent: ePct,
+        isRetry: Boolean(onlyErrors)
       });
     };
 
@@ -762,7 +764,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       processed: 0,
       percent: 0,
       successPercent: 0,
-      errorPercent: 0
+      errorPercent: 0,
+      isRetry: Boolean(onlyErrors)
     });
 
     const limit = concurrentLimit;
@@ -1928,39 +1931,41 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
       {/* Dual Progress Bar (Success + Error Split) */}
       {progressStats.total > 0 && images.length > 0 && (
-        <div style={{ width: '100%', margin: '10px 0', padding: '10px 14px', background: 'var(--surface-2, rgba(255,255,255,0.03))', borderRadius: '10px', border: '1px solid var(--border-subtle, rgba(255,255,255,0.08))' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '7px', fontSize: '0.82rem' }}>
+        <div style={{ width: '100%', margin: '12px 0', padding: '12px 16px', background: 'var(--surface-1, #ffffff)', borderRadius: '12px', border: '1px solid var(--surface-3, #e2e8f0)', boxShadow: '0 2px 10px rgba(0,0,0,0.04)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '0.82rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500, flexWrap: 'wrap' }}>
               <span style={{ color: 'var(--text-1)' }}>
-                {isProcessing ? `Processing ${progressStats.processed} of ${progressStats.total}` : `Batch Summary (${progressStats.processed} of ${progressStats.total} files)`}
+                {isProcessing
+                  ? (progressStats.isRetry ? `Retrying ${progressStats.processed} of ${progressStats.total} failed files` : `Processing ${progressStats.processed} of ${progressStats.total}`)
+                  : (progressStats.isRetry ? `Retry Summary (${progressStats.processed} of ${progressStats.total} files)` : `Batch Summary (${progressStats.processed} of ${progressStats.total} files)`)}
               </span>
               {progressStats.success > 0 && (
-                <span style={{ color: '#10b981', fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.12)', padding: '2px 7px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <span style={{ color: '#10b981', fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.12)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}>
                   ✓ {progressStats.success} Success ({Math.round(progressStats.successPercent)}%)
                 </span>
               )}
               {progressStats.error > 0 && (
-                <span style={{ color: '#ef4444', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.12)', padding: '2px 7px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <span style={{ color: '#ef4444', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.12)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}>
                   ✕ {progressStats.error} Failed ({Math.round(progressStats.errorPercent)}%)
                 </span>
               )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ fontWeight: 600, color: 'var(--text-2)', fontSize: '0.85rem' }}>
+              <div style={{ fontWeight: 700, color: 'var(--text-2)', fontSize: '0.85rem' }}>
                 {progressStats.percent}%
               </div>
               {!isProcessing && (
                 <button
-                  onClick={() => setProgressStats({ total: 0, success: 0, error: 0, processed: 0, percent: 0, successPercent: 0, errorPercent: 0 })}
+                  onClick={() => setProgressStats({ total: 0, success: 0, error: 0, processed: 0, percent: 0, successPercent: 0, errorPercent: 0, isRetry: false })}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: '2px', display: 'flex', alignItems: 'center' }}
                   title="Dismiss summary"
                 >
-                  <X style={{ width: '0.8rem', height: '0.8rem' }} />
+                  <X style={{ width: '0.85rem', height: '0.85rem' }} />
                 </button>
               )}
             </div>
           </div>
-          <div style={{ height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden', display: 'flex', width: '100%' }}>
+          <div style={{ height: '9px', background: '#e2e8f0', borderRadius: '999px', overflow: 'hidden', display: 'flex', width: '100%' }}>
             {/* Success Segment (Cyan/Green Gradient) */}
             <div
               style={{

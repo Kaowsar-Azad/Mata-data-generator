@@ -1947,14 +1947,14 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       )}
 
       {/* Dual Progress Bar (Success + Error Split) */}
-      {progressStats.total > 0 && images.length > 0 && (
+      {images.length > 0 && (
         <div style={{ width: '100%', margin: '12px 0', padding: '12px 16px', background: 'var(--surface-1, #ffffff)', borderRadius: '12px', border: '1px solid var(--surface-3, #e2e8f0)', boxShadow: '0 2px 10px rgba(0,0,0,0.04)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '0.82rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500, flexWrap: 'wrap' }}>
               <span style={{ color: 'var(--text-1)' }}>
                 {isProcessing
-                  ? (progressStats.isRetry ? `Retrying ${progressStats.processed} of ${progressStats.total} failed files` : `Processing ${progressStats.processed} of ${progressStats.total}`)
-                  : (progressStats.isRetry ? `Retry Summary (${progressStats.processed} of ${progressStats.total} files)` : `Batch Summary (${progressStats.processed} of ${progressStats.total} files)`)}
+                  ? (progressStats.isRetry ? `Retrying (${progressStats.processed} of ${images.length} files)` : `Processing (${progressStats.processed} of ${images.length} files)`)
+                  : (progressStats.isRetry ? `Retry Summary (${progressStats.processed} of ${images.length} files)` : `Batch Summary (${progressStats.processed} of ${images.length} files)`)}
               </span>
               {allDoneCount === images.length && images.length > 0 ? (
                 <span style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
@@ -1963,7 +1963,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               ) : (
                 <>
                   <span style={{ color: '#06b6d4', background: 'transparent', border: '1px solid rgba(6, 182, 212, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                    <UploadCloud style={{ width: '0.85rem', height: '0.85rem' }} /> {images.length} Upload file
+                    <UploadCloud style={{ width: '0.85rem', height: '0.85rem' }} /> {images.length} Uploaded
                   </span>
                   <span style={{ color: '#3b82f6', background: 'transparent', border: '1px solid rgba(59, 130, 246, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
                     <FileCode2 style={{ width: '0.85rem', height: '0.85rem' }} /> {metadataDoneCount} Metadata done

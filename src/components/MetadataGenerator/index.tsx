@@ -36,7 +36,8 @@ import {
   Zap,
   Target,
   ChevronDown,
-  Check
+  Check,
+  Layers
 } from "lucide-react";
 
 import { generateMetadata, analyzeImageSecurity } from "../../services/geminiService";
@@ -216,6 +217,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const [activeJobId, setActiveJobId] = useState<any>(null);
   const [activeCell, setActiveCell] = useState<any>(null); // { id: '...', field: '...' }
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showRetroactiveModal, setShowRetroactiveModal] = useState(false);
+  const [retroactiveOptions, setRetroactiveOptions] = useState({ cleanYellow: false, cleanRed: false });
+  const [retroactivePendingImages, setRetroactivePendingImages] = useState<any[]>([]);
   const [selectedRows, setSelectedRows] = useState<any>(new Set()); // row IDs selected in grid
   const [gridSort, setGridSort] = useState({ field: null, dir: 'asc' }); // column sort
   const [gridFilter, setGridFilter] = useState(''); // quick filter text
@@ -1519,13 +1523,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       );
 
       if (pendingEmbedImages.length > 0) {
-        if (!confirm("Do you want to auto-embed and upload all previously processed files?")) {
-          // If cancelled, do not turn on the toggle.
-          return;
-        } else {
-          // Trigger embedding and uploading for the pending files
-          embedMetadataToFiles(pendingEmbedImages, true);
-        }
+        setRetroactivePendingImages(pendingEmbedImages);
+        setRetroactiveOptions({ cleanYellow: false, cleanRed: false });
+        setShowRetroactiveModal(true);
+        return; // Wait for modal action
       }
 
       setAutoEmbed(true);
@@ -1539,6 +1540,52 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       setAutoEmbed(false);
       localStorage.setItem("autoEmbed", "false");
     }
+  };
+
+  const confirmRetroactiveProcess = () => {
+    let pendingImages = [...retroactivePendingImages];
+
+    if (retroactiveOptions.cleanYellow || retroactiveOptions.cleanRed) {
+      if (retroactiveOptions.cleanYellow) {
+        setAutoRemoveYellow(true);
+        localStorage.setItem("autoRemoveYellow", "true");
+      }
+      if (retroactiveOptions.cleanRed) {
+        setAutoRemoveRed(true);
+        localStorage.setItem("autoRemoveRed", "true");
+      }
+
+      pendingImages = pendingImages.map(img => {
+        if (img.result) {
+          return {
+            ...img,
+            result: filterMetadataKeywords(img.result, retroactiveOptions.cleanYellow, retroactiveOptions.cleanRed)
+          };
+        }
+        return img;
+      });
+
+      setImages((prev: any[]) => prev.map((p: any) => {
+        const updated = pendingImages.find((u: any) => u.id === p.id);
+        return updated ? updated : p;
+      }));
+    }
+
+    setAutoEmbed(true);
+    localStorage.setItem("autoEmbed", "true");
+    
+    embedMetadataToFiles(pendingImages, true);
+    
+    const activeConfigs = ftpConfigs.filter(c => c.enabled);
+    if (activeConfigs.length === 0) {
+      showToast("No active FTP servers connected or selected! Metadata will be embedded locally, but FTP upload will be skipped.", "warning");
+    }
+    setShowRetroactiveModal(false);
+  };
+
+  const cancelRetroactiveProcess = () => {
+    setShowRetroactiveModal(false);
+    // the toggle remains off
   };
 
   const handleAutoRemoveYellowChange = (e: any) => {
@@ -2862,6 +2909,102 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               >
                 Yes, Embed
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Retroactive Auto Embed Modal */}
+      {showRetroactiveModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          zIndex: 10000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0, 0, 0, 0.4)',
+          backdropFilter: 'blur(8px)',
+          animation: 'fade-in 0.2s ease-out forwards'
+        }}>
+          <div style={{
+            width: '420px', background: 'var(--surface-1)', borderRadius: '1.25rem',
+            boxShadow: '0 24px 50px rgba(0,0,0,0.5), 0 0 0 1px var(--glass-border) inset',
+            border: '1px solid var(--glass-border)', overflow: 'hidden', position: 'relative'
+          }}>
+            {/* Glowing Top Border */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0, height: '2px',
+              background: 'linear-gradient(90deg, transparent, var(--accent), var(--secondary), transparent)',
+              opacity: 0.8, boxShadow: '0 0 10px var(--accent)'
+            }} />
+            
+            <div style={{ padding: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '42px', height: '42px', borderRadius: '0.75rem',
+                  background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.15), rgba(59, 130, 246, 0.15))',
+                  color: 'var(--accent)', flexShrink: 0,
+                  boxShadow: '0 0 15px rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.2)'
+                }}>
+                  <Layers className="w-5 h-5" />
+                </div>
+                <h3 style={{ fontWeight: 700, color: 'var(--text-1)', margin: 0, fontSize: '1.05rem' }}>
+                  Retroactive Auto Embed
+                </h3>
+              </div>
+              
+              <p style={{ color: 'var(--text-2)', fontSize: '0.9rem', lineHeight: 1.5, marginBottom: '1.25rem' }}>
+                You have <strong>{retroactivePendingImages.length}</strong> previously processed files that haven't been embedded yet. Do you want to auto-embed and upload them now?
+              </p>
+
+              <div style={{ 
+                background: 'var(--surface-2)', border: '1px solid var(--glass-border)', 
+                borderRadius: '0.75rem', padding: '1rem', marginBottom: '1.5rem',
+                display: 'flex', flexDirection: 'column', gap: '0.75rem'
+              }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none' }}>
+                  <input 
+                    type="checkbox" 
+                    className="ios-toggle ios-toggle-amber-custom"
+                    checked={retroactiveOptions.cleanYellow} 
+                    onChange={e => setRetroactiveOptions(prev => ({ ...prev, cleanYellow: e.target.checked }))}
+                  />
+                  <span style={{ fontSize: '0.9rem', color: 'var(--text-2)', fontWeight: 500 }}>Auto Clean Yellow KW</span>
+                </label>
+                
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none' }}>
+                  <input 
+                    type="checkbox" 
+                    className="ios-toggle ios-toggle-red-custom"
+                    checked={retroactiveOptions.cleanRed} 
+                    onChange={e => setRetroactiveOptions(prev => ({ ...prev, cleanRed: e.target.checked }))}
+                  />
+                  <span style={{ fontSize: '0.9rem', color: 'var(--text-2)', fontWeight: 500 }}>Auto Clean Red KW</span>
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button 
+                  onClick={cancelRetroactiveProcess}
+                  style={{
+                    padding: '0.5rem 1rem', background: 'var(--surface-2)', border: '1px solid var(--glass-border)',
+                    borderRadius: '0.5rem', color: 'var(--text-2)', fontWeight: 600, fontSize: '0.9rem',
+                    cursor: 'pointer', transition: 'all 0.2s'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={confirmRetroactiveProcess}
+                  style={{
+                    padding: '0.5rem 1.25rem', background: 'linear-gradient(135deg, var(--accent), var(--secondary))',
+                    border: 'none', borderRadius: '0.5rem', color: 'white', fontWeight: 600, fontSize: '0.9rem',
+                    cursor: 'pointer', boxShadow: '0 4px 12px rgba(6, 182, 212, 0.3)', transition: 'all 0.2s'
+                  }}
+                >
+                  Process Files
+                </button>
+              </div>
             </div>
           </div>
         </div>

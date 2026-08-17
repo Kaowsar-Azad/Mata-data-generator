@@ -688,8 +688,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       window.electronAPI.cancelFtp(activeJobId).catch(console.error);
     }
     setImages(prev => prev.map(img => 
-      (img.status === 'processing' || img.status === 'extracting' || img.status === 'upscaling' || img.status === 'upscale_queued') 
-      ? { ...img, status: 'pending' } 
+      (img.status === 'processing' || img.status === 'extracting' || img.status === 'upscaling' || img.status === 'upscale_queued' || img.status === 'error') 
+      ? { ...img, status: 'pending', error: undefined } 
       : img
     ));
   };
@@ -717,6 +717,20 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const handleEmbedEngineChange = (val: any) => {
     setEmbedEngine(val);
     localStorage.setItem("embedEngine", val);
+  };
+
+  const getUserFriendlyErrorMessage = (msg: string, phase: string) => {
+    const lower = (msg || '').toLowerCase();
+    if (lower.includes('failed to fetch') || lower.includes('econnrefused') || lower.includes('network error') || lower.includes('offline')) {
+      return `Network Error: Please check your network connection.`;
+    }
+    if (lower.includes('429') || lower.includes('rate limit') || lower.includes('quota') || lower.includes('too many requests') || lower.includes('overloaded')) {
+      return `API Limit Exceeded: Daily quota or rate limit reached.`;
+    }
+    if (lower.includes('401') || lower.includes('unauthorized') || lower.includes('invalid api key')) {
+      return `Invalid API Key: Please check your API settings.`;
+    }
+    return `${phase} Failed: ${msg || 'Unknown error occurred.'}`;
   };
 
   const processBatch = async (onlyErrors = false) => {
@@ -753,6 +767,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     let processed = successCount + errorCount;
 
     const updateProgress = () => {
+      if (cancelRef.current) return;
       const sPct = totalItems > 0 ? (successCount / totalItems) * 100 : 0;
       const ePct = totalItems > 0 ? (errorCount / totalItems) * 100 : 0;
       const totalPct = totalItems > 0 ? Math.round((processed / totalItems) * 100) : 0;
@@ -1053,46 +1068,50 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   console.log(`[Mata AI] ✅ Server API fallback success: ${upscaledName}`);
                 }
 
-                setImages((prev: any) =>
-                  prev.map((item: any) => {
-                    if ((item as any).id === img.id) {
-                      const updatedItem = { ...item };
-                      if (item.isEps) {
-                        updatedItem.renamedVisualPath = upscaledPath;
-                      } else {
-                        updatedItem.file = {
-                          ...item.file,
-                          path: upscaledPath,
-                          name: upscaledName
-                        };
-                        updatedItem.visualFile = {
-                          ...item.visualFile,
-                          path: upscaledPath,
-                          name: upscaledName
-                        };
+                if (!cancelRef.current) {
+                  setImages((prev: any) =>
+                    prev.map((item: any) => {
+                      if ((item as any).id === img.id) {
+                        const updatedItem = { ...item };
+                        if (item.isEps) {
+                          updatedItem.renamedVisualPath = upscaledPath;
+                        } else {
+                          updatedItem.file = {
+                            ...item.file,
+                            path: upscaledPath,
+                            name: upscaledName
+                          };
+                          updatedItem.visualFile = {
+                            ...item.visualFile,
+                            path: upscaledPath,
+                            name: upscaledName
+                          };
+                        }
+                        if (arrayBuffer) {
+                          const blob = new Blob([arrayBuffer], { type: upscaledMimeType });
+                          updatedItem.preview = URL.createObjectURL(blob);
+                        }
+                        return updatedItem;
                       }
-                      if (arrayBuffer) {
-                        const blob = new Blob([arrayBuffer], { type: upscaledMimeType });
-                        updatedItem.preview = URL.createObjectURL(blob);
-                      }
-                      return updatedItem;
-                    }
-                    return item;
-                  })
-                );
+                      return item;
+                    })
+                  );
+                }
               } catch (upscaleErr) {
                 console.error('[Mata AI] Upscale error:', upscaleErr);
                 throw new Error(`Auto-Upscale failed: ${upscaleErr.message}`);
               }
             }
 
-            setImages((prev: any) =>
-              prev.map((item: any) =>
-                (item as any).id === img.id
-                  ? { ...item, status: "done" }
-                  : item
-              )
-            );
+            if (!cancelRef.current) {
+              setImages((prev: any) =>
+                prev.map((item: any) =>
+                  (item as any).id === img.id
+                    ? { ...item, status: "done" }
+                    : item
+                )
+              );
+            }
 
             if (autoEmbed && window.electronAPI) {
               const doneImg = {
@@ -1122,19 +1141,26 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               const p = embedMetadataToFiles([doneImg], false, false);
               embedPromises.push(p);
             }
-            successCount++;
+            if (!cancelRef.current) {
+              successCount++;
+            }
           } catch (err: any) {
-            setImages((prev: any) =>
-                prev.map((item: any) =>
-                  (item as any).id === img.id
-                    ? { ...item, status: "error", error: err.message || 'Unknown error occurred. Please check your API key or network connection.' }
-                    : item
-                )
-              );
-            errorCount++;
+            if (!cancelRef.current) {
+              const friendlyError = getUserFriendlyErrorMessage(err.message, 'Upscaling');
+              setImages((prev: any) =>
+                  prev.map((item: any) =>
+                    (item as any).id === img.id
+                      ? { ...item, status: "error", error: friendlyError }
+                      : item
+                  )
+                );
+              errorCount++;
+            }
           } finally {
-            processed++;
-            updateProgress();
+            if (!cancelRef.current) {
+              processed++;
+              updateProgress();
+            }
           }
         };
 
@@ -1145,16 +1171,19 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           postMetadataTask();
         }
       } catch (err: any) {
-          setImages((prev: any) =>
-            prev.map((item: any) =>
-              (item as any).id === img.id
-                ? { ...item, status: "error", error: err.message || 'Unknown error occurred.' }
-                : item
-            )
-          );
-          errorCount++;
-          processed++;
-          updateProgress();
+          if (!cancelRef.current) {
+            const friendlyError = getUserFriendlyErrorMessage(err.message, 'Metadata');
+            setImages((prev: any) =>
+              prev.map((item: any) =>
+                (item as any).id === img.id
+                  ? { ...item, status: "error", error: friendlyError }
+                  : item
+              )
+            );
+            errorCount++;
+            processed++;
+            updateProgress();
+          }
       }
     })();
 
@@ -1338,14 +1367,14 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           } else {
             setImages(prev => prev.map(item => 
               (item as any).id === img.id 
-                ? { ...item, embeddingStatus: "error", embeddingError: errMsg } 
+                ? { ...item, embeddingStatus: "error", embeddingError: getUserFriendlyErrorMessage(errMsg, 'Embedding') } 
                 : item
             ));
           }
         } catch (err) {
           setImages(prev => prev.map(item => 
             (item as any).id === img.id 
-              ? { ...item, embeddingStatus: "error", embeddingError: err.message } 
+              ? { ...item, embeddingStatus: "error", embeddingError: getUserFriendlyErrorMessage(err.message, 'Embedding') } 
               : item
           ));
         }
@@ -1413,7 +1442,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
             if (Object.keys(mergedErrors).length > 0) {
               const errMsg = Object.entries(mergedErrors).map(([h, err]) => `${h}: ${err}`).join(', ');
-              return { ...item, embeddingStatus: "error", embeddingError: errMsg };
+              return { ...item, embeddingStatus: "error", embeddingError: getUserFriendlyErrorMessage(errMsg, 'FTP Upload') };
             } else {
               return { ...item, embeddingStatus: "success", embeddingError: null };
             }
@@ -1443,7 +1472,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           setImages(prev => prev.map(item => {
             const isEmbedded = embeddedImages.some(ei => ei.id === (item as any).id);
             if (isEmbedded) {
-              return { ...item, embeddingStatus: "error", embeddingError: uploadErr.message };
+              return { ...item, embeddingStatus: "error", embeddingError: getUserFriendlyErrorMessage(uploadErr.message, 'FTP Upload') };
             }
             return item;
           }));
@@ -1482,13 +1511,33 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
   const handleAutoEmbedChange = (e: any) => {
     const checked = e.target.checked;
-    setAutoEmbed(checked);
-    localStorage.setItem("autoEmbed", checked ? "true" : "false");
+    
     if (checked) {
+      const pendingEmbedImages = images.filter((img: any) => 
+        img.status === "done" && 
+        (!img.embeddingStatus || img.embeddingStatus === "none" || img.embeddingStatus === "error")
+      );
+
+      if (pendingEmbedImages.length > 0) {
+        if (!confirm("Do you want to auto-embed and upload all previously processed files?")) {
+          // If cancelled, do not turn on the toggle.
+          return;
+        } else {
+          // Trigger embedding and uploading for the pending files
+          embedMetadataToFiles(pendingEmbedImages, true);
+        }
+      }
+
+      setAutoEmbed(true);
+      localStorage.setItem("autoEmbed", "true");
+
       const activeConfigs = ftpConfigs.filter(c => c.enabled);
       if (activeConfigs.length === 0) {
         showToast("No active FTP servers connected or selected! Metadata will be embedded locally, but FTP upload will be skipped.", "warning");
       }
+    } else {
+      setAutoEmbed(false);
+      localStorage.setItem("autoEmbed", "false");
     }
   };
 
@@ -1976,30 +2025,29 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   ? (progressStats.isRetry ? `Retrying (${progressStats.processed} of ${images.length} files)` : `Processing (${progressStats.processed} of ${images.length} files)`)
                   : (progressStats.isRetry ? `Retry Summary (${progressStats.processed} of ${images.length} files)` : `Batch Summary (${progressStats.processed} of ${images.length} files)`)}
               </span>
-              {allDoneCount === images.length && images.length > 0 ? (
-                <span style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                  <CheckCircle2 style={{ width: '0.85rem', height: '0.85rem' }} /> {allDoneCount} All done
+              <>
+                <span style={{ color: '#06b6d4', background: 'transparent', border: '1px solid rgba(6, 182, 212, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                  <UploadCloud style={{ width: '0.85rem', height: '0.85rem' }} /> {images.length} Uploaded
                 </span>
-              ) : (
-                <>
-                  <span style={{ color: '#06b6d4', background: 'transparent', border: '1px solid rgba(6, 182, 212, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                    <UploadCloud style={{ width: '0.85rem', height: '0.85rem' }} /> {images.length} Uploaded
+                <span style={{ color: '#3b82f6', background: 'transparent', border: '1px solid rgba(59, 130, 246, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                  <FileCode2 style={{ width: '0.85rem', height: '0.85rem' }} /> {metadataDoneCount} Metadata done
+                </span>
+                {autoUpscale && (
+                  <span style={{ color: '#6366f1', background: 'transparent', border: '1px solid rgba(99, 102, 241, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                    <ImagePlus style={{ width: '0.85rem', height: '0.85rem' }} /> {upscaleDoneCount} Upscale done
                   </span>
-                  <span style={{ color: '#3b82f6', background: 'transparent', border: '1px solid rgba(59, 130, 246, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                    <FileCode2 style={{ width: '0.85rem', height: '0.85rem' }} /> {metadataDoneCount} Metadata done
+                )}
+                {autoEmbed && (
+                  <span style={{ color: '#8b5cf6', background: 'transparent', border: '1px solid rgba(139, 92, 246, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                    <Server style={{ width: '0.85rem', height: '0.85rem' }} /> {embeddingSuccessCount} Server Synced
                   </span>
-                  {autoUpscale && (
-                    <span style={{ color: '#6366f1', background: 'transparent', border: '1px solid rgba(99, 102, 241, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                      <ImagePlus style={{ width: '0.85rem', height: '0.85rem' }} /> {upscaleDoneCount} Upscale done
-                    </span>
-                  )}
-                  {autoEmbed && (
-                    <span style={{ color: '#8b5cf6', background: 'transparent', border: '1px solid rgba(139, 92, 246, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                      <Server style={{ width: '0.85rem', height: '0.85rem' }} /> {embeddingSuccessCount} Server Synced
-                    </span>
-                  )}
-                </>
-              )}
+                )}
+                {(autoEmbed || autoUpscale) && allDoneCount > 0 && (
+                  <span style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                    <CheckCircle2 style={{ width: '0.85rem', height: '0.85rem' }} /> {allDoneCount} All done
+                  </span>
+                )}
+              </>
               {progressStats.error > 0 && (
                 <span style={{ color: '#ef4444', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.12)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}>
                   ✕ {progressStats.error} Failed ({Math.round(progressStats.errorPercent)}%)
@@ -2183,10 +2231,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               </button>
 
               {/* Clean Yellow/Red buttons (conditional) */}
-              {doneCount > 0 && (!(autoEmbed && autoRemoveYellow) || !(autoEmbed && autoRemoveRed)) && (
+              {doneCount > 0 && !autoEmbed && (
                 <>
                   <div style={{ width: '1px', height: '1.4rem', background: 'var(--glass-border, #e2e8f0)', margin: '0 4px' }} />
-                  {!(autoEmbed && autoRemoveYellow) && (
                     <button
                       className="btn-glass-inactive"
                       style={{
@@ -2208,10 +2255,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                         if (confirm("Are you sure you want to remove all Medium (Yellow) keywords across all files?")) removeKeywordsByColor('yellow');
                       }}
                     >
-                      <Eraser style={{ width: '0.82rem', height: '0.82rem', strokeWidth: 2.2 }} /> Clean Yellow
+                      <Eraser style={{ width: '0.82rem', height: '0.82rem', strokeWidth: 2.2 }} /> Clean Yellow KW
                     </button>
-                  )}
-                  {!(autoEmbed && autoRemoveRed) && (
                     <button
                       className="btn-glass-inactive"
                       style={{
@@ -2233,9 +2278,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                         if (confirm("Are you sure you want to remove all Low (Red) keywords across all files?")) removeKeywordsByColor('red');
                       }}
                     >
-                      <Eraser style={{ width: '0.82rem', height: '0.82rem', strokeWidth: 2.2 }} /> Clean Red
+                      <Eraser style={{ width: '0.82rem', height: '0.82rem', strokeWidth: 2.2 }} /> Clean Red KW
                     </button>
-                  )}
                 </>
               )}
             </div>

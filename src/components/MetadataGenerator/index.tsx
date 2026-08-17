@@ -207,7 +207,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   }, []);
 
   const UPSCALE_ENGINE_OPTIONS = [
-    { id: 'mata_ai', label: 'Mata AI', icon: Sparkles, color: '#16a34a', desc: 'Smart AI Auto-Selection' },
+    { id: 'mata_ai', label: 'Balanced', icon: Sparkles, color: '#16a34a', desc: 'Smart AI Auto-Selection' },
     { id: 'auto_detect', label: 'Auto Detect', icon: Target, color: '#2563eb', desc: 'Auto Photo / Anime / 3D' },
     { id: 'fast', label: 'Fast', icon: Zap, color: '#d97706', desc: 'High-Speed Performance' },
   ];
@@ -2047,7 +2047,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       {/* Control Bar */}
       {images.length > 0 && (
         <div className="control-bar" style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-          
+          <div className="control-bar-bg" />
           {/* ── ROW 1: Main Actions ── */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.65rem' }}>
             
@@ -2406,7 +2406,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                           {upscaleEngine === 'mata_ai' && <Sparkles style={{ width: '0.82rem', height: '0.82rem', color: '#16a34a' }} />}
                           {upscaleEngine === 'auto_detect' && <Target style={{ width: '0.82rem', height: '0.82rem', color: '#2563eb' }} />}
                           {upscaleEngine === 'fast' && <Zap style={{ width: '0.82rem', height: '0.82rem', color: '#d97706' }} />}
-                          <span>{upscaleEngine === 'mata_ai' ? 'Mata AI' : (upscaleEngine === 'auto_detect' ? 'Auto Detect' : 'Fast')}</span>
+                          <span>{upscaleEngine === 'mata_ai' ? 'Balanced' : (upscaleEngine === 'auto_detect' ? 'Auto Detect' : 'Fast')}</span>
                           <ChevronDown style={{ width: '0.75rem', height: '0.75rem', transform: engineDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s ease', opacity: 0.7 }} />
                         </button>
 
@@ -2414,7 +2414,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                           <div
                             style={{
                               position: 'absolute',
-                              top: 'calc(100% + 5px)',
+                              bottom: 'calc(100% + 5px)',
                               left: 0,
                               minWidth: '150px',
                               background: 'var(--surface-1, #ffffff)',

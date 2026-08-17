@@ -475,7 +475,7 @@ input::placeholder, textarea::placeholder, .meta-textarea::placeholder { color: 
   justify-content: space-between;
   align-items: center;
   position: relative;
-  overflow: hidden;
+  /* overflow: hidden removed to allow dropdowns to pop out */
   /* Ultra Premium Light Glassmorphism */
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.08) 100%);
   backdrop-filter: blur(40px) saturate(180%);
@@ -490,10 +490,21 @@ input::placeholder, textarea::placeholder, .meta-textarea::placeholder { color: 
   border-radius: 1rem;
   padding: 0.65rem 1rem;
   gap: 0.6rem;
+  z-index: 10;
+}
+
+/* Dedicated background element to clip the animated glow */
+.control-bar-bg {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  z-index: -1;
+  pointer-events: none;
 }
 
 /* Animated glow layer behind glass */
-.control-bar::before {
+.control-bar-bg::before {
   content: '';
   position: absolute;
   inset: -50%;

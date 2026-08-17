@@ -146,6 +146,25 @@ function setupMataAi(ipcMain, fileLog) {
         modelName = 'realesrgan-x4plus-anime';
       }
 
+      if (modelName === 'fast_sharp') {
+        fileLog('[Mata AI] Fast Mode selected! Bypassing NCNN and using pure Sharp Lanczos3 (no fake details, no cartoon effect, 2 seconds).');
+        await upscaleLocalHighFidelitySharp(inputPath, outputPath, scale, outputFormat, fileLog);
+        
+        try {
+          if (event && !event.sender.isDestroyed()) {
+            event.sender.send('upscale-progress', { filePath: inputPath, progress: 100 });
+          }
+        } catch (_) {}
+
+        if (saveDir) {
+          return { success: true, path: outputPath, format: outputFormat, engine: 'fast_sharp' };
+        } else {
+          const buffer = fs.readFileSync(outputPath);
+          try { fs.unlinkSync(outputPath); } catch (_) {}
+          return { success: true, base64: buffer.toString('base64'), format: outputFormat };
+        }
+      }
+
       // ═══════════════════════════════════════════════
       // NCNN PATH — Only for explicit model selections
       // (ultrasharp, remacri, realesrgan-x4plus, etc.)

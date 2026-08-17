@@ -344,7 +344,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       name.endsWith('.ai') ||
       name.endsWith('.eps');
 
-    if (engine === 'fast') return isAnimeOrVector ? 'realesr-animevideov3' : 'realesrgan-x4plus';
+    if (engine === 'fast') return 'fast_sharp';
     if (engine === 'standard') return 'realesrgan-x4plus';
     if (isAnimeOrVector) return 'realesrgan-x4plus-anime';
     return 'ultrasharp';

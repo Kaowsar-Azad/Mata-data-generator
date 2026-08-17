@@ -110,7 +110,7 @@ function App() {
   const [promptSettings, setPromptSettings] = useState({
     exportPlatform: 'General',
     titleMaxChars: 70,
-    descMaxChars: 100,
+    descMaxChars: 180,
     keywordCount: 48,
     singleWordKeywords: true,
     concurrentLimit: 2,

@@ -185,14 +185,22 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const cancelRef = useRef(false);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [autoEmbed, setAutoEmbed] = useState(() => localStorage.getItem("autoEmbed") === "true");
+  const autoEmbedRef = useRef(autoEmbed);
+  autoEmbedRef.current = autoEmbed;
+  
   const [autoRemoveYellow, setAutoRemoveYellow] = useState(() => localStorage.getItem("autoRemoveYellow") === "true");
+  const autoRemoveYellowRef = useRef(autoRemoveYellow);
+  autoRemoveYellowRef.current = autoRemoveYellow;
+  
   const [autoRemoveRed, setAutoRemoveRed] = useState(() => localStorage.getItem("autoRemoveRed") === "true");
+  const autoRemoveRedRef = useRef(autoRemoveRed);
+  autoRemoveRedRef.current = autoRemoveRed;
   const [embedScale, setEmbedScale] = useState(() => parseInt(localStorage.getItem("embedScale")) || 2);
   const [embedEngine, setEmbedEngine] = useState(() => localStorage.getItem("embedEngine") || "mata_ai");
   const [embeddingCount, setEmbeddingCount] = useState(0);
   const isEmbedding = embeddingCount > 0;
   const [autoUpscale, setAutoUpscale] = useState(() => localStorage.getItem("autoUpscale") === "true");
-  const [upscaleScale, setUpscaleScale] = useState(() => parseInt(localStorage.getItem("upscaleScale")) || 2);
+  const [upscaleScale, setUpscaleScale] = useState(() => Math.min(parseInt(localStorage.getItem("upscaleScale")) || 2, 4));
   const [upscaleEngine, setUpscaleEngine] = useState(() => localStorage.getItem("upscaleEngine") || "mata_ai");
   const [engineDropdownOpen, setEngineDropdownOpen] = useState(false);
   const engineDropdownRef = useRef<any>(null);
@@ -208,9 +216,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   }, []);
 
   const UPSCALE_ENGINE_OPTIONS = [
+    { id: 'fast', label: 'Fast', icon: Zap, color: '#d97706', desc: 'High-Speed Performance' },
     { id: 'mata_ai', label: 'Balanced', icon: Sparkles, color: '#16a34a', desc: 'Smart AI Auto-Selection' },
     { id: 'auto_detect', label: 'Auto Detect', icon: Target, color: '#2563eb', desc: 'Auto Photo / Anime / 3D' },
-    { id: 'fast', label: 'Fast', icon: Zap, color: '#d97706', desc: 'High-Speed Performance' },
   ];
 
   const [uploadBatchIds, setUploadBatchIds] = useState<any[]>([]);
@@ -753,7 +761,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       return true;
     });
 
-    const totalItems = images.length;
+    let totalItems = images.length;
     let successCount = 0;
     let errorCount = 0;
 
@@ -804,7 +812,6 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     });
 
 
-    const limit = concurrentLimit;
     const embedPromises = [];
 
     const activePromises = new Set();
@@ -832,7 +839,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       const img = toProcess[imgIndex];
       if (cancelRef.current) break;
       if (!imagesRef.current.some((i: any) => i.id === img.id)) {
-        processed++;
+        totalItems--;
         updateProgress();
         continue;
       }
@@ -970,12 +977,12 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               throw new Error(`Policy Violation: ${metadata.policyWarning}`);
             }
 
-            if (autoEmbed) {
-              metadata = filterMetadataKeywords(metadata, autoRemoveYellow, autoRemoveRed);
+            if (autoEmbedRef.current) {
+              metadata = filterMetadataKeywords(metadata, autoRemoveYellowRef.current, autoRemoveRedRef.current);
             }
 
-            const activeScale = autoUpscale ? upscaleScale : (autoEmbed ? embedScale : 2);
-            const activeEngine = autoUpscale ? upscaleEngine : (autoEmbed ? embedEngine : 'mata_ai');
+            const activeScale = autoUpscale ? upscaleScale : (autoEmbedRef.current ? embedScale : 2);
+            const activeEngine = autoUpscale ? upscaleEngine : (autoEmbedRef.current ? embedEngine : 'mata_ai');
             const targetPath = img.visualFile?.path || (!img.isEps && !img.isVideo ? img.file?.path : null);
             const needsUpscale = (autoUpscale && window.electronAPI && targetPath && !img.isVideo);
 
@@ -1117,7 +1124,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               );
             }
 
-            if (autoEmbed && window.electronAPI) {
+            if (autoEmbedRef.current && window.electronAPI) {
               const doneImg = {
                 ...img,
                 status: "done",
@@ -1176,6 +1183,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         }
       } catch (err: any) {
           if (!cancelRef.current) {
+            if (err.message === "Image was removed") {
+              totalItems--;
+              updateProgress();
+              return;
+            }
             const friendlyError = getUserFriendlyErrorMessage(err.message, 'Metadata');
             setImages((prev: any) =>
               prev.map((item: any) =>
@@ -1205,17 +1217,13 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         if (imgIndex < toProcess.length - 1 && !cancelRef.current) {
           await new Promise(r => setTimeout(r, 8000));
         }
-      } else if (activePromises.size >= limit) {
-        await Promise.race(activePromises);
-      }
-      if (cancelRef.current) break;
-
-      // Small pacing delay (1.2s) between batch image requests to avoid breaching 15 RPM API limit
-      if (toProcess.length > 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1200));
+      } else {
+        while (activePromises.size >= (promptSettingsRef.current?.concurrentLimit || 2)) {
+          await Promise.race(activePromises);
+        }
       }
       
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      if (cancelRef.current) break;
     }
 
     await Promise.all(activePromises);
@@ -1232,7 +1240,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
     setIsProcessing(false);
     
-    if (autoEmbed && window.electronAPI && embedPromises.length > 0) {
+    if (autoEmbedRef.current && window.electronAPI && embedPromises.length > 0) {
       await Promise.allSettled(embedPromises);
     }
     
@@ -1240,7 +1248,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       const latestImages = imagesRef.current;
       const doneImages = latestImages.filter(img => img.status === "done" && img.result && img.embeddingStatus === "none");
       if (doneImages.length > 0 && window.electronAPI) {
-        if (autoEmbed) {
+        if (autoEmbedRef.current) {
           // already handled
         } else {
           if (!localStorage.getItem('embedToastSeen')) {
@@ -1361,7 +1369,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               (item as any).id === img.id 
                 ? { 
                     ...item, 
-                    embeddingStatus: ((autoEmbed || forceUpload) && activeFtpConfigs.length > 0) ? "uploading" : "success", 
+                    embeddingStatus: ((autoEmbedRef.current || forceUpload) && activeFtpConfigs.length > 0) ? "uploading" : "success", 
                     renamedPath: newPrimaryPath,
                     renamedVisualPath: newVisualPath,
                     renamedName: newPrimaryName
@@ -1386,7 +1394,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       
       const uploadConfigs = activeFtpConfigs;
 
-      if ((autoEmbed || forceUpload) && uploadConfigs.length > 0 && filesToUpload.length > 0) {
+      if ((autoEmbedRef.current || forceUpload) && uploadConfigs.length > 0 && filesToUpload.length > 0) {
         setImages(prev => prev.map(item => {
           const isEmbedded = embeddedImages.some(ei => ei.id === (item as any).id);
           if (isEmbedded) {
@@ -1485,7 +1493,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           setActiveJobId(null);
         }
       } else if (embeddedImages.length > 0) {
-        const isAutoEmbedWithNoFtp = autoEmbed && activeFtpConfigs.length === 0;
+        const isAutoEmbedWithNoFtp = autoEmbedRef.current && activeFtpConfigs.length === 0;
         if (isAutoEmbedWithNoFtp) {
           if (embeddedImages.length === 1) {
             showToast(`Metadata successfully embedded in "${embeddedImages[0].renamedName || embeddedImages[0].file.name}", but FTP upload was skipped because no active servers are selected.`, "warning");
@@ -1546,14 +1554,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     let pendingImages = [...retroactivePendingImages];
 
     if (retroactiveOptions.cleanYellow || retroactiveOptions.cleanRed) {
-      if (retroactiveOptions.cleanYellow) {
-        setAutoRemoveYellow(true);
-        localStorage.setItem("autoRemoveYellow", "true");
-      }
-      if (retroactiveOptions.cleanRed) {
-        setAutoRemoveRed(true);
-        localStorage.setItem("autoRemoveRed", "true");
-      }
+      setAutoRemoveYellow(retroactiveOptions.cleanYellow);
+      localStorage.setItem("autoRemoveYellow", retroactiveOptions.cleanYellow ? "true" : "false");
+      
+      setAutoRemoveRed(retroactiveOptions.cleanRed);
+      localStorage.setItem("autoRemoveRed", retroactiveOptions.cleanRed ? "true" : "false");
 
       pendingImages = pendingImages.map(img => {
         if (img.result) {
@@ -1860,7 +1865,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             <span className="video-badge"><Video className="w-3 h-3" /> Video</span>
           </div>
           <p style={{ fontSize: '0.72rem', color: 'var(--text-3)', marginTop: '0.75rem' }}>
-            Maximum recommended: 50 files per batch
+            Maximum recommended: 300 files per batch
           </p>
         </div>
       </div>
@@ -2069,8 +2074,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500, flexWrap: 'wrap' }}>
               <span style={{ color: 'var(--text-1)' }}>
                 {isProcessing
-                  ? (progressStats.isRetry ? `Retrying (${progressStats.processed} of ${images.length} files)` : `Processing (${progressStats.processed} of ${images.length} files)`)
-                  : (progressStats.isRetry ? `Retry Summary (${progressStats.processed} of ${images.length} files)` : `Batch Summary (${progressStats.processed} of ${images.length} files)`)}
+                  ? (progressStats.isRetry ? `Retrying (${progressStats.processed} of ${progressStats.total} files)` : `Processing (${progressStats.processed} of ${progressStats.total} files)`)
+                  : (progressStats.isRetry ? `Retry Summary (${progressStats.processed} of ${progressStats.total} files)` : `Batch Summary (${progressStats.processed} of ${progressStats.total} files)`)}
               </span>
               <>
                 <span style={{ color: '#06b6d4', background: 'transparent', border: '1px solid rgba(6, 182, 212, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
@@ -2468,7 +2473,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                           padding: '0.15rem 0.4rem'
                         }}
                       >
-                        {[2, 3, 4, 5, 6, 8, 10].map(val => (
+                        {[2, 3, 4].map(val => (
                           <option key={val} value={val} style={{ background: 'var(--surface-1)', color: 'var(--text-1)' }}>{val}x</option>
                         ))}
                       </select>

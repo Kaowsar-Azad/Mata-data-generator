@@ -1,6 +1,7 @@
 // @ts-nocheck
 import React from "react";
-import { X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { X, FileDown } from "lucide-react";
 import downloadIcon from "../../assets/icons/download.png";
 
 export function ExportFormatModal({ isOpen, onClose, onSelect, activePlatform }: any) {
@@ -28,7 +29,7 @@ export function ExportFormatModal({ isOpen, onClose, onSelect, activePlatform }:
     }
   };
 
-  return (
+  return createPortal(
     <div style={{
       position: 'fixed',
       top: 0,
@@ -72,7 +73,7 @@ export function ExportFormatModal({ isOpen, onClose, onSelect, activePlatform }:
                 color: 'var(--primary)',
                 flexShrink: 0
               }}>
-                <img src={downloadIcon} alt="Download" style={{ width: '1.4rem', height: '1.4rem', objectFit: 'contain' }} />
+                <FileDown style={{ width: '1.35rem', height: '1.35rem', strokeWidth: 2.5 }} />
               </div>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-1)', margin: 0 }}>
                 Select CSV Export Format
@@ -163,12 +164,13 @@ export function ExportFormatModal({ isOpen, onClose, onSelect, activePlatform }:
                     <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginTop: '2px' }}>{fmt.desc}</div>
                   </div>
                 </div>
-                <img src={downloadIcon} alt="Download" style={{ width: '1.1rem', height: '1.1rem', objectFit: 'contain', opacity: 0.8 }} />
+                <FileDown style={{ width: '1.1rem', height: '1.1rem', color: 'var(--primary)', opacity: 0.9, flexShrink: 0 }} />
               </button>
             ))}
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

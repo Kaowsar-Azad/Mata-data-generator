@@ -167,6 +167,14 @@ const filterMetadataKeywords = (metadata: any, removeYellow: boolean, removeRed:
   };
 };
 
+let globalTaskCounter = 0;
+const getRotatedKeys = (keys: any[], offset: number) => {
+  if (!keys || keys.length === 0) return [];
+  const start = offset % keys.length;
+  return [...keys.slice(start), ...keys.slice(0, start)];
+};
+
+
 export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptSettings, ftpConfigs = [] }: any) {
   const [images, setImages] = useState<any[]>([]);
   const imagesRef = useRef<any[]>([]);
@@ -856,6 +864,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       const p = (async () => {
         try {
             if (cancelRef.current) return;
+            const currentTaskIndex = globalTaskCounter++;
+            const policyKeys = getRotatedKeys(apiKeysRef.current, currentTaskIndex);
+            const metadataKeys = getRotatedKeys(apiKeysRef.current, currentTaskIndex + 1);
+
             if (!imagesRef.current.some((i: any) => i.id === img.id)) {
               throw new Error("Image was removed");
             }
@@ -932,12 +944,19 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               const securityRes = await analyzeImageSecurity(
                 base64,
                 mimeType,
-                apiKeysRef.current,
+                policyKeys,
                 currentProvider
               );
               if (!securityRes.isSafe) {
                 throw new Error(`Policy Violation: ${securityRes.reason}`);
               }
+              setImages((prev: any) =>
+                prev.map((item: any) =>
+                  (item as any).id === img.id
+                    ? { ...item, status: "processing" }
+                    : item
+                )
+              );
             }
 
             const fileInfo = {
@@ -953,7 +972,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             let metadata = await generateMetadata(
               base64,
               mimeType,
-              apiKeysRef.current,
+              metadataKeys,
               currentProvider,
               fileInfo
             );

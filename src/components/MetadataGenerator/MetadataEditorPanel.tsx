@@ -91,7 +91,7 @@ export function MetadataEditorPanel({
       </div>
 
       {img.status === "done" && img.result && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
           <MetaField 
             label="Title" 
             value={img.result.title} 

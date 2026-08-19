@@ -1,11 +1,20 @@
 // @ts-nocheck
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { CheckCircle2, Copy } from "lucide-react";
 
 export function MetaField({ label, value, onChange, isTextArea, isKeywords, img, onApplyToSelected }: any) {
   const [copied, setCopied] = useState(false);
   const [isTextMode, setIsTextMode] = useState(false);
   const [newKeyword, setNewKeyword] = useState("");
+  
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [value, isTextMode]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(value).catch(() => {});
@@ -125,14 +134,14 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
       
       {isKeywords && !isTextMode ? (
         <div 
-          className="flex flex-wrap p-3 rounded-lg"
+          className="flex flex-wrap p-2.5 rounded-lg"
           style={{ 
-            gap: '8px 10px',
+            gap: '6px 8px',
             background: 'rgba(255, 255, 255, 0.02)', 
             border: '1px solid var(--glass-border)', 
             boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.05)',
             backdropFilter: 'blur(10px)',
-            minHeight: '90px', 
+            minHeight: '55px', 
             alignContent: 'flex-start' 
           }}
           onClick={(e) => {
@@ -157,12 +166,12 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                   color: 'var(--text-1)', 
                   border: `1px solid ${colorStr}40`,
                   boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
-                  fontSize: '0.75rem',
+                  fontSize: '0.72rem',
                   fontWeight: '600',
                   borderRadius: '100px',
-                  padding: '4px 10px 4px 12px',
-                  gap: '6px',
-                  height: '28px',
+                  padding: '3px 10px 3px 10px',
+                  gap: '5px',
+                  height: '25px',
                   boxSizing: 'border-box',
                   transform: 'scale(1)',
                   cursor: 'default'
@@ -245,20 +254,23 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
             }}
           />
         </div>
-      ) : isTextArea ? (
-        <textarea
-          value={value || ''}
-          onChange={(e: any) => onChange(e.target.value)}
-          className="meta-textarea"
-          style={{ width: '100%', minHeight: '90px' }}
-        />
       ) : (
-        <input
-          type="text"
+        <textarea
+          ref={textareaRef}
           value={value || ''}
-          onChange={(e: any) => onChange(e.target.value)}
-          className="meta-input"
-          style={{ width: '100%' }}
+          onChange={(e: any) => {
+            onChange(e.target.value);
+            e.target.style.height = 'auto';
+            e.target.style.height = `${e.target.scrollHeight}px`;
+          }}
+          className={isTextArea ? "meta-textarea" : "meta-input"}
+          style={{ 
+            width: '100%', 
+            resize: 'none', 
+            overflow: 'hidden', 
+            minHeight: isTextArea ? (label === 'Description' ? '45px' : '90px') : '36px' 
+          }}
+          rows={1}
         />
       )}
     </div>

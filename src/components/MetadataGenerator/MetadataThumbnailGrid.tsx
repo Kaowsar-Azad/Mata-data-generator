@@ -206,7 +206,7 @@ const ThumbnailCard = memo(({
       {/* Filename and Status */}
       <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 }}>
         <span 
-          style={{ fontSize: '11px', fontFamily: 'monospace', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#d1d5db' }}
+          style={{ fontSize: '11px', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#000000', fontWeight: 500 }}
           title={img.file?.name || img.renamedName}
         >
           {img.file?.name || img.renamedName}

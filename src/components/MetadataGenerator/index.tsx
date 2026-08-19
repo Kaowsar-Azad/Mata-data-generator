@@ -158,10 +158,7 @@ const filterMetadataKeywords = (metadata: any, removeYellow: boolean, removeRed:
     }
   });
 
-  // Zero-Keywords Protection: If filter removed all keywords, retain original list
-  if (newKws.length === 0 && kws.length > 0) {
-    return metadata;
-  }
+  // Removed Zero-Keywords Protection: Keywords are allowed to be empty if all match the filter
 
   return {
     ...metadata,
@@ -899,17 +896,6 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               const hasGroqInProvider = Array.isArray(currentApiProvider) ? currentApiProvider.includes("groq") : currentApiProvider === "groq";
               const hasGroqInKeys = currentApiKeys && currentApiKeys.some(k => (typeof k === 'object' && k.provider === 'groq') || k === 'groq');
               const targetSize = (hasGroqInProvider || hasGroqInKeys) ? 512 : 1024;
-              fetch("http://127.0.0.1:3002/api/debug-log", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  fileName: img.file?.name,
-                  apiProvider: currentApiProvider,
-                  hasGroqInProvider,
-                  hasGroqInKeys,
-                  targetSize
-                })
-              }).catch(() => {});
               const dataUrl = await resizeImageToBase64(img.visualFile, targetSize);
               base64 = dataUrl.split(",")[1];
               mimeType = "image/jpeg";

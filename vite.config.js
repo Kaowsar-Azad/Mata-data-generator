@@ -6,31 +6,9 @@ import obfuscator from 'vite-plugin-javascript-obfuscator'
 export default defineConfig({
   base: './',
   plugins: [
-    react(),
-    obfuscator({
-      include: ['src/**/*.js', 'src/**/*.jsx'],
-      exclude: [/node_modules/],
-      apply: 'build',
-      debugger: false,
-      options: {
-        compact: true,
-        controlFlowFlattening: true,
-        controlFlowFlatteningThreshold: 0.75,
-        deadCodeInjection: true,
-        deadCodeInjectionThreshold: 0.4,
-        debugProtection: false,
-        disableConsoleOutput: true,
-        identifierNamesGenerator: 'hexadecimal',
-        log: false,
-        renameGlobals: false,
-        rotateStringArray: true,
-        selfDefending: true,
-        stringArray: true,
-        stringArrayEncoding: ['base64'],
-        stringArrayThreshold: 0.75,
-        unicodeEscapeSequence: false
-      }
-    })
+    react()
+    // Obfuscator temporarily disabled for debugging white screen
+    // obfuscator({ ... })
   ],
   server: {
     proxy: {

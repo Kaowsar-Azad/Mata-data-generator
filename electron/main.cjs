@@ -25,10 +25,27 @@ fileLog('Electron main process starting. Log file path:', LOG_FILE);
 
 let mainWindow;
 let isQuitting = false;
+let serverProcess = null;
 
 app.on('before-quit', () => {
   isQuitting = true;
+  if (serverProcess) {
+    serverProcess.kill();
+  }
 });
+
+const isDev = !app.isPackaged;
+if (!isDev) {
+  const serverPath = path.join(__dirname, '../server/index.js');
+  serverProcess = spawn(process.execPath, [serverPath], {
+    stdio: 'inherit',
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_ENV: 'production' }
+  });
+  
+  serverProcess.on('error', (err) => {
+    fileLog('Server process error:', err);
+  });
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -45,7 +62,6 @@ function createWindow() {
     autoHideMenuBar: true,
   });
 
-  const isDev = !app.isPackaged;
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {

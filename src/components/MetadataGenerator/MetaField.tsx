@@ -66,10 +66,10 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
         <div className="flex items-center gap-3">
           <span className="meta-label" style={{ marginBottom: 0 }}>{label}</span>
           {isKeywords && !isTextMode && (
-            <div className="flex items-center gap-3 text-xs text-muted font-medium ml-3">
-              <span className="flex items-center gap-1.5"><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }}></div> High</span>
-              <span className="flex items-center gap-1.5"><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b' }}></div> Medium</span>
-              <span className="flex items-center gap-1.5"><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ef4444' }}></div> Low</span>
+            <div className="flex items-center gap-4 text-xs text-muted font-medium ml-3">
+              <span className="flex items-center gap-2"><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }}></div> High</span>
+              <span className="flex items-center gap-2"><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b' }}></div> Medium</span>
+              <span className="flex items-center gap-2"><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ef4444' }}></div> Low</span>
             </div>
           )}
         </div>
@@ -125,8 +125,9 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
       
       {isKeywords && !isTextMode ? (
         <div 
-          className="flex flex-wrap gap-2 p-3 rounded-lg"
+          className="flex flex-wrap p-3 rounded-lg"
           style={{ 
+            gap: '8px 10px',
             background: 'rgba(255, 255, 255, 0.02)', 
             border: '1px solid var(--glass-border)', 
             boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.05)',
@@ -156,12 +157,12 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                   color: 'var(--text-1)', 
                   border: `1px solid ${colorStr}40`,
                   boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
-                  fontSize: '0.72rem',
+                  fontSize: '0.75rem',
                   fontWeight: '600',
                   borderRadius: '100px',
-                  padding: '3px 8px 3px 10px',
+                  padding: '4px 10px 4px 12px',
                   gap: '6px',
-                  height: '26px',
+                  height: '28px',
                   boxSizing: 'border-box',
                   transform: 'scale(1)',
                   cursor: 'default'

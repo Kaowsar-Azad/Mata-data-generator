@@ -23,15 +23,17 @@
     "productName": "Image Metadata Create",
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "server/**/*",
+      "!node_modules/exiftool-vendored.pl/**/*",
+      "!node_modules/exiftool-vendored.mac/**/*",
+      "!node_modules/@imgly/background-removal-node/node_modules/sharp/**/*"
     ],
     "directories": {
       "output": "dist-electron"
     },
     "asarUnpack": [
-      "node_modules/exiftool-vendored.pl/**/*",
-      "node_modules/exiftool-vendored.exe/**/*",
-      "node_modules/exiftool-vendored.mac/**/*"
+      "node_modules/exiftool-vendored.exe/**/*"
     ],
     "win": {
       "target": "nsis"
@@ -42,7 +44,8 @@
       "perMachine": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "runAfterFinish": true
+      "runAfterFinish": true,
+      "include": "electron/installer.nsh"
     },
     "extraResources": [
       {

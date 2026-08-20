@@ -27,13 +27,34 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
     
     // Check if AI provided a real SEO score
     if (img && img.result && img.result.keywordScores) {
-        const scoreKey = Object.keys(img.result.keywordScores).find(
-          k => k.toLowerCase().trim() === kl
+        let scoresObj = img.result.keywordScores;
+        if (Array.isArray(scoresObj)) {
+          scoresObj = scoresObj.reduce((acc: any, curr: any) => {
+             if (typeof curr === 'object' && curr !== null) {
+                if (curr.keyword && curr.score !== undefined) {
+                   acc[curr.keyword] = curr.score;
+                } else {
+                   Object.assign(acc, curr);
+                }
+             }
+             return acc;
+          }, {});
+        }
+
+        let scoreKey = Object.keys(scoresObj).find(
+          (k: string) => k.toLowerCase().trim() === kl
         );
+        
+        if (!scoreKey) {
+           scoreKey = Object.keys(scoresObj).find(
+             (k: string) => k.toLowerCase().split(/[\s,]+/).includes(kl)
+           );
+        }
+
         if (scoreKey !== undefined) {
-          const exactScore = img.result.keywordScores[scoreKey];
-          if (exactScore !== undefined) {
-             const numScore = Number(exactScore);
+          const exactScore = scoresObj[scoreKey];
+          if (exactScore !== undefined && exactScore !== null) {
+             const numScore = typeof exactScore === 'object' && exactScore.score !== undefined ? Number(exactScore.score) : Number(exactScore);
              if (!isNaN(numScore)) {
                  return Math.min(100, Math.max(1, numScore));
              }
@@ -43,9 +64,9 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
 
     // Fallback heuristic based on specific image content relevance
     const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]);
-    if (junk.has(kl) || kl.length < 3) return 10; 
+    if (junk.has(kl) || kl.length < 3) return -1; 
     
-    return 50; // default exact middle score (Yellow)
+    return -1; // Missing score
   };
 
   const removeKeyword = (idxToRemove: number) => {
@@ -154,8 +175,26 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
           {(value || '').split(',').map((k: string) => k.trim()).filter(Boolean).map((kw: string, idx: number) => {
             const cleanedKw = kw.replace(/\s+\d+$/, '');
             const score = getKeywordScore(cleanedKw, img);
-            let colorStr = score >= 70 ? '#10b981' : score >= 30 ? '#f59e0b' : '#ef4444';
-            let bgStr = score >= 70 ? 'rgba(16, 185, 129, 0.1)' : score >= 30 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+            let isGreen = false;
+            let isYellow = false;
+            let isRed = false;
+
+            if (score === -1) {
+              isRed = true;
+            } else {
+              if (img?.result?.provider === 'mistral') {
+                isGreen = score >= 60;
+                isYellow = score >= 30 && score < 60;
+                isRed = score < 30;
+              } else {
+                isGreen = score >= 70;
+                isYellow = score >= 30 && score < 70;
+                isRed = score < 30;
+              }
+            }
+            
+            let colorStr = isGreen ? '#10b981' : isYellow ? '#f59e0b' : '#ef4444';
+            let bgStr = isGreen ? 'rgba(16, 185, 129, 0.1)' : isYellow ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)';
             
             return (
               <div 

@@ -122,22 +122,41 @@ const filterMetadataKeywords = (metadata: any, removeYellow: boolean, removeRed:
   const getKeywordScore = (keyword: string, scoreObj: any) => {
     const kl = keyword.toLowerCase().trim();
     if (scoreObj) {
-      const scoreKey = Object.keys(scoreObj).find(
-        k => k.toLowerCase().trim() === kl
+      let scoresObj = scoreObj;
+      if (Array.isArray(scoresObj)) {
+        scoresObj = scoresObj.reduce((acc: any, curr: any) => {
+           if (typeof curr === 'object' && curr !== null) {
+              if (curr.keyword && curr.score !== undefined) {
+                 acc[curr.keyword] = curr.score;
+              } else {
+                 Object.assign(acc, curr);
+              }
+           }
+           return acc;
+        }, {});
+      }
+
+      let scoreKey = Object.keys(scoresObj).find(
+        (k: string) => k.toLowerCase().trim() === kl
       );
+      
+      if (!scoreKey) {
+         scoreKey = Object.keys(scoresObj).find(
+           (k: string) => k.toLowerCase().split(/[\s,]+/).includes(kl)
+         );
+      }
+
       if (scoreKey !== undefined) {
-        const exactScore = scoreObj[scoreKey];
-        if (exactScore !== undefined) {
-          const numScore = Number(exactScore);
+        const exactScore = scoresObj[scoreKey];
+        if (exactScore !== undefined && exactScore !== null) {
+          const numScore = typeof exactScore === 'object' && exactScore.score !== undefined ? Number(exactScore.score) : Number(exactScore);
           if (!isNaN(numScore)) {
             return Math.min(100, Math.max(1, numScore));
           }
         }
       }
     }
-    const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]);
-    if (junk.has(kl) || kl.length < 3) return 10;
-    return 50;
+    return -1;
   };
 
   const kws = metadata.keywords.split(',').map(k => k.trim()).filter(Boolean);
@@ -146,8 +165,21 @@ const filterMetadataKeywords = (metadata: any, removeYellow: boolean, removeRed:
 
   kws.forEach(kw => {
     const score = getKeywordScore(kw, newScores);
-    const isYellow = score >= 30 && score < 70;
-    const isRed = score < 30;
+    
+    let isYellow = false;
+    let isRed = false;
+
+    if (score === -1) {
+      isRed = true;
+    } else {
+      if (metadata.provider === 'mistral') {
+        isYellow = score >= 30 && score < 60;
+        isRed = score < 30;
+      } else {
+        isYellow = score >= 30 && score < 70;
+        isRed = score < 30;
+      }
+    }
 
     if (removeYellow && isYellow) {
       delete newScores[kw];
@@ -1712,13 +1744,34 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     const getKeywordScore = (keyword: any, img: any) => {
       const kl = keyword.toLowerCase().trim();
       if (img && img.result && img.result.keywordScores) {
-        const scoreKey = Object.keys(img.result.keywordScores).find(
-          k => k.toLowerCase().trim() === kl
+        let scoresObj = img.result.keywordScores;
+        if (Array.isArray(scoresObj)) {
+          scoresObj = scoresObj.reduce((acc: any, curr: any) => {
+             if (typeof curr === 'object' && curr !== null) {
+                if (curr.keyword && curr.score !== undefined) {
+                   acc[curr.keyword] = curr.score;
+                } else {
+                   Object.assign(acc, curr);
+                }
+             }
+             return acc;
+          }, {});
+        }
+
+        let scoreKey = Object.keys(scoresObj).find(
+          (k: string) => k.toLowerCase().trim() === kl
         );
+        
+        if (!scoreKey) {
+           scoreKey = Object.keys(scoresObj).find(
+             (k: string) => k.toLowerCase().split(/[\s,]+/).includes(kl)
+           );
+        }
+
         if (scoreKey !== undefined) {
-          const exactScore = img.result.keywordScores[scoreKey];
-          if (exactScore !== undefined) {
-            const numScore = Number(exactScore);
+          const exactScore = scoresObj[scoreKey];
+          if (exactScore !== undefined && exactScore !== null) {
+            const numScore = typeof exactScore === 'object' && exactScore.score !== undefined ? Number(exactScore.score) : Number(exactScore);
             if (!isNaN(numScore)) {
               return Math.min(100, Math.max(1, numScore));
             }
@@ -1726,8 +1779,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         }
       }
       const junk = new Set(["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]);
-      if (junk.has(kl) || kl.length < 3) return 10;
-      return 50;
+      if (junk.has(kl) || kl.length < 3) return -1;
+      return -1;
     };
 
     setImages(prev => prev.map(img => {
@@ -1739,8 +1792,20 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
       kws.forEach(kw => {
         const score = getKeywordScore(kw, img);
-        const isYellow = score >= 30 && score < 70;
-        const isRed = score < 30;
+        let isYellow = false;
+        let isRed = false;
+
+        if (score === -1) {
+          isRed = true;
+        } else {
+          if (img.result?.provider === 'mistral') {
+            isYellow = score >= 30 && score < 60;
+            isRed = score < 30;
+          } else {
+            isYellow = score >= 30 && score < 70;
+            isRed = score < 30;
+          }
+        }
 
         if (color === 'yellow' && isYellow) {
           delete newScores[kw];

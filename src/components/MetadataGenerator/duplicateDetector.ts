@@ -1,4 +1,4 @@
-export const DUPLICATE_THRESHOLD = 5;
+export const DUPLICATE_THRESHOLD = 0;
 
 export const computePHash = (src: string, shouldRevoke: boolean = true): Promise<string | null> =>
   new Promise((resolve) => {

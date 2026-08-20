@@ -236,7 +236,6 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                   e.currentTarget.style.boxShadow = '0 2px 5px rgba(0,0,0,0.05)';
                   e.currentTarget.style.borderColor = `${colorStr}40`;
                 }}
-                title={`Relevance: ${score >= 75 ? 'High' : score >= 40 ? 'Medium' : 'Low'} (${score}/100)`}
               >
                 <span 
                   style={{ 

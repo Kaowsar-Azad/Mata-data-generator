@@ -961,12 +961,14 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             }
 
             const currentProvider = apiProviderRef.current || "gemini";
-            const isGroq = Array.isArray(currentProvider) ? currentProvider.includes("groq") : currentProvider === "groq";
+            const isCombinedScan = Array.isArray(currentProvider) 
+              ? (currentProvider.includes("groq")) 
+              : (currentProvider === "groq");
 
             if (cancelRef.current) return;
             // For Groq, safety/trademark scan is combined into single metadata call to reduce API usage by 50%
             if (promptSettingsRef.current?.securityScanEnabled) {
-              if (isGroq) {
+              if (isCombinedScan) {
                 setImages((prev: any) =>
                   prev.map((item: any) =>
                     (item as any).id === img.id
@@ -1020,7 +1022,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             );
 
             // Check policy warning returned in single combined Groq call
-            if (promptSettingsRef.current?.securityScanEnabled && isGroq && metadata?.policyWarning) {
+            if (promptSettingsRef.current?.securityScanEnabled && isCombinedScan && metadata?.policyWarning) {
               throw new Error(`Policy Violation: ${metadata.policyWarning}`);
             }
 
@@ -1880,7 +1882,6 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     const map = {
       gemini: "Gemini",
       groq: "Groq",
-      openrouter: "OpenRouter",
       openai: "OpenAI",
       mistral: "Mistral"
     };

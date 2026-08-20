@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Trash2, Key, CheckCircle, X, Shield, ExternalLink, Sparkles, Wind, Zap, Cpu, Network, Cloud } from "lucide-react";
+import { Plus, Trash2, Key, CheckCircle, X, Shield, ExternalLink, Sparkles, Wind, Zap, Cpu, Cloud } from "lucide-react";
 
 const PROVIDERS = [
   { id: "gemini",     label: "Google Gemini", icon: Sparkles, iconColor: "#6366f1", desc: "Google's most capable multimodal AI models", url: "https://aistudio.google.com/app/apikey", recommended: true },
@@ -7,7 +7,6 @@ const PROVIDERS = [
   { id: "mistral",    label: "Mistral AI",    icon: Wind,     iconColor: "#f97316", desc: "High performance open models", url: "https://console.mistral.ai/api-keys/" },
   { id: "groq",       label: "Groq",          icon: Zap,      iconColor: "#f59e0b", desc: "Fast LLM inference with OpenAI-compatible API", url: "https://console.groq.com/keys" },
   { id: "openai",     label: "OpenAI",        icon: Cpu,      iconColor: "#10b981", desc: "Powerful language models and vision capabilities", url: "https://platform.openai.com/api-keys" },
-  { id: "openrouter", label: "OpenRouter",    icon: Network,  iconColor: "#3b82f6", desc: "Unified API to access multiple LLMs", url: "https://openrouter.ai/keys" },
 ];
 
 export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProviderChange }) {
@@ -20,7 +19,7 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
     const oldGemini = localStorage.getItem("gemini_keys");
     return {
       gemini: oldGemini ? JSON.parse(oldGemini) : [],
-      cloudflare: [], groq: [], openrouter: [], openai: [], mistral: []
+      cloudflare: [], groq: [], openai: [], mistral: []
     };
   });
 

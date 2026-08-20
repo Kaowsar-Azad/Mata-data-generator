@@ -965,30 +965,40 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
             if (cancelRef.current) return;
             // For Groq, safety/trademark scan is combined into single metadata call to reduce API usage by 50%
-            if (promptSettingsRef.current?.securityScanEnabled && !isGroq) {
-              setImages((prev: any) =>
-                prev.map((item: any) =>
-                  (item as any).id === img.id
-                    ? { ...item, status: "scanning" }
-                    : item
-                )
-              );
-              const securityRes = await analyzeImageSecurity(
-                base64,
-                mimeType,
-                policyKeys,
-                currentProvider
-              );
-              if (!securityRes.isSafe) {
-                throw new Error(`Policy Violation: ${securityRes.reason}`);
+            if (promptSettingsRef.current?.securityScanEnabled) {
+              if (isGroq) {
+                setImages((prev: any) =>
+                  prev.map((item: any) =>
+                    (item as any).id === img.id
+                      ? { ...item, status: "scanning" }
+                      : item
+                  )
+                );
+              } else {
+                setImages((prev: any) =>
+                  prev.map((item: any) =>
+                    (item as any).id === img.id
+                      ? { ...item, status: "scanning" }
+                      : item
+                  )
+                );
+                const securityRes = await analyzeImageSecurity(
+                  base64,
+                  mimeType,
+                  policyKeys,
+                  currentProvider
+                );
+                if (!securityRes.isSafe) {
+                  throw new Error(`Policy Violation: ${securityRes.reason}`);
+                }
+                setImages((prev: any) =>
+                  prev.map((item: any) =>
+                    (item as any).id === img.id
+                      ? { ...item, status: "processing" }
+                      : item
+                  )
+                );
               }
-              setImages((prev: any) =>
-                prev.map((item: any) =>
-                  (item as any).id === img.id
-                    ? { ...item, status: "processing" }
-                    : item
-                )
-              );
             }
 
             const fileInfo = {

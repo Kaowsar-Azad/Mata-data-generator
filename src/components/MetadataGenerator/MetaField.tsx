@@ -28,6 +28,17 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
     // Check if AI provided a real SEO score
     if (img && img.result && img.result.keywordScores) {
         let scoresObj = img.result.keywordScores;
+        
+        if (typeof scoresObj === 'string') {
+           const kwArray = (img.result.keywords || '').split(',').map((k: string) => k.trim());
+           const scArray = scoresObj.split(',').map((s: string) => Number(s.trim()));
+           const tempObj: any = {};
+           kwArray.forEach((k: string, i: number) => {
+               if (k) tempObj[k] = !isNaN(scArray[i]) ? scArray[i] : 50;
+           });
+           scoresObj = tempObj;
+        }
+
         if (Array.isArray(scoresObj)) {
           scoresObj = scoresObj.reduce((acc: any, curr: any) => {
              if (typeof curr === 'object' && curr !== null) {

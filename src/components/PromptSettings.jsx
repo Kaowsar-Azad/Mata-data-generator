@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { SlidersHorizontal, ChevronDown, ChevronUp, Type, AlignLeft, Hash, Plus, Ban, Sparkles, Server, ShieldCheck, Loader2, CheckCircle2, AlertCircle, ExternalLink, Settings, Target } from "lucide-react";
+import { SlidersHorizontal, ChevronDown, ChevronUp, Type, AlignLeft, Hash, Plus, Ban, Sparkles, Server, ShieldCheck, Loader2, CheckCircle2, AlertCircle, ExternalLink, Settings, Target, Crown } from "lucide-react";
 
 /* ── Platform Data ── */
 const PLATFORMS = [
@@ -248,7 +248,26 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
                 />
 
                 <ToggleSwitch
-                  label="Policy & Copyright Scan"
+                  label={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      Policy & Copyright Scan
+                      <span style={{ 
+                        fontSize: '0.65rem', 
+                        background: 'linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%)', 
+                        color: '#ffffff', 
+                        padding: '2px 7px', 
+                        borderRadius: '6px', 
+                        fontWeight: '800', 
+                        letterSpacing: '0.5px', 
+                        boxShadow: '0 2px 6px rgba(99, 102, 241, 0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px'
+                      }}>
+                        PRO <Crown size={12} strokeWidth={3} />
+                      </span>
+                    </div>
+                  }
                   checked={settings.securityScanEnabled ?? false}
                   onChange={(v) => update("securityScanEnabled", v)}
                 />

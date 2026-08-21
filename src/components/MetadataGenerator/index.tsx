@@ -686,21 +686,47 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
   const removeImage = (id: any) => {
     setImages((prev: any) => {
-      const img = prev.find(i => i.id === id);
+      const img = prev.find((i: any) => i.id === id);
       if (img && img.preview && img.preview.startsWith('blob:')) {
         URL.revokeObjectURL(img.preview);
       }
-      return prev.filter((i) => i.id !== id);
+      return prev.filter((i: any) => i.id !== id);
     });
     delete hashMapRef.current[id];
     
     Object.keys(cellRefs.current).forEach(key => {
-      if (key.startsWith(id + '_')) {
-        delete cellRefs.current[key];
-      }
+      if (key.startsWith(`${id}-`)) delete cellRefs.current[key];
     });
 
     setDuplicatePairs((prev: any) => prev.filter((p: any) => p.id1 !== id && p.id2 !== id));
+  };
+
+  const handleApprovePolicy = (id: any) => {
+    setImages((prev: any) =>
+      prev.map((img: any) => {
+        if (img.id === id) {
+          const newResult = img.result ? { ...img.result } : null;
+          if (newResult) {
+            delete newResult.policyWarning;
+            delete newResult.policyReason;
+          }
+          return { 
+            ...img, 
+            result: newResult, 
+            status: "pending", 
+            error: undefined,
+            ignorePolicy: true
+          };
+        }
+        return img;
+      })
+    );
+    
+    // Automatically trigger reprocessing
+    setTimeout(() => {
+      // By using imagesRef.current inside processBatch, it will pick up the updated state
+      processBatch();
+    }, 50);
   };
 
   const clearAll = () => {
@@ -792,17 +818,19 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     setProgress(0);
     cancelRef.current = false;
 
-    const toProcess = images.filter((img: any) => {
+    const currentImages = imagesRef.current;
+
+    const toProcess = currentImages.filter((img: any) => {
       if (img.status === "done" || img.status === "upscaling" || img.status === "upscale_queued") return false;
       if (onlyErrors && img.status !== "error") return false;
       return true;
     });
 
-    let totalItems = images.length;
+    let totalItems = currentImages.length;
     let successCount = 0;
     let errorCount = 0;
 
-    images.forEach((img: any) => {
+    currentImages.forEach((img: any) => {
       const willBeProcessed = toProcess.some((p: any) => p.id === img.id);
       if (!willBeProcessed) {
         if (img.status === "done" || img.status === "upscaling" || img.status === "upscale_queued") {
@@ -967,7 +995,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
             if (cancelRef.current) return;
             // For Groq, safety/trademark scan is combined into single metadata call to reduce API usage by 50%
-            if (promptSettingsRef.current?.securityScanEnabled) {
+            if (promptSettingsRef.current?.securityScanEnabled && !img.ignorePolicy) {
               if (isCombinedScan) {
                 setImages((prev: any) =>
                   prev.map((item: any) =>
@@ -991,7 +1019,19 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   currentProvider
                 );
                 if (!securityRes.isSafe) {
-                  throw new Error(`Policy Violation: ${securityRes.reason}`);
+                  setImages((prev: any) =>
+                    prev.map((item: any) =>
+                      (item as any).id === img.id
+                        ? { ...item, status: "policy_warning", result: { policyWarning: securityRes.reason, policyReason: securityRes.reason } }
+                        : item
+                    )
+                  );
+                  if (!cancelRef.current) {
+                    successCount++;
+                    processed++;
+                    updateProgress();
+                  }
+                  return; // Halt pipeline gracefully
                 }
                 setImages((prev: any) =>
                   prev.map((item: any) =>
@@ -1010,20 +1050,49 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               fileName: img.file?.name,
               extractedTextContext: img.epsData?.extractedTextContext || null,
               promptSettings: promptSettingsRef.current,
+              skipPolicyScan: img.ignorePolicy || !promptSettingsRef.current?.securityScanEnabled,
             };
 
             if (cancelRef.current) return;
-            let metadata = await generateMetadata(
-              base64,
-              mimeType,
-              metadataKeys,
-              currentProvider,
-              fileInfo
-            );
+            let metadata;
+            
+            // If user clicked Ignore Policy and we already have the previous valid metadata, reuse it to save API calls
+            if (img.ignorePolicy && img.result && img.result.title && img.result.title !== "...") {
+              metadata = { ...img.result };
+              console.log("[Mata AI] Re-using previous metadata after ignoring policy.");
+            } else {
+              metadata = await generateMetadata(
+                base64,
+                mimeType,
+                metadataKeys,
+                currentProvider,
+                fileInfo
+              );
+            }
 
-            // Check policy warning returned in single combined Groq call
-            if (promptSettingsRef.current?.securityScanEnabled && isCombinedScan && metadata?.policyWarning) {
-              throw new Error(`Policy Violation: ${metadata.policyWarning}`);
+            // Strip hallucinated policy warnings if scan is disabled or ignored
+            if (!promptSettingsRef.current?.securityScanEnabled || img.ignorePolicy) {
+              if (metadata) {
+                delete metadata.policyWarning;
+                delete metadata.policyReason;
+              }
+            }
+
+            // Check policy warning returned in single combined scan
+            if (promptSettingsRef.current?.securityScanEnabled && !img.ignorePolicy && metadata?.policyWarning) {
+              setImages((prev: any) =>
+                prev.map((item: any) =>
+                  (item as any).id === img.id
+                    ? { ...item, status: "policy_warning", result: metadata }
+                    : item
+                )
+              );
+              if (!cancelRef.current) {
+                successCount++;
+                processed++;
+                updateProgress();
+              }
+              return; // Halt pipeline gracefully
             }
 
             if (autoEmbedRef.current) {
@@ -2686,6 +2755,15 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 </div>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-1)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>{img.file.name}</span>
                 <button 
+                  onClick={() => handleApprovePolicy(img.id)}
+                  style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981', cursor: 'pointer', padding: '0.2rem 0.6rem', borderRadius: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s', fontSize: '0.7rem', fontWeight: 600 }}
+                  title="Ignore Policy Warning"
+                  onMouseOver={(e: any) => { e.currentTarget.style.background = 'rgba(16, 185, 129, 0.2)'; }}
+                  onMouseOut={(e: any) => { e.currentTarget.style.background = 'rgba(16, 185, 129, 0.1)'; }}
+                >
+                  Ignore Policy Violation
+                </button>
+                <button 
                   onClick={() => removeImage(img.id)}
                   style={{ background: 'var(--surface-1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', cursor: 'pointer', padding: '0.2rem', borderRadius: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                   title="Remove this image"
@@ -2802,6 +2880,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   images={getGridImages()}
                   duplicatePairs={duplicatePairs}
                   removeImage={removeImage}
+                  onIgnorePolicy={handleApprovePolicy}
                   handleMetaChange={handleMetaChange}
                   activeProviderName={activeProviderName}
                   upscaleScale={upscaleScale}

@@ -80,19 +80,21 @@ function App() {
       const providerSaved = localStorage.getItem("selected_api_providers");
       if (saved) {
         const allKeys = JSON.parse(saved);
-        const activeProviders = providerSaved ? JSON.parse(providerSaved) : ['gemini'];
+        let activeProviders = providerSaved ? JSON.parse(providerSaved) : ['gemini'];
+        if (Array.isArray(activeProviders)) {
+          activeProviders = activeProviders.filter(p => p !== 'groq');
+        } else if (activeProviders === 'groq') {
+          activeProviders = ['gemini'];
+        }
+        if (!activeProviders || activeProviders.length === 0) activeProviders = ['gemini'];
+        
         const combinedKeys = [];
         activeProviders.forEach(p => {
           (allKeys[p] || []).forEach(k => {
             combinedKeys.push({ provider: p, key: k });
           });
         });
-        if (combinedKeys.length > 0) return combinedKeys;
-        
-        const firstProviderWithKeys = Object.keys(allKeys).find(p => allKeys[p] && allKeys[p].length > 0);
-        if (firstProviderWithKeys) {
-          return allKeys[firstProviderWithKeys].map(k => ({ provider: firstProviderWithKeys, key: k }));
-        }
+        return combinedKeys;
       }
     } catch (e) {
       console.error("Failed to load apiKeys from localStorage:", e);
@@ -102,7 +104,15 @@ function App() {
   const [apiProvider, setApiProvider] = useState(() => {
     try {
       const saved = localStorage.getItem("selected_api_providers");
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        let parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          parsed = parsed.filter(p => p !== 'groq');
+          if (parsed.length > 0) return parsed;
+        } else if (parsed && parsed !== 'groq') {
+          return parsed;
+        }
+      }
     } catch(e) {}
     return ['gemini'];
   });

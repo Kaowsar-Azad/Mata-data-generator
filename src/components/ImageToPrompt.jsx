@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Upload, Loader2, Trash2, X, RefreshCw, Copy, CheckCircle2, Image as ImageIcon, Target, Sparkles, ChevronDown } from "lucide-react";
 import { generatePromptFromImage } from "../services/geminiService";
+import { ToastAlert } from "./common/ToastAlert";
 
 const ACCEPTED_TYPES = "image/jpeg,image/png,image/webp,image/gif";
 
@@ -22,6 +23,7 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
   const fileInputRef = useRef(null);
   const abortRef = useRef(false);
   const dropdownRef = useRef(null);
+  const [toastMessage, setToastMessage] = useState("");
 
   useEffect(() => {
     const handleOutsideClick = (e) => {
@@ -137,7 +139,8 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
 
   const processBatch = async (onlyErrors = false) => {
     if (apiKeys.length === 0) {
-      alert("Please add at least one Gemini API key first.");
+      const pName = Array.isArray(apiProvider) ? apiProvider.join(", ") : apiProvider;
+      setToastMessage(`Please add at least one API key for ${pName} first.`);
       return;
     }
 
@@ -170,9 +173,7 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
         chunk.map(async (img) => {
           if (abortRef.current) return;
           try {
-            const hasGroqInProvider = Array.isArray(apiProvider) ? apiProvider.includes("groq") : apiProvider === "groq";
-            const hasGroqInKeys = apiKeys && apiKeys.some(k => (typeof k === 'object' && k.provider === 'groq') || k === 'groq');
-            const targetSize = (hasGroqInProvider || hasGroqInKeys) ? 512 : 800;
+            const targetSize = 800;
             const dataUrl = await resizeImageToBase64(img.file, targetSize);
             const base64 = dataUrl.split(",")[1];
             const mimeType = "image/jpeg";
@@ -221,7 +222,12 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
   const doneCount = images.filter((i) => i.status === "done").length;
 
   return (
-    <div className="space-y-6">
+    <div className="w-full max-w-6xl mx-auto space-y-4">
+      <ToastAlert 
+        isVisible={!!toastMessage} 
+        message={toastMessage} 
+        onClose={() => setToastMessage("")} 
+      />
       {/* Upload Zone */}
       <div
         onDragOver={handleDragOver}

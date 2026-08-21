@@ -810,7 +810,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
   const processBatch = async (onlyErrors = false) => {
     if (apiKeys.length === 0) {
-      alert("Please add at least one Gemini API key first.");
+      const pName = Array.isArray(apiProvider) ? apiProvider.join(", ") : apiProvider;
+      showToast(`Please add at least one API key for ${pName} first.`, "error");
       return;
     }
 

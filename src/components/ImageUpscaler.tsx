@@ -28,18 +28,20 @@ import {
   SlidersHorizontal,
   Gem,
   Flame,
-  Layers
+  Layers,
+  Square
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-interface MockFile {
+export interface MockFile {
   path: string;
   name: string;
   type: string;
   isElectron: boolean;
+  size?: number;
 }
 
-type UpscaleFile = File | MockFile;
+export type UpscaleFile = File | MockFile | { name: string; path?: string; type?: string; size?: number; isElectron?: boolean };
 
 interface ResultItem {
   name: string;
@@ -90,6 +92,14 @@ export function ImageUpscaler() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
   const formatDropdownRef = useRef<HTMLDivElement>(null);
+  const isCancelledRef = useRef<boolean>(false);
+
+  const handleStop = () => {
+    isCancelledRef.current = true;
+    setIsProcessing(false);
+    setActiveIndex(-1);
+    setStatusText("Upscaling stopped.");
+  };
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -105,16 +115,20 @@ export function ImageUpscaler() {
   }, []);
 
   useEffect(() => {
-    selectedFiles.forEach(f => {
-      const key = 'path' in f ? (f as MockFile).path : f.name;
+    selectedFiles.forEach((f: any) => {
+      const key = f.path || f.name;
       if (!fileDimensions[key]) {
         let src = '';
-        if ('isElectron' in f && f.isElectron) {
-          src = (f as MockFile).path.startsWith('http') || (f as MockFile).path.startsWith('data:')
-            ? (f as MockFile).path
-            : 'file:///' + (f as MockFile).path.replace(/\\/g, '/');
+        if (f.isElectron && f.path) {
+          src = f.path.startsWith('http') || f.path.startsWith('data:')
+            ? f.path
+            : 'file:///' + f.path.replace(/\\/g, '/');
         } else {
-          src = URL.createObjectURL(f as File);
+          try {
+            src = URL.createObjectURL(f as File);
+          } catch (_) {
+            src = f.path || '';
+          }
         }
 
         setFilePreviews(prev => ({ ...prev, [key]: src }));
@@ -181,7 +195,7 @@ export function ImageUpscaler() {
         });
         
         setSelectedFiles(prev => {
-          const existingPaths = prev.map(f => ('path' in f ? (f as MockFile).path : f.name));
+          const existingPaths = prev.map((f: any) => f.path || f.name);
           const filtered = newFiles.filter(f => !existingPaths.includes(f.path));
           return [...prev, ...filtered];
         });
@@ -195,7 +209,7 @@ export function ImageUpscaler() {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
     setSelectedFiles(prev => {
-      const existingNames = prev.map(f => f.name);
+      const existingNames = prev.map((f: any) => f.name);
       const newFiles = files.filter(f => !existingNames.includes(f.name));
       return [...prev, ...newFiles];
     });
@@ -211,7 +225,13 @@ export function ImageUpscaler() {
   };
 
   const removeFile = (indexToRemove: number) => {
-    setSelectedFiles(prev => prev.filter((_, idx) => idx !== indexToRemove));
+    setSelectedFiles(prev => {
+      const removed = prev[indexToRemove];
+      if (removed) {
+        setResults(rPrev => rPrev.filter(r => r.name !== removed.name));
+      }
+      return prev.filter((_, idx) => idx !== indexToRemove);
+    });
   };
 
   const upscaleSingleFile = async (fileObj: UpscaleFile, currentScale: number) => {
@@ -296,9 +316,14 @@ export function ImageUpscaler() {
     }));
     setResults(initialResults);
 
+    isCancelledRef.current = false;
     let completed = 0;
 
     for (let i = 0; i < selectedFiles.length; i++) {
+      if (isCancelledRef.current) {
+        break;
+      }
+
       const fileObj = selectedFiles[i];
       setStatusText(`Processing ${fileObj.name} (${i + 1}/${selectedFiles.length})...`);
       setActiveIndex(i);
@@ -435,10 +460,10 @@ export function ImageUpscaler() {
               <h3 style={{ fontSize: '0.95rem', fontWeight: 800, margin: 0, color: 'var(--text-1)' }}>Upscale Settings</h3>
             </div>
             
-            {/* Local AI Model Custom Dropdown */}
+            {/* Select Upscale Model Custom Dropdown */}
             <div style={{ position: 'relative', zIndex: 50 }} ref={modelDropdownRef}>
               <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-2)', marginBottom: '0.4rem' }}>
-                Local AI Model
+                Select Upscale Model
               </label>
 
               {(() => {
@@ -760,7 +785,7 @@ export function ImageUpscaler() {
                 display: 'grid', 
                 gridTemplateColumns: '1fr 1fr 1.2fr', 
                 gap: '0.3rem', 
-                background: 'var(--surface-2)', 
+                background: 'varc(--surface-2)', 
                 padding: '0.25rem', 
                 borderRadius: '0.65rem',
                 border: '1px solid var(--glass-border)'
@@ -980,12 +1005,6 @@ export function ImageUpscaler() {
               <><Zap style={{ width: '1.1rem', height: '1.1rem' }} /> Start Upscaling {selectedFiles.length > 0 ? `(${selectedFiles.length})` : ''}</>
             )}
           </button>
-          
-          {isProcessing && (
-            <div style={{ textAlign: 'center', fontSize: '0.78rem', color: 'var(--text-3)', fontWeight: 600 }}>
-              {statusText}
-            </div>
-          )}
         </div>
 
         {/* Right Column: File Selection & Selected Files List (Visually on Right) */}
@@ -1122,52 +1141,86 @@ export function ImageUpscaler() {
                   </span>
                 </div>
 
-                {!isProcessing && (
-                  <div style={{ display: 'flex', gap: '0.45rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                  {isProcessing ? (
                     <button 
                       type="button"
-                      onClick={handleSelectFilesClick}
+                      onClick={handleStop}
                       style={{ 
-                        background: 'var(--primary-glow)', 
-                        border: '1px solid rgba(37,99,235,0.25)', 
-                        color: 'var(--primary)', 
-                        fontSize: '0.78rem', 
-                        cursor: 'pointer', 
-                        fontWeight: 700, 
-                        padding: '0.35rem 0.75rem', 
-                        borderRadius: '0.5rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.3rem',
-                        transition: 'all 0.2s ease'
-                      }}
-                    >
-                      <Plus style={{ width: '0.85rem', height: '0.85rem' }} /> Add Images
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => setSelectedFiles([])}
-                      style={{ 
-                        background: 'rgba(239,68,68,0.08)', 
-                        border: '1px solid rgba(239,68,68,0.2)', 
+                        background: 'rgba(239,68,68,0.12)', 
+                        border: '1px solid rgba(239,68,68,0.35)', 
                         color: 'var(--danger)', 
                         fontSize: '0.78rem', 
                         cursor: 'pointer', 
-                        fontWeight: 700, 
-                        padding: '0.35rem 0.75rem', 
+                        fontWeight: 800, 
+                        padding: '0.35rem 0.85rem', 
                         borderRadius: '0.5rem',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '0.3rem',
+                        gap: '0.35rem',
+                        boxShadow: '0 2px 8px rgba(239,68,68,0.15)',
                         transition: 'all 0.2s ease'
                       }}
-                      onMouseEnter={(e: any) => e.currentTarget.style.background = 'rgba(239,68,68,0.15)'}
-                      onMouseLeave={(e: any) => e.currentTarget.style.background = 'rgba(239,68,68,0.08)'}
+                      onMouseEnter={(e: any) => e.currentTarget.style.background = 'rgba(239,68,68,0.22)'}
+                      onMouseLeave={(e: any) => e.currentTarget.style.background = 'rgba(239,68,68,0.12)'}
+                      title="Stop processing"
                     >
-                      <Trash2 style={{ width: '0.85rem', height: '0.85rem' }} /> Clear
+                      <Square style={{ width: '0.75rem', height: '0.75rem', fill: 'currentColor' }} /> Stop
                     </button>
-                  </div>
-                )}
+                  ) : (
+                    <>
+                      <button 
+                        type="button"
+                        onClick={handleSelectFilesClick}
+                        style={{ 
+                          background: 'var(--primary-glow)', 
+                          border: '1px solid rgba(37,99,235,0.25)', 
+                          color: 'var(--primary)', 
+                          fontSize: '0.78rem', 
+                          cursor: 'pointer', 
+                          fontWeight: 700, 
+                          padding: '0.35rem 0.75rem', 
+                          borderRadius: '0.5rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        <Plus style={{ width: '0.85rem', height: '0.85rem' }} /> Add Images
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setSelectedFiles([]);
+                          setResults([]);
+                          setProgress(0);
+                          setCompletedCount(0);
+                          setCurrentFileProgress(0);
+                          setActiveIndex(-1);
+                        }}
+                        style={{ 
+                          background: 'rgba(239,68,68,0.08)', 
+                          border: '1px solid rgba(239,68,68,0.2)', 
+                          color: 'var(--danger)', 
+                          fontSize: '0.78rem', 
+                          cursor: 'pointer', 
+                          fontWeight: 700, 
+                          padding: '0.35rem 0.75rem', 
+                          borderRadius: '0.5rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e: any) => e.currentTarget.style.background = 'rgba(239,68,68,0.15)'}
+                        onMouseLeave={(e: any) => e.currentTarget.style.background = 'rgba(239,68,68,0.08)'}
+                      >
+                        <Trash2 style={{ width: '0.85rem', height: '0.85rem' }} /> Clear
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
               {/* Rows List */}
@@ -1183,8 +1236,8 @@ export function ImageUpscaler() {
                   gap: '0.55rem' 
                 }}
               >
-                {selectedFiles.map((f, i) => {
-                  const key = 'path' in f ? (f as MockFile).path : f.name;
+                {selectedFiles.map((f: any, i) => {
+                  const key = f.path || f.name;
                   const dims = fileDimensions[key];
                   const preview = filePreviews[key];
                   const origW = dims?.width || 0;
@@ -1192,7 +1245,7 @@ export function ImageUpscaler() {
                   const targetW = origW ? origW * scale : 0;
                   const targetH = origH ? origH * scale : 0;
                   const isCurrent = activeIndex === i;
-                  const result = results[i];
+                  const result = results.find(r => r.name === f.name);
 
                   return (
                     <div 
@@ -1441,115 +1494,8 @@ export function ImageUpscaler() {
               />
             </div>
           )}
-
         </div>
       </div>
-
-      {/* Results Log */}
-      <AnimatePresence>
-        {results.length > 0 && (
-          <motion.div 
-            initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 15 }}
-            style={{
-              background: 'var(--surface-1)',
-              border: '1px solid var(--glass-border)',
-              borderRadius: '1.15rem',
-              padding: '1.15rem',
-              boxShadow: 'var(--glass-shadow)'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
-              <h3 style={{ fontSize: '0.95rem', fontWeight: 800, margin: 0, color: 'var(--text-1)' }}>Processing Log</h3>
-              {!isProcessing && (
-                <button 
-                  type="button"
-                  onClick={() => setResults([])}
-                  style={{ 
-                    background: 'rgba(239,68,68,0.08)', 
-                    border: '1px solid rgba(239,68,68,0.2)', 
-                    color: 'var(--danger)', 
-                    fontSize: '0.75rem', 
-                    cursor: 'pointer', 
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.3rem',
-                    padding: '0.35rem 0.65rem',
-                    borderRadius: '0.45rem',
-                    transition: 'all 0.2s ease'
-                  }}
-                >
-                  <Trash2 style={{ width: '0.8rem', height: '0.8rem' }} /> Clear Logs
-                </button>
-              )}
-            </div>
-            <div style={{ display: 'grid', gap: '0.5rem' }}>
-              {results.map((res, i) => (
-                <div 
-                  key={res.name + i}
-                  style={{
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'space-between',
-                    padding: '0.65rem 0.85rem', 
-                    borderRadius: '0.55rem',
-                    background: res.status === 'success' ? 'rgba(34,197,94,0.05)' : (res.status === 'error' ? 'rgba(239,68,68,0.05)' : 'var(--surface-2)'),
-                    border: `1px solid ${res.status === 'success' ? 'rgba(34,197,94,0.25)' : (res.status === 'error' ? 'rgba(239,68,68,0.25)' : 'var(--glass-border)')}`,
-                    gap: '0.75rem'
-                  }}
-                >
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-1)', marginBottom: '0.15rem' }}>{res.name}</span>
-                    {res.status === 'success' ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--success)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                          <CheckCircle2 style={{ width: '0.8rem', height: '0.8rem' }} /> Upscaled Successfully
-                        </span>
-                        {res.path && <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', fontWeight: 500 }}>Saved to: {res.path}</span>}
-                      </div>
-                    ) : res.status === 'error' ? (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginTop: '0.2rem' }}>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--danger)', fontWeight: 500 }}>Error: {res.error}</span>
-                        {!isProcessing && (
-                          <button
-                            type="button"
-                            onClick={() => retryUpscale(i)}
-                            style={{
-                              background: 'var(--primary)',
-                              color: '#fff',
-                              border: 'none',
-                              padding: '0.3rem 0.6rem',
-                              borderRadius: '0.45rem',
-                              fontSize: '0.72rem',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.25rem',
-                              boxShadow: '0 2px 6px rgba(37,99,235,0.2)'
-                            }}
-                          >
-                            <RefreshCw style={{ width: '0.75rem', height: '0.75rem' }} />
-                            Retry
-                          </button>
-                        )}
-                      </div>
-                    ) : (
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}>
-                        {res.status === 'processing' ? (
-                          <><Loader2 className="spin" style={{ width: '0.75rem', height: '0.75rem', color: 'var(--primary)' }} /> Processing {activeIndex === i && currentFileProgress > 0 ? `(${Math.round(currentFileProgress)}%)` : ''}...</>
-                        ) : (
-                          <>Pending...</>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

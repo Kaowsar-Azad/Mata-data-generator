@@ -219,7 +219,8 @@ function setupMataAi(ipcMain, fileLog) {
       }
 
       // Tile size: 192 gives best GPU throughput on most cards (higher = more VRAM but faster)
-      const tileSize = '192';
+      // Multi-thread pipeline: 1 loader thread, 2 GPU inference threads, 2 save threads
+      const threadArgs = ['-j', '1:2:2'];
 
       let args;
       if (isUpscaylBin) {
@@ -232,6 +233,7 @@ function setupMataAi(ipcMain, fileLog) {
           '-n', finalModelName,
           '-f', outputFormat,
           '-t', tileSize,
+          ...threadArgs,
           '-v',
         ];
       } else {
@@ -243,6 +245,7 @@ function setupMataAi(ipcMain, fileLog) {
           '-n', finalModelName,
           '-f', outputFormat,
           '-t', tileSize,
+          ...threadArgs,
           '-v',
         ];
       }
@@ -250,7 +253,26 @@ function setupMataAi(ipcMain, fileLog) {
       fileLog('[upscale-local-ncnn] Engine: ' + (isUpscaylBin ? 'upscayl-bin' : 'realesrgan-ncnn-vulkan'));
 
       return new Promise((resolve, reject) => {
-        const proc = spawn(exePath, args, { cwd: binDir });
+        const spawnEnv = {
+          ...process.env,
+          VK_LAYER_NV_optimus: '1',                      // Prioritize Dedicated NVIDIA GPU
+          DISABLE_LAYER_AMD_SWITCHABLE_GRAPHICS_1: '1', // Prioritize Dedicated AMD GPU
+          OMP_NUM_THREADS: String(Math.min(8, os.cpus().length || 4)),
+          OMP_WAIT_POLICY: 'ACTIVE',
+        };
+
+        const proc = spawn(exePath, args, { cwd: binDir, env: spawnEnv });
+
+        // Set High Priority in Windows OS Kernel for maximum processor allocation
+        try {
+          if (proc.pid && typeof os.setPriority === 'function') {
+            os.setPriority(proc.pid, os.constants.priority.PRIORITY_HIGH);
+            fileLog('[upscale-local-ncnn] Set Windows OS Priority to HIGH for PID: ' + proc.pid);
+          }
+        } catch (pErr) {
+          fileLog('[upscale-local-ncnn] Priority allocation note: ' + pErr.message);
+        }
+
         let errOutput = '';
 
         const handleData = (data) => {

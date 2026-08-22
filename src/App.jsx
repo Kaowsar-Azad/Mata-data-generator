@@ -301,7 +301,7 @@ function App() {
                 { id: 'epspreview', icon: Camera, label: 'Auto EPS Preview', color: '#10b981' },
                 { id: 'removebg', icon: Eraser, label: 'Background Remover', color: '#ef4444' },
                 { id: 'vector', icon: Box, label: 'Vector Magic', color: '#f59e0b' },
-                { id: 'upscale', icon: Maximize, label: 'AI Image Upscaler', color: '#3b82f6' },
+                { id: 'upscale', icon: Maximize, label: 'Image Upscaler', color: '#3b82f6' },
                 { id: 'aiimage', icon: Cpu, label: 'Cloud GPU Image Gen', color: '#06b6d4' },
                 { id: 'ftp', icon: Server, label: 'Microstock Uploader', color: '#6366f1' },
                 { id: 'topsellers', icon: TrendingUp, label: 'Top Sellers', color: '#f59e0b' },

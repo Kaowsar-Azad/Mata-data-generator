@@ -55,7 +55,6 @@ interface ResultItem {
 const LOCAL_MODEL_OPTIONS = [
   { id: 'fast', label: 'Fast', desc: 'High-Speed (Resolution upscale only)', icon: Zap, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' },
   { id: 'span', label: 'SPAN / NomosPhoto (Compact Natural AI)', desc: 'Super Fast & Natural Skin Texture (SIAT CAS)', icon: Sparkles, color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' },
-  { id: 'realesr-animevideov3', label: 'Tencent Real-ESRGAN Compact V3', desc: 'Ultra-Fast Lightweight Model (Tencent ARC Lab)', icon: Zap, color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)' },
   { id: 'realsr', label: 'RealSR / BSR (Real-World Photo Restoration)', desc: 'Real Camera & Compressed JPEG Restoration', icon: Camera, color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.12)' },
   { id: 'balanced', label: 'Balanced', desc: 'Smooth & Natural Detail Balance', icon: SlidersHorizontal, color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
   { id: 'auto_model_detect', label: 'Auto Model Detect', desc: 'Smart AI Content Detection', icon: Target, color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },

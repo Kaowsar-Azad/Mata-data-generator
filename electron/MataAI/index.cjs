@@ -245,8 +245,13 @@ function setupMataAi(ipcMain, fileLog) {
       const finalInputPath  = inputPath;
       const tempResizedPath = null;
 
-      // Tile size: 512 gives optimal balance of high GPU throughput with low tile overhead (3-5x faster)
-      const tileSize = '512';
+      // Tile size: Adaptive per engine for zero-crash stability and smooth progress updates
+      let tileSize = '512';
+      if (isRealSR) {
+        tileSize = '128'; // RealSR has deep residual blocks; 128 ensures 100% stability on Intel UHD GPUs without VRAM crash
+      } else if (isSpan) {
+        tileSize = '256';
+      }
       // Multi-thread pipeline: 1 loader thread, 2 GPU inference threads, 2 save threads
       const threadArgs = ['-j', '1:2:2'];
 

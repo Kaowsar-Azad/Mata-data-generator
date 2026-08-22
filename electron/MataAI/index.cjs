@@ -110,6 +110,20 @@ async function upscaleLocalHighFidelitySharp(inputPath, outputPath, scale, outpu
 // IPC HANDLER: upscale-local-ncnn
 // ─────────────────────────────────────────────
 function setupMataAi(ipcMain, fileLog) {
+  ipcMain.handle('toggle-devtools', (event) => {
+    try {
+      const { BrowserWindow } = require('electron');
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (win) {
+        win.webContents.toggleDevTools();
+        return true;
+      }
+    } catch (e) {
+      fileLog('[toggle-devtools] error: ' + e.message);
+    }
+    return false;
+  });
+
   ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName, format, saveDir) => {
     modelName = modelName || 'realesrgan-x4plus';
     format    = format    || 'jpg';
@@ -122,9 +136,10 @@ function setupMataAi(ipcMain, fileLog) {
       const outputFormat = format === 'jpeg' ? 'jpg' : format;
 
       const { app } = require('electron');
-      const binDir = app.isPackaged
-        ? path.join(process.resourcesPath, 'bin', 'upscayl')
-        : path.join(__dirname, '..', '..', 'bin', 'upscayl');
+      const appRootDir = app.isPackaged
+        ? process.resourcesPath
+        : path.join(__dirname, '..', '..');
+      const binDir = path.join(appRootDir, 'bin', 'upscayl');
 
       const isUpscaylBin = fs.existsSync(path.join(binDir, 'upscayl-bin.exe'));
       const exeName      = isUpscaylBin ? 'upscayl-bin.exe' : 'realesrgan-ncnn-vulkan.exe';
@@ -199,81 +214,139 @@ function setupMataAi(ipcMain, fileLog) {
       }
 
       // ═══════════════════════════════════════════════
-      // NCNN PATH — Only for explicit model selections
-      // (ultrasharp, remacri, realesrgan-x4plus, etc.)
+      // NCNN PATH — With multi-engine support
+      // (upscayl-bin, span-ncnn-vulkan, realsr-ncnn-vulkan)
       // ═══════════════════════════════════════════════
-      if (!fs.existsSync(exePath)) {
-        throw new Error('Upscaler engine not found: ' + exePath);
+      let activeExePath = path.resolve(exePath);
+      let activeCwd = path.resolve(binDir);
+      let activeModelsDir = path.resolve(binDir, 'models');
+      let isSpan = false;
+      let isRealSR = false;
+
+      const spanExePath = path.resolve(appRootDir, 'bin', 'span', 'span-ncnn-vulkan.exe');
+      const realsrExePath = path.resolve(appRootDir, 'bin', 'realsr', 'realsr-ncnn-vulkan.exe');
+
+      if ((modelName === 'span' || modelName === 'span_nomos') && fs.existsSync(spanExePath)) {
+        activeExePath = spanExePath;
+        activeCwd = path.resolve(appRootDir, 'bin', 'span');
+        activeModelsDir = path.resolve(appRootDir, 'bin', 'span', 'models');
+        isSpan = true;
+      } else if ((modelName === 'realsr' || modelName === 'bsrgan' || modelName === 'realsr_photo') && fs.existsSync(realsrExePath)) {
+        activeExePath = realsrExePath;
+        activeCwd = path.resolve(appRootDir, 'bin', 'realsr');
+        activeModelsDir = path.resolve(appRootDir, 'bin', 'realsr', 'models-DF2K_JPEG');
+        isRealSR = true;
+      }
+
+      if (!fs.existsSync(activeExePath)) {
+        throw new Error('Upscaler engine not found: ' + activeExePath);
       }
 
       const finalInputPath  = inputPath;
       const tempResizedPath = null;
 
-      // Build NCNN args
-      let finalModelName = modelName;
-      let modelScale = 4;
-      if (modelName === 'realesr-animevideov3') {
-        const clampedScale = Math.min(4, Math.max(2, parseInt(scale)));
-        finalModelName = 'realesr-animevideov3-x' + clampedScale;
-        modelScale     = clampedScale;
-      }
-
-      // Tile size: 192 gives best GPU throughput on most cards (higher = more VRAM but faster)
+      // Tile size: 512 gives optimal balance of high GPU throughput with low tile overhead (3-5x faster)
+      const tileSize = '512';
       // Multi-thread pipeline: 1 loader thread, 2 GPU inference threads, 2 save threads
       const threadArgs = ['-j', '1:2:2'];
 
       let args;
-      if (isUpscaylBin) {
+      if (isSpan) {
+        const clampedScale = Math.min(4, Math.max(2, parseInt(scale) || 2));
+        const spanModelName = clampedScale === 2 ? 'spanx2_ch48' : 'spanx4_ch48';
         args = [
           '-i', finalInputPath,
           '-o', outputPath,
-          '-z', modelScale.toString(),
-          '-s', scale.toString(),
-          '-m', 'models',
-          '-n', finalModelName,
+          '-s', clampedScale.toString(),
+          '-m', activeModelsDir,
+          '-n', spanModelName,
+          '-f', outputFormat,
+          '-t', tileSize,
+          ...threadArgs,
+          '-v',
+        ];
+      } else if (isRealSR) {
+        args = [
+          '-i', finalInputPath,
+          '-o', outputPath,
+          '-s', '4',
+          '-m', activeModelsDir,
           '-f', outputFormat,
           '-t', tileSize,
           ...threadArgs,
           '-v',
         ];
       } else {
-        args = [
-          '-i', finalInputPath,
-          '-o', outputPath,
-          '-s', scale.toString(),
-          '-m', 'models',
-          '-n', finalModelName,
-          '-f', outputFormat,
-          '-t', tileSize,
-          ...threadArgs,
-          '-v',
-        ];
+        let finalModelName = modelName;
+        let modelScale = 4;
+        if (modelName === 'realesr-animevideov3' || modelName === 'realesr-general-x4v3') {
+          const clampedScale = Math.min(4, Math.max(2, parseInt(scale)));
+          finalModelName = 'realesr-animevideov3-x' + clampedScale;
+          modelScale     = clampedScale;
+        }
+
+        if (isUpscaylBin) {
+          args = [
+            '-i', finalInputPath,
+            '-o', outputPath,
+            '-z', modelScale.toString(),
+            '-s', scale.toString(),
+            '-m', activeModelsDir,
+            '-n', finalModelName,
+            '-f', outputFormat,
+            '-t', tileSize,
+            ...threadArgs,
+            '-v',
+          ];
+        } else {
+          args = [
+            '-i', finalInputPath,
+            '-o', outputPath,
+            '-s', scale.toString(),
+            '-m', activeModelsDir,
+            '-n', finalModelName,
+            '-f', outputFormat,
+            '-t', tileSize,
+            ...threadArgs,
+            '-v',
+          ];
+        }
       }
 
-      fileLog('[upscale-local-ncnn] Engine: ' + (isUpscaylBin ? 'upscayl-bin' : 'realesrgan-ncnn-vulkan'));
+      fileLog('[upscale-local-ncnn] Active Engine: ' + path.basename(activeExePath) + ' [TileSize: ' + tileSize + ']');
 
       return new Promise((resolve, reject) => {
         const spawnEnv = {
           ...process.env,
-          VK_LAYER_NV_optimus: '1',                      // Prioritize Dedicated NVIDIA GPU
-          DISABLE_LAYER_AMD_SWITCHABLE_GRAPHICS_1: '1', // Prioritize Dedicated AMD GPU
+          // Prioritize Dedicated High-Performance GPU on laptops (NVIDIA & AMD)
+          VK_LAYER_NV_optimus: '1',
+          DISABLE_LAYER_AMD_SWITCHABLE_GRAPHICS_1: '1',
+          SHIM_MCCOMPAT: '0x000000001',
+          __NV_PRIME_RENDER_OFFLOAD: '1',
+          __GLX_VENDOR_LIBRARY_NAME: 'nvidia',
+          // CPU / Thread optimizations
           OMP_NUM_THREADS: String(Math.min(8, os.cpus().length || 4)),
-          OMP_WAIT_POLICY: 'ACTIVE',
+          OMP_WAIT_POLICY: 'PASSIVE',                   // Efficient CPU thread management (no busy-spin starvation)
         };
 
-        const proc = spawn(exePath, args, { cwd: binDir, env: spawnEnv });
+        const proc = spawn(activeExePath, args, { cwd: activeCwd, env: spawnEnv });
 
-        // Set High Priority in Windows OS Kernel for maximum processor allocation
+        // Set Above Normal Priority (Optimized priority without starving Electron UI)
         try {
           if (proc.pid && typeof os.setPriority === 'function') {
-            os.setPriority(proc.pid, os.constants.priority.PRIORITY_HIGH);
-            fileLog('[upscale-local-ncnn] Set Windows OS Priority to HIGH for PID: ' + proc.pid);
+            const priorityLevel = os.constants.priority.PRIORITY_ABOVE_NORMAL !== undefined 
+              ? os.constants.priority.PRIORITY_ABOVE_NORMAL 
+              : -10;
+            os.setPriority(proc.pid, priorityLevel);
+            fileLog('[upscale-local-ncnn] Set Windows OS Priority to ABOVE_NORMAL for PID: ' + proc.pid);
           }
         } catch (pErr) {
           fileLog('[upscale-local-ncnn] Priority allocation note: ' + pErr.message);
         }
 
         let errOutput = '';
+        let lastProgressTime = 0;
+        let maxFileProgress = 0;
 
         const handleData = (data) => {
           const str = data.toString();
@@ -283,11 +356,19 @@ function setupMataAi(ipcMain, fileLog) {
             const trimmed = line.trim();
             if (/^\d+(?:\.\d+)?%$/.test(trimmed)) {
               const progressVal = parseFloat(trimmed);
-              try {
-                if (event && !event.sender.isDestroyed()) {
-                  event.sender.send('upscale-progress', { filePath: inputPath, progress: progressVal });
+              // Monotonic check: Ensure progress only moves forward and never drops/resets
+              if (progressVal > maxFileProgress) {
+                maxFileProgress = progressVal;
+                const now = Date.now();
+                if (now - lastProgressTime > 60 || maxFileProgress >= 100) {
+                  lastProgressTime = now;
+                  try {
+                    if (event && !event.sender.isDestroyed()) {
+                      event.sender.send('upscale-progress', { filePath: inputPath, progress: maxFileProgress });
+                    }
+                  } catch (_) {}
                 }
-              } catch (_) {}
+              }
             }
           }
         };
@@ -296,6 +377,11 @@ function setupMataAi(ipcMain, fileLog) {
         proc.stderr.on('data', handleData);
 
         proc.on('close', async (code) => {
+          try {
+            if (event && !event.sender.isDestroyed()) {
+              event.sender.send('upscale-progress', { filePath: inputPath, progress: 100 });
+            }
+          } catch (_) {}
           if (tempResizedPath && fs.existsSync(tempResizedPath)) {
             try { fs.unlinkSync(tempResizedPath); } catch (e) {
               fileLog('[Mata AI] Could not clean pre-process temp: ' + e.message);
@@ -320,6 +406,26 @@ function setupMataAi(ipcMain, fileLog) {
                 fileLog('[upscale-local-ncnn] RIFF->JPG done.');
               }
             } catch (_) {}
+            // Target scale dimension adjustment (e.g. RealSR running at 4x for 2x target, or Custom 6x/8x)
+            try {
+              const inMeta = await sharp(inputPath).metadata();
+              const targetW = Math.round(inMeta.width * scale);
+              const targetH = Math.round(inMeta.height * scale);
+              const outMeta = await sharp(outputPath).metadata();
+              if (Math.abs(outMeta.width - targetW) > 2 || Math.abs(outMeta.height - targetH) > 2) {
+                fileLog('[upscale-local-ncnn] Dimension adjustment to target: ' + outMeta.width + 'x' + outMeta.height + ' -> ' + targetW + 'x' + targetH);
+                const tmpResize = outputPath + '.res.tmp';
+                if (outputFormat === 'png') {
+                  await sharp(outputPath).resize(targetW, targetH, { kernel: sharp.kernel.lanczos3 }).png({ compressionLevel: 6 }).toFile(tmpResize);
+                } else {
+                  await sharp(outputPath).resize(targetW, targetH, { kernel: sharp.kernel.lanczos3 }).jpeg({ quality: 95 }).toFile(tmpResize);
+                }
+                fs.unlinkSync(outputPath);
+                fs.renameSync(tmpResize, outputPath);
+              }
+            } catch (dimErr) {
+              fileLog('[upscale-local-ncnn] Dimension adjustment note: ' + dimErr.message);
+            }
 
 
 

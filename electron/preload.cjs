@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   scrapeAdobeStockByImage: (url, contentType) => ipcRenderer.invoke('scrape-adobe-stock-by-image', url, contentType),
   scrapeShutterstockByImage: (url, contentType) => ipcRenderer.invoke('scrape-shutterstock-by-image', url, contentType),
   scrapeVecteezyByImage: (url, contentType) => ipcRenderer.invoke('scrape-vecteezy-by-image', url, contentType),
-  scrapeVideoPreview: (url) => ipcRenderer.invoke('scrape-video-preview', url)
+  scrapeVideoPreview: (url) => ipcRenderer.invoke('scrape-video-preview', url),
+  toggleDevTools: () => ipcRenderer.invoke('toggle-devtools')
 });
 

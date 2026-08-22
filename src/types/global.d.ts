@@ -14,6 +14,7 @@ declare global {
         format: string, 
         outputFolder: string
       ) => Promise<{ success: boolean, path?: string, format?: string, base64?: string, error?: string }>;
+      toggleDevTools?: () => Promise<boolean>;
       // Include any other existing API declarations here if needed, but we'll focus on what ImageUpscaler uses.
     }
   }

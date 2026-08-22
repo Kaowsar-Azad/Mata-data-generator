@@ -13,7 +13,7 @@ import { AiImageGenerator } from './components/AiImageGenerator'
 import { TopSellers } from './components/TopSellers'
 import { PromptEnginePage } from './components/PromptEngine/PromptEnginePage'
 import { PromptEngineSettings } from './components/PromptEngine/PromptEngineSettings'
-import { Sparkles, Zap, Image as ImageIcon, Eraser, Box, ChevronLeft, ChevronRight, Server, Key, Camera, Maximize, Cpu, Wand2, TrendingUp } from 'lucide-react'
+import { Sparkles, Zap, Image as ImageIcon, Eraser, Box, ChevronLeft, ChevronRight, Server, Key, Camera, Maximize, Cpu, Wand2, TrendingUp, Terminal } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 const tabVariants = {
@@ -172,6 +172,22 @@ function App() {
     return () => window.removeEventListener('switch-tab', handleSwitchTab);
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (
+        e.key === 'F12' ||
+        (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j'))
+      ) {
+        e.preventDefault();
+        if (window.electronAPI?.toggleDevTools) {
+          window.electronAPI.toggleDevTools();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   return (
     <div className="dashboard-layout">
       {/* ─── LEFT SIDEBAR ─── */}
@@ -210,31 +226,61 @@ function App() {
             </div>
 
             {sidebarOpen && (
-              <button 
-                id="api-keys-btn"
-                onClick={() => setIsApiKeyModalOpen(true)}
-                title="API Keys"
-                style={{
-                  background: 'var(--surface-2)',
-                  border: '1px solid var(--glass-border)',
-                  color: 'var(--text-2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.35rem',
-                  padding: '0.35rem 0.65rem',
-                  borderRadius: '999px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                  flexShrink: 0
-                }}
-                onMouseOver={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.borderColor = 'var(--primary)'; }}
-                onMouseOut={(e) => { e.currentTarget.style.color = 'var(--text-2)'; e.currentTarget.style.borderColor = 'var(--glass-border)'; }}
-              >
-                <Key style={{ width: '0.9rem', height: '0.9rem' }} />
-                <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>API Keys</span>
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <button 
+                  id="api-keys-btn"
+                  onClick={() => setIsApiKeyModalOpen(true)}
+                  title="API Keys"
+                  style={{
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--glass-border)',
+                    color: 'var(--text-2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.35rem',
+                    padding: '0.35rem 0.65rem',
+                    borderRadius: '999px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                    flexShrink: 0
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.borderColor = 'var(--primary)'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.color = 'var(--text-2)'; e.currentTarget.style.borderColor = 'var(--glass-border)'; }}
+                >
+                  <Key style={{ width: '0.9rem', height: '0.9rem' }} />
+                  <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>API Keys</span>
+                </button>
+
+                <button 
+                  id="devtools-toggle-btn"
+                  onClick={() => {
+                    if (window.electronAPI?.toggleDevTools) {
+                      window.electronAPI.toggleDevTools();
+                    }
+                  }}
+                  title="Toggle Developer Options / Console (F12)"
+                  style={{
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--glass-border)',
+                    color: 'var(--text-3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '0.38rem',
+                    borderRadius: '999px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                    flexShrink: 0
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.borderColor = 'var(--primary)'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.color = 'var(--text-3)'; e.currentTarget.style.borderColor = 'var(--glass-border)'; }}
+                >
+                  <Terminal style={{ width: '0.85rem', height: '0.85rem' }} />
+                </button>
+              </div>
             )}
           </div>
         </div>

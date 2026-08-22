@@ -54,6 +54,9 @@ interface ResultItem {
 
 const LOCAL_MODEL_OPTIONS = [
   { id: 'fast', label: 'Fast', desc: 'High-Speed (Resolution upscale only)', icon: Zap, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' },
+  { id: 'span', label: 'SPAN / NomosPhoto (Compact Natural AI)', desc: 'Super Fast & Natural Skin Texture (SIAT CAS)', icon: Sparkles, color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' },
+  { id: 'realesr-animevideov3', label: 'Tencent Real-ESRGAN Compact V3', desc: 'Ultra-Fast Lightweight Model (Tencent ARC Lab)', icon: Zap, color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)' },
+  { id: 'realsr', label: 'RealSR / BSR (Real-World Photo Restoration)', desc: 'Real Camera & Compressed JPEG Restoration', icon: Camera, color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.12)' },
   { id: 'balanced', label: 'Balanced', desc: 'Smooth & Natural Detail Balance', icon: SlidersHorizontal, color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
   { id: 'auto_model_detect', label: 'Auto Model Detect', desc: 'Smart AI Content Detection', icon: Target, color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },
   { id: 'realesrgan-x4plus', label: 'General Photo', desc: 'RealESRGAN Default Model', icon: Camera, color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' },
@@ -156,26 +159,27 @@ export function ImageUpscaler() {
     });
   }, [selectedFiles]);
 
+  const selectedFilesRef = useRef(selectedFiles);
+  selectedFilesRef.current = selectedFiles;
+  const completedCountRef = useRef(completedCount);
+  completedCountRef.current = completedCount;
+
   useEffect(() => {
     if (window.electronAPI && typeof window.electronAPI.onUpscaleProgress === 'function') {
       const cleanup = window.electronAPI.onUpscaleProgress((data: { progress: number }) => {
-        setCurrentFileProgress(data.progress);
-        if (selectedFiles.length > 0) {
-          setProgress(() => {
-            const currentOverall = Math.round((completedCount / selectedFiles.length) * 100 + (data.progress / selectedFiles.length));
-            return Math.min(99, currentOverall);
+        const val = Math.round(data.progress);
+        setCurrentFileProgress(prev => Math.max(prev, val));
+        const total = selectedFilesRef.current.length;
+        if (total > 0) {
+          setProgress(prevOverall => {
+            const currentOverall = Math.round((completedCountRef.current / total) * 100 + (val / total));
+            return Math.min(100, Math.max(prevOverall, currentOverall));
           });
-          if (activeIndex >= 0 && activeIndex < selectedFiles.length) {
-            const fileObj = selectedFiles[activeIndex];
-            setStatusText(`Processing ${fileObj.name} (${activeIndex + 1}/${selectedFiles.length}) - ${Math.round(data.progress)}%...`);
-          }
         }
       });
-      if (typeof cleanup === 'function') {
-        return cleanup;
-      }
+      return cleanup;
     }
-  }, [completedCount, selectedFiles.length, activeIndex]);
+  }, []);
 
   const handleSelectFilesClick = async () => {
     if (window.electronAPI?.selectFiles) {
@@ -238,8 +242,9 @@ export function ImageUpscaler() {
     if (upscaleMethod === 'localNcnn' && window.electronAPI) {
       setStatusText(`Upscaling ${fileObj.name} with Local GPU (NCNN)...`);
       
-      if (!('isElectron' in fileObj) || !fileObj.isElectron) {
-        throw new Error("Local GPU upscaling only supports local files. Please select a file from your computer using the Electron app.");
+      const pathArg = (fileObj as any).path;
+      if (!pathArg) {
+        throw new Error("Local GPU upscaling requires local file paths. Please select image files from your computer.");
       }
       
       let modelToUse = localModel;
@@ -261,12 +266,9 @@ export function ImageUpscaler() {
       } else if (localModel === 'fast') {
         modelToUse = 'fast_sharp';
       } else if (localModel === 'balanced') {
-        const name = (fileObj.name || '').toLowerCase();
-        const hasFace = /person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie/i.test(name);
-        modelToUse = hasFace ? 'remacri' : 'ultramix_balanced';
+        modelToUse = 'ultramix_balanced';
       }
-      
-      const pathArg = (fileObj as MockFile).path;
+
       let effectiveSaveDir = outputFolder;
       if (!effectiveSaveDir && pathArg) {
         const normalizedPath = pathArg.replace(/\\/g, '/');
@@ -329,26 +331,13 @@ export function ImageUpscaler() {
       setActiveIndex(i);
       setCurrentFileProgress(0);
       
-      setResults(prev => {
-        const updated = [...prev];
-        updated[i] = { ...updated[i], status: 'processing' };
-        return updated;
-      });
+      setResults(prev => prev.map(r => r.name === fileObj.name ? { ...r, status: 'processing' } : r));
 
       try {
         const resData = await upscaleSingleFile(fileObj, scale);
-        
-        setResults(prev => {
-          const updated = [...prev];
-          updated[i] = { ...updated[i], status: 'success', path: resData.path, engine: resData.engine };
-          return updated;
-        });
+        setResults(prev => prev.map(r => r.name === fileObj.name ? { ...r, status: 'success', path: resData.path, engine: resData.engine } : r));
       } catch (err: any) {
-        setResults(prev => {
-          const updated = [...prev];
-          updated[i] = { ...updated[i], status: 'error', error: err.message || "Failed" };
-          return updated;
-        });
+        setResults(prev => prev.map(r => r.name === fileObj.name ? { ...r, status: 'error', error: err.message || "Failed" } : r));
       }
 
       completed++;
@@ -785,7 +774,7 @@ export function ImageUpscaler() {
                 display: 'grid', 
                 gridTemplateColumns: '1fr 1fr 1.2fr', 
                 gap: '0.3rem', 
-                background: 'varc(--surface-2)', 
+                background: 'var(--surface-2)', 
                 padding: '0.25rem', 
                 borderRadius: '0.65rem',
                 border: '1px solid var(--glass-border)'

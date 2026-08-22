@@ -15,7 +15,20 @@ import {
   ChevronRight, 
   ArrowRight,
   Plus,
-  Trash2
+  Trash2,
+  Target,
+  Camera,
+  User,
+  Palette,
+  Maximize2,
+  ChevronDown,
+  Check,
+  Scale,
+  Focus,
+  SlidersHorizontal,
+  Gem,
+  Flame,
+  Layers
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -37,6 +50,21 @@ interface ResultItem {
   error?: string | null;
 }
 
+const LOCAL_MODEL_OPTIONS = [
+  { id: 'fast', label: 'Fast', desc: 'High-Speed (Resolution upscale only)', icon: Zap, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' },
+  { id: 'balanced', label: 'Balanced', desc: 'Smooth & Natural Detail Balance', icon: SlidersHorizontal, color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
+  { id: 'auto_model_detect', label: 'Auto Model Detect', desc: 'Smart AI Content Detection', icon: Target, color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },
+  { id: 'realesrgan-x4plus', label: 'General Photo', desc: 'RealESRGAN Default Model', icon: Camera, color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' },
+  { id: 'remacri', label: 'Portrait & Faces', desc: 'Remacri AI (Skin Textures)', icon: User, color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' },
+  { id: 'ultrasharp', label: 'Ultrasharp', desc: 'High Contrast & Fine Detail', icon: Gem, color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
+  { id: 'realesrgan-x4plus-anime', label: 'Anime & Vector Art', desc: 'RealESRGAN Anime Edition', icon: Palette, color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.12)' },
+];
+
+const OUTPUT_FORMAT_OPTIONS = [
+  { id: 'jpg', label: 'JPG / JPEG', desc: 'Standard compression (Smaller size)', icon: ImageIcon, color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },
+  { id: 'png', label: 'PNG', desc: 'Lossless quality (Maximum fidelity)', icon: Layers, color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
+];
+
 export function ImageUpscaler() {
   const [selectedFiles, setSelectedFiles] = useState<UpscaleFile[]>([]);
   const [outputFolder, setOutputFolder] = useState<string>("");
@@ -48,8 +76,10 @@ export function ImageUpscaler() {
   const [error, setError] = useState<string | null>(null);
   const [statusText, setStatusText] = useState<string>("");
   const [results, setResults] = useState<ResultItem[]>([]);
-  const [localModel, setLocalModel] = useState<string>("mata_ai");
+  const [localModel, setLocalModel] = useState<string>("fast");
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [outputFormat, setOutputFormat] = useState<string>("jpg");
+  const [isFormatDropdownOpen, setIsFormatDropdownOpen] = useState(false);
   const [currentFileProgress, setCurrentFileProgress] = useState<number>(0);
   const [completedCount, setCompletedCount] = useState<number>(0);
   const [activeIndex, setActiveIndex] = useState<number>(-1);
@@ -58,6 +88,21 @@ export function ImageUpscaler() {
 
   const upscaleMethod = "localNcnn";
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const formatDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) {
+        setIsModelDropdownOpen(false);
+      }
+      if (formatDropdownRef.current && !formatDropdownRef.current.contains(e.target as Node)) {
+        setIsFormatDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     selectedFiles.forEach(f => {
@@ -178,18 +223,45 @@ export function ImageUpscaler() {
       }
       
       let modelToUse = localModel;
-      if (localModel === 'mata_ai') {
-        const hasFace = /person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie/i.test(fileObj.name || '');
-        if (hasFace) modelToUse = 'mata_ai_face';
+      if (localModel === 'auto_model_detect' || localModel === 'auto_detect') {
+        const name = (fileObj.name || '').toLowerCase();
+        const isAnimeOrVector = /anime|vector|cartoon|illustration|illust|drawing|art|clip|graphic|\.svg|\.ai|\.eps/i.test(name);
+        const is3dRender = /3d|render|cgi|unreal|octane|cinema4d/i.test(name);
+        const hasFace = /person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie/i.test(name);
+
+        if (isAnimeOrVector) {
+          modelToUse = 'realesrgan-x4plus-anime';
+        } else if (is3dRender) {
+          modelToUse = 'realesrgan-x4plus';
+        } else if (hasFace) {
+          modelToUse = 'remacri';
+        } else {
+          modelToUse = 'ultrasharp';
+        }
+      } else if (localModel === 'fast') {
+        modelToUse = 'fast_sharp';
+      } else if (localModel === 'balanced') {
+        const name = (fileObj.name || '').toLowerCase();
+        const hasFace = /person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie/i.test(name);
+        modelToUse = hasFace ? 'remacri' : 'ultramix_balanced';
       }
       
       const pathArg = (fileObj as MockFile).path;
-      const resData = await window.electronAPI.upscaleLocalNcnn(pathArg, currentScale, modelToUse, outputFormat, outputFolder);
+      let effectiveSaveDir = outputFolder;
+      if (!effectiveSaveDir && pathArg) {
+        const normalizedPath = pathArg.replace(/\\/g, '/');
+        const lastSeparator = normalizedPath.lastIndexOf('/');
+        const folderPath = lastSeparator > -1 ? pathArg.substring(0, lastSeparator) : '.';
+        const pathSeparator = pathArg.includes('\\') ? '\\' : '/';
+        effectiveSaveDir = `${folderPath}${pathSeparator}Upscaled`;
+      }
+      
+      const resData = await window.electronAPI.upscaleLocalNcnn(pathArg, currentScale, modelToUse, outputFormat, effectiveSaveDir);
       if (!resData.success) {
         throw new Error(resData.error || "Local GPU upscaling failed");
       }
       
-      if (outputFolder) {
+      if (effectiveSaveDir) {
         return { success: true, path: resData.path, engine: 'localNcnn' };
       } else {
         const url = `data:image/${resData.format || 'jpeg'};base64,${resData.base64}`;
@@ -209,11 +281,6 @@ export function ImageUpscaler() {
 
   const startUpscaling = async () => {
     if (selectedFiles.length === 0) return;
-
-    if (!outputFolder && window.electronAPI) {
-      setError("Please select an output folder first.");
-      return;
-    }
 
     setIsProcessing(true);
     setProgress(0);
@@ -368,77 +435,316 @@ export function ImageUpscaler() {
               <h3 style={{ fontSize: '0.95rem', fontWeight: 800, margin: 0, color: 'var(--text-1)' }}>Upscale Settings</h3>
             </div>
             
-            {/* Local AI Model */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-2)', marginBottom: '0.4rem' }}>Local AI Model</label>
-              <div style={{ position: 'relative' }}>
-                <select
-                  value={localModel}
-                  disabled={isProcessing}
-                  onChange={(e) => setLocalModel(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.55rem 2rem 0.55rem 0.75rem',
-                    background: 'var(--surface-2)',
-                    border: '1px solid var(--glass-border)',
-                    borderRadius: '0.6rem',
-                    color: 'var(--text-1)',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    cursor: isProcessing ? 'not-allowed' : 'pointer',
-                    outline: 'none',
-                    appearance: 'none',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onFocus={(e: any) => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
-                  onBlur={(e: any) => { e.currentTarget.style.borderColor = 'var(--glass-border)'; }}
-                >
-                  <option value="mata_ai">✨ Mata AI (Smart Hybrid Auto-Detect)</option>
-                  <option value="realesrgan-x4plus">📸 General Photo (RealESRGAN Default)</option>
-                  <option value="remacri">📸 Photo Alternative (Remacri)</option>
-                  <option value="ultrasharp">✨ Ultrasharp (Aggressive detail)</option>
-                  <option value="ultramix_balanced">⚖️ Ultramix Balanced (Smooth & sharp)</option>
-                  <option value="realesr-animevideov3">⚡ Fast (Intel / Low-end GPU)</option>
-                  <option value="realesrgan-x4plus-anime">🎨 Anime / Vector Art</option>
-                </select>
-                <div style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-                   <ChevronRight style={{ width: '0.9rem', height: '0.9rem', color: 'var(--text-3)', transform: 'rotate(90deg)' }} />
-                </div>
-              </div>
+            {/* Local AI Model Custom Dropdown */}
+            <div style={{ position: 'relative', zIndex: 50 }} ref={modelDropdownRef}>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-2)', marginBottom: '0.4rem' }}>
+                Local AI Model
+              </label>
+
+              {(() => {
+                const currentOption = LOCAL_MODEL_OPTIONS.find(m => m.id === localModel) || LOCAL_MODEL_OPTIONS[0];
+                const CurrentIcon = currentOption.icon;
+
+                return (
+                  <>
+                    <button
+                      type="button"
+                      disabled={isProcessing}
+                      onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem 0.65rem',
+                        background: 'var(--surface-2)',
+                        border: isModelDropdownOpen ? '1.5px solid var(--primary)' : '1px solid var(--glass-border)',
+                        borderRadius: '0.6rem',
+                        color: 'var(--text-1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: isProcessing ? 'not-allowed' : 'pointer',
+                        outline: 'none',
+                        transition: 'all 0.2s ease',
+                        boxShadow: isModelDropdownOpen ? '0 0 0 3px var(--primary-glow)' : 'none'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', minWidth: 0 }}>
+                        <div style={{
+                          width: '1.75rem',
+                          height: '1.75rem',
+                          borderRadius: '0.45rem',
+                          background: currentOption.bg,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0
+                        }}>
+                          <CurrentIcon style={{ width: '0.95rem', height: '0.95rem', color: currentOption.color }} />
+                        </div>
+                        <div style={{ textAlign: 'left', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-1)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                            {currentOption.label}
+                          </div>
+                          <div style={{ fontSize: '0.66rem', color: 'var(--text-3)', fontWeight: 500, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                            {currentOption.desc}
+                          </div>
+                        </div>
+                      </div>
+
+                      <ChevronDown style={{ 
+                        width: '0.85rem', 
+                        height: '0.85rem', 
+                        color: 'var(--text-3)', 
+                        transform: isModelDropdownOpen ? 'rotate(180deg)' : 'none',
+                        transition: 'transform 0.2s ease',
+                        flexShrink: 0,
+                        marginLeft: '0.4rem'
+                      }} />
+                    </button>
+
+                    <AnimatePresence>
+                      {isModelDropdownOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                          transition={{ duration: 0.15 }}
+                          style={{
+                            position: 'absolute',
+                            top: 'calc(100% + 6px)',
+                            left: 0,
+                            right: 0,
+                            background: 'var(--surface-1)',
+                            border: '1px solid var(--glass-border)',
+                            borderRadius: '0.75rem',
+                            boxShadow: '0 12px 30px rgba(0, 0, 0, 0.18)',
+                            backdropFilter: 'blur(16px)',
+                            zIndex: 100,
+                            padding: '0.35rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.25rem',
+                            maxHeight: '320px',
+                            overflowY: 'auto'
+                          }}
+                        >
+                          {LOCAL_MODEL_OPTIONS.map((item) => {
+                            const IconComp = item.icon;
+                            const isSelected = localModel === item.id;
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => {
+                                  setLocalModel(item.id);
+                                  setIsModelDropdownOpen(false);
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: '0.6rem',
+                                  padding: '0.4rem 0.55rem',
+                                  borderRadius: '0.5rem',
+                                  border: isSelected ? `1px solid ${item.color}40` : '1px solid transparent',
+                                  background: isSelected ? item.bg : 'transparent',
+                                  cursor: 'pointer',
+                                  textAlign: 'left',
+                                  width: '100%',
+                                  transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = 'var(--surface-2)'; }}
+                                onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', minWidth: 0 }}>
+                                  <div style={{
+                                    width: '1.75rem',
+                                    height: '1.75rem',
+                                    borderRadius: '0.4rem',
+                                    background: item.bg,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0
+                                  }}>
+                                    <IconComp style={{ width: '0.95rem', height: '0.95rem', color: item.color }} />
+                                  </div>
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontSize: '0.8rem', fontWeight: isSelected ? 800 : 600, color: isSelected ? item.color : 'var(--text-1)' }}>
+                                      {item.label}
+                                    </div>
+                                    <div style={{ fontSize: '0.66rem', color: 'var(--text-3)', fontWeight: 500 }}>
+                                      {item.desc}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {isSelected && (
+                                  <Check style={{ width: '0.85rem', height: '0.85rem', color: item.color, flexShrink: 0 }} />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </>
+                );
+              })()}
             </div>
 
-            {/* Output Format */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-2)', marginBottom: '0.4rem' }}>Output Format</label>
-              <div style={{ position: 'relative' }}>
-                <select
-                  value={outputFormat}
-                  disabled={isProcessing}
-                  onChange={(e) => setOutputFormat(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.55rem 2rem 0.55rem 0.75rem',
-                    background: 'var(--surface-2)',
-                    border: '1px solid var(--glass-border)',
-                    borderRadius: '0.6rem',
-                    color: 'var(--text-1)',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    cursor: isProcessing ? 'not-allowed' : 'pointer',
-                    outline: 'none',
-                    appearance: 'none',
-                    transition: 'all 0.2s ease'
-                  }}
-                  onFocus={(e: any) => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
-                  onBlur={(e: any) => { e.currentTarget.style.borderColor = 'var(--glass-border)'; }}
-                >
-                  <option value="jpg">🖼️ JPG / JPEG (Smaller size)</option>
-                  <option value="png">🖼️ PNG (Lossless quality)</option>
-                </select>
-                <div style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-                   <ChevronRight style={{ width: '0.9rem', height: '0.9rem', color: 'var(--text-3)', transform: 'rotate(90deg)' }} />
-                </div>
-              </div>
+            {/* Output Format Custom Dropdown */}
+            <div style={{ position: 'relative', zIndex: 40 }} ref={formatDropdownRef}>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-2)', marginBottom: '0.4rem' }}>
+                Output Format
+              </label>
+
+              {(() => {
+                const currentFormat = OUTPUT_FORMAT_OPTIONS.find(f => f.id === outputFormat) || OUTPUT_FORMAT_OPTIONS[0];
+                const FormatIcon = currentFormat.icon;
+
+                return (
+                  <>
+                    <button
+                      type="button"
+                      disabled={isProcessing}
+                      onClick={() => setIsFormatDropdownOpen(!isFormatDropdownOpen)}
+                      style={{
+                        width: '100%',
+                        padding: '0.45rem 0.65rem',
+                        background: 'var(--surface-2)',
+                        border: isFormatDropdownOpen ? '1.5px solid var(--primary)' : '1px solid var(--glass-border)',
+                        borderRadius: '0.6rem',
+                        color: 'var(--text-1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: isProcessing ? 'not-allowed' : 'pointer',
+                        outline: 'none',
+                        transition: 'all 0.2s ease',
+                        boxShadow: isFormatDropdownOpen ? '0 0 0 3px var(--primary-glow)' : 'none'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', minWidth: 0 }}>
+                        <div style={{
+                          width: '1.75rem',
+                          height: '1.75rem',
+                          borderRadius: '0.45rem',
+                          background: currentFormat.bg,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0
+                        }}>
+                          <FormatIcon style={{ width: '0.95rem', height: '0.95rem', color: currentFormat.color }} />
+                        </div>
+                        <div style={{ textAlign: 'left', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-1)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                            {currentFormat.label}
+                          </div>
+                          <div style={{ fontSize: '0.66rem', color: 'var(--text-3)', fontWeight: 500, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                            {currentFormat.desc}
+                          </div>
+                        </div>
+                      </div>
+
+                      <ChevronDown style={{ 
+                        width: '0.85rem', 
+                        height: '0.85rem', 
+                        color: 'var(--text-3)', 
+                        transform: isFormatDropdownOpen ? 'rotate(180deg)' : 'none',
+                        transition: 'transform 0.2s ease',
+                        flexShrink: 0,
+                        marginLeft: '0.4rem'
+                      }} />
+                    </button>
+
+                    <AnimatePresence>
+                      {isFormatDropdownOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                          transition={{ duration: 0.15 }}
+                          style={{
+                            position: 'absolute',
+                            top: 'calc(100% + 6px)',
+                            left: 0,
+                            right: 0,
+                            background: 'var(--surface-1)',
+                            border: '1px solid var(--glass-border)',
+                            borderRadius: '0.75rem',
+                            boxShadow: '0 12px 30px rgba(0, 0, 0, 0.18)',
+                            backdropFilter: 'blur(16px)',
+                            zIndex: 100,
+                            padding: '0.35rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.25rem'
+                          }}
+                        >
+                          {OUTPUT_FORMAT_OPTIONS.map((item) => {
+                            const IconComp = item.icon;
+                            const isSelected = outputFormat === item.id;
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => {
+                                  setOutputFormat(item.id);
+                                  setIsFormatDropdownOpen(false);
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: '0.6rem',
+                                  padding: '0.4rem 0.55rem',
+                                  borderRadius: '0.5rem',
+                                  border: isSelected ? `1px solid ${item.color}40` : '1px solid transparent',
+                                  background: isSelected ? item.bg : 'transparent',
+                                  cursor: 'pointer',
+                                  textAlign: 'left',
+                                  width: '100%',
+                                  transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = 'var(--surface-2)'; }}
+                                onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', minWidth: 0 }}>
+                                  <div style={{
+                                    width: '1.75rem',
+                                    height: '1.75rem',
+                                    borderRadius: '0.4rem',
+                                    background: item.bg,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0
+                                  }}>
+                                    <IconComp style={{ width: '0.95rem', height: '0.95rem', color: item.color }} />
+                                  </div>
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontSize: '0.8rem', fontWeight: isSelected ? 800 : 600, color: isSelected ? item.color : 'var(--text-1)' }}>
+                                      {item.label}
+                                    </div>
+                                    <div style={{ fontSize: '0.66rem', color: 'var(--text-3)', fontWeight: 500 }}>
+                                      {item.desc}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {isSelected && (
+                                  <Check style={{ width: '0.85rem', height: '0.85rem', color: item.color, flexShrink: 0 }} />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </>
+                );
+              })()}
             </div>
             
             {/* Upscale Factor */}
@@ -557,11 +863,32 @@ export function ImageUpscaler() {
 
             {/* Output Folder */}
             <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-2)', marginBottom: '0.4rem' }}>Output Folder</label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-2)' }}>Output Folder</label>
+                {outputFolder && (
+                  <button
+                    type="button"
+                    onClick={() => setOutputFolder("")}
+                    disabled={isProcessing}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-3)',
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      padding: 0
+                    }}
+                    title="Reset to default source folder"
+                  >
+                    Reset to Default
+                  </button>
+                )}
+              </div>
               <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                 <input 
                   type="text" 
-                  value={outputFolder || "Save to Downloads..."} 
+                  value={outputFolder || "Auto: [Source Folder]/Upscaled"} 
                   readOnly 
                   style={{
                     flex: 1,
@@ -594,11 +921,14 @@ export function ImageUpscaler() {
                     justifyContent: 'center',
                     transition: 'all 0.2s ease'
                   }}
-                  title="Choose output folder"
+                  title="Choose custom output folder"
                 >
                   <Folder style={{ width: '1.05rem', height: '1.05rem' }} />
                 </button>
               </div>
+              <p style={{ fontSize: '0.68rem', color: 'var(--text-3)', marginTop: '0.35rem', lineHeight: 1.35, fontWeight: 500, margin: '0.35rem 0 0 0' }}>
+                💡 If not selected, saves into an "Upscaled" folder in the source directory.
+              </p>
             </div>
           </div>
 

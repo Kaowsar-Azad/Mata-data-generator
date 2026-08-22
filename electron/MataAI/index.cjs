@@ -138,11 +138,44 @@ function setupMataAi(ipcMain, fileLog) {
       const outDir = path.dirname(outputPath);
       if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
-      if (modelName === 'mata_ai_face') {
-        fileLog('[Mata AI] Face detected! Routing to true AI model (remacri) for realistic human details (33MB).');
+      if (modelName === 'auto_model_detect' || modelName === 'auto_detect') {
+        const isAnimeOrVector = isVectorOrAnimeFile(inputPath);
+        const name = path.basename(inputPath).toLowerCase();
+        const is3dRender = 
+          name.includes('3d') || name.includes('render') || name.includes('cgi') || 
+          name.includes('unreal') || name.includes('octane') || name.includes('cinema4d');
+        const hasFace = /person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie/i.test(name);
+
+        if (isAnimeOrVector) {
+          fileLog('[Mata AI] Auto Model Detect -> Vector/Anime detected: using realesrgan-x4plus-anime.');
+          modelName = 'realesrgan-x4plus-anime';
+        } else if (is3dRender) {
+          fileLog('[Mata AI] Auto Model Detect -> 3D Render detected: using realesrgan-x4plus.');
+          modelName = 'realesrgan-x4plus';
+        } else if (hasFace) {
+          fileLog('[Mata AI] Auto Model Detect -> Portrait/Face detected: using remacri.');
+          modelName = 'remacri';
+        } else {
+          fileLog('[Mata AI] Auto Model Detect -> Real Photo/General: using ultrasharp.');
+          modelName = 'ultrasharp';
+        }
+      } else if (modelName === 'fast') {
+        fileLog('[Mata AI] Fast selected -> using pure Sharp Lanczos3 (1-2s).');
+        modelName = 'fast_sharp';
+      } else if (modelName === 'balanced') {
+        const name = path.basename(inputPath).toLowerCase();
+        const hasFace = /person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie/i.test(name);
+        if (hasFace) {
+          fileLog('[Mata AI] Balanced -> Face detected: using remacri.');
+          modelName = 'remacri';
+        } else {
+          fileLog('[Mata AI] Balanced -> No face detected: using ultramix_balanced.');
+          modelName = 'ultramix_balanced';
+        }
+      } else if (modelName === 'mata_ai_face') {
+        fileLog('[Mata AI] Face detected! Routing to remacri for realistic human details.');
         modelName = 'remacri';
       } else if (modelName === 'mata_ai') {
-        fileLog('[Mata AI] No face detected. Routing to mid-sized AI model (realesrgan-x4plus-anime) for speed (9MB).');
         modelName = 'realesrgan-x4plus-anime';
       }
 

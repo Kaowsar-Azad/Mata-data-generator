@@ -54,10 +54,10 @@ interface ResultItem {
 
 const LOCAL_MODEL_OPTIONS = [
   { id: 'fast', label: 'Fast', desc: 'High-Speed (Resolution upscale only)', icon: Zap, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' },
-  { id: 'span', label: 'SPAN / NomosPhoto (Compact Natural AI)', desc: 'Super Fast & Natural Skin Texture (SIAT CAS)', icon: Sparkles, color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' },
-  { id: 'realsr', label: 'RealSR / BSR (Real-World Photo Restoration)', desc: 'Real Camera & Compressed JPEG Restoration', icon: Camera, color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.12)' },
-  { id: 'balanced', label: 'Balanced', desc: 'Smooth & Natural Detail Balance', icon: SlidersHorizontal, color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
+  { id: 'balanced', label: 'Balanced', desc: 'Recommended', icon: SlidersHorizontal, color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
   { id: 'auto_model_detect', label: 'Auto Model Detect', desc: 'Smart AI Content Detection', icon: Target, color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },
+  { id: 'span', label: 'SPAN (NomosPhoto)', desc: 'Ultra Fast & Realistic Skin Texture', icon: Sparkles, color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' },
+  { id: 'realsr', label: 'RealSR (Photo Restoration)', desc: 'Restores Real Camera & Compressed Photos', icon: Camera, color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.12)' },
   { id: 'realesrgan-x4plus', label: 'General Photo', desc: 'RealESRGAN Default Model', icon: Camera, color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' },
   { id: 'remacri', label: 'Portrait & Faces', desc: 'Remacri AI (Skin Textures)', icon: User, color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' },
   { id: 'ultrasharp', label: 'Ultrasharp', desc: 'High Contrast & Fine Detail', icon: Gem, color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
@@ -80,7 +80,7 @@ export function ImageUpscaler() {
   const [error, setError] = useState<string | null>(null);
   const [statusText, setStatusText] = useState<string>("");
   const [results, setResults] = useState<ResultItem[]>([]);
-  const [localModel, setLocalModel] = useState<string>("fast");
+  const [localModel, setLocalModel] = useState<string>("balanced");
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [outputFormat, setOutputFormat] = useState<string>("jpg");
   const [isFormatDropdownOpen, setIsFormatDropdownOpen] = useState(false);
@@ -89,6 +89,21 @@ export function ImageUpscaler() {
   const [activeIndex, setActiveIndex] = useState<number>(-1);
   const [fileDimensions, setFileDimensions] = useState<Record<string, { width: number; height: number; size?: string }>>({});
   const [filePreviews, setFilePreviews] = useState<Record<string, string>>({});
+  const [hardwareTier, setHardwareTier] = useState<string>("low-end");
+
+  useEffect(() => {
+    const fetchTier = async () => {
+      if (window.electronAPI?.getHardwareTier) {
+        try {
+          const tier = await window.electronAPI.getHardwareTier();
+          setHardwareTier(tier);
+        } catch (e) {
+          console.error("Failed to fetch hardware tier", e);
+        }
+      }
+    };
+    fetchTier();
+  }, []);
 
   const upscaleMethod = "localNcnn";
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -247,25 +262,57 @@ export function ImageUpscaler() {
       }
       
       let modelToUse = localModel;
-      if (localModel === 'auto_model_detect' || localModel === 'auto_detect') {
+      if (localModel === 'auto_model_detect' || localModel === 'auto_detect' || localModel === 'balanced') {
         const name = (fileObj.name || '').toLowerCase();
-        const isAnimeOrVector = /anime|vector|cartoon|illustration|illust|drawing|art|clip|graphic|\.svg|\.ai|\.eps/i.test(name);
-        const is3dRender = /3d|render|cgi|unreal|octane|cinema4d/i.test(name);
-        const hasFace = /person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie/i.test(name);
+        
+        // Default filename-based fallback
+        let isAnimeOrVector = /\b(anime|vector|cartoon|illustration|illust|drawing|art|clipart|graphic|digital|interface|ui|ux|logo|icon|design|abstract|pattern)\b|\.svg|\.ai|\.eps/i.test(name);
+        let is3dRender = /\b(3d|render|cgi|unreal|octane|cinema4d)\b/i.test(name);
+        let hasFace = /\b(person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie|men|women|guy|lady|child|kid|baby|toddler|teen|adult|couple|crowd|family|group|character|avatar)\b/i.test(name);
 
-        if (isAnimeOrVector) {
-          modelToUse = 'realesrgan-x4plus-anime';
-        } else if (is3dRender) {
-          modelToUse = 'realesrgan-x4plus';
-        } else if (hasFace) {
-          modelToUse = 'remacri';
+        // Try reading EXIF metadata for superior accuracy
+        if (pathArg && window.electronAPI?.readExif) {
+          try {
+            const exifRes = await window.electronAPI.readExif(pathArg);
+            if (exifRes?.success && exifRes.tags) {
+              const tags = exifRes.tags;
+              const keywordStr = (Array.isArray(tags.Keywords) ? tags.Keywords.join(',') : (tags.Keywords || '')).toString().toLowerCase();
+              const titleStr = (tags.Title || tags.ObjectName || '').toString().toLowerCase();
+              const allMeta = keywordStr.trim() ? keywordStr : titleStr;
+              
+              if (allMeta.trim()) {
+                hasFace = /\b(person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie|men|women|guy|lady|child|kid|baby|toddler|teen|adult|couple|crowd|family|group|character|avatar)\b/i.test(allMeta);
+                isAnimeOrVector = /\b(anime|vector|cartoon|illustration|illust|drawing|art|clipart|graphic|digital|interface|ui|ux|logo|icon|design|abstract|pattern)\b/i.test(allMeta);
+                is3dRender = /\b(3d|render|cgi|unreal|octane|cinema4d)\b/i.test(allMeta);
+              }
+            }
+          } catch (err) {
+            console.error('[Mata AI] Error reading EXIF for Upscaler:', err);
+          }
+        }
+
+        if (localModel === 'balanced') {
+          if (isAnimeOrVector) {
+            modelToUse = 'realesrgan-x4plus-anime';
+          } else if (hasFace) {
+            modelToUse = hardwareTier === 'high-end' ? 'realsr' : 'span';
+          } else {
+            modelToUse = 'span';
+          }
         } else {
-          modelToUse = 'ultrasharp';
+          // Auto Detect logic
+          if (isAnimeOrVector) {
+            modelToUse = 'realesrgan-x4plus-anime';
+          } else if (is3dRender) {
+            modelToUse = 'realesrgan-x4plus';
+          } else if (hasFace) {
+            modelToUse = 'remacri';
+          } else {
+            modelToUse = 'ultrasharp';
+          }
         }
       } else if (localModel === 'fast') {
         modelToUse = 'fast_sharp';
-      } else if (localModel === 'balanced') {
-        modelToUse = 'ultramix_balanced';
       }
 
       let effectiveSaveDir = outputFolder;

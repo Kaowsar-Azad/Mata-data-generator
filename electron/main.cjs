@@ -741,6 +741,48 @@ ipcMain.handle('check-file-exists', (event, filePath) => {
   }
 });
 
+ipcMain.handle('read-exif', async (event, filePath) => {
+  try {
+    const fs = require('fs');
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found' };
+    }
+    const exiftool = await getExifTool();
+    const tags = await exiftool.read(filePath);
+    return { success: true, tags };
+  } catch (error) {
+    fileLog(`[read-exif] Error reading metadata for ${filePath}:`, error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-hardware-tier', async () => {
+  try {
+    const os = require('os');
+    const { execSync } = require('child_process');
+    
+    const ramGB = os.totalmem() / (1024 * 1024 * 1024);
+    const cpuModel = (os.cpus()[0]?.model || '').toLowerCase();
+    let gpuName = '';
+    
+    try {
+      gpuName = execSync('wmic path win32_VideoController get name', { timeout: 3000 }).toString().toLowerCase();
+    } catch (e) {
+      // fallback if wmic fails
+    }
+
+    const isHighEndGPU = /nvidia|geforce|rtx|gtx|radeon rx/i.test(gpuName);
+    const isHighRAM = ramGB >= 24;
+
+    if (isHighEndGPU || isHighRAM) {
+      return 'high-end';
+    }
+    return 'low-end';
+  } catch (err) {
+    return 'low-end';
+  }
+});
+
 ipcMain.handle('write-metadata', async (event, filePath, title, description, keywords, categories) => {
   fileLog('[write-metadata] Called with:', { filePath, title, description, keywords, categories });
   try {

@@ -184,8 +184,8 @@ function setupMataAi(ipcMain, fileLog) {
           fileLog('[Mata AI] Balanced -> Face detected: using remacri.');
           modelName = 'remacri';
         } else {
-          fileLog('[Mata AI] Balanced -> No face detected: using ultramix_balanced.');
-          modelName = 'ultramix_balanced';
+          fileLog('[Mata AI] Balanced -> No face detected: using realesrgan-x4plus-anime.');
+          modelName = 'realesrgan-x4plus-anime';
         }
       } else if (modelName === 'mata_ai_face') {
         fileLog('[Mata AI] Face detected! Routing to remacri for realistic human details.');
@@ -245,15 +245,13 @@ function setupMataAi(ipcMain, fileLog) {
       const finalInputPath  = inputPath;
       const tempResizedPath = null;
 
-      // Tile size: Adaptive per engine for zero-crash stability and smooth progress updates
-      let tileSize = '512';
+      // Tile size: 256 ensures zero-crash stability and high GPU throughput on Intel UHD & laptop GPUs
+      let tileSize = '256';
       if (isRealSR) {
         tileSize = '128'; // RealSR has deep residual blocks; 128 ensures 100% stability on Intel UHD GPUs without VRAM crash
-      } else if (isSpan) {
-        tileSize = '256';
       }
-      // Multi-thread pipeline: 1 loader thread, 2 GPU inference threads, 2 save threads
-      const threadArgs = ['-j', '1:2:2'];
+      // Multi-thread pipeline: 1 loader, 1 GPU inference, 1 save (prevents CPU/GPU thread saturation)
+      const threadArgs = ['-j', '1:1:1'];
 
       let args;
       if (isSpan) {
@@ -329,21 +327,21 @@ function setupMataAi(ipcMain, fileLog) {
           SHIM_MCCOMPAT: '0x000000001',
           __NV_PRIME_RENDER_OFFLOAD: '1',
           __GLX_VENDOR_LIBRARY_NAME: 'nvidia',
-          // CPU / Thread optimizations
-          OMP_NUM_THREADS: String(Math.min(8, os.cpus().length || 4)),
+          // CPU / Thread optimizations — Leave at least 2 CPU cores free for Windows & Electron UI
+          OMP_NUM_THREADS: String(Math.max(1, (os.cpus().length || 4) - 2)),
           OMP_WAIT_POLICY: 'PASSIVE',                   // Efficient CPU thread management (no busy-spin starvation)
         };
 
         const proc = spawn(activeExePath, args, { cwd: activeCwd, env: spawnEnv });
 
-        // Set Above Normal Priority (Optimized priority without starving Electron UI)
+        // Set BELOW_NORMAL Priority to protect Windows OS, Electron UI, and mouse from freezing/lagging
         try {
           if (proc.pid && typeof os.setPriority === 'function') {
-            const priorityLevel = os.constants.priority.PRIORITY_ABOVE_NORMAL !== undefined 
-              ? os.constants.priority.PRIORITY_ABOVE_NORMAL 
-              : -10;
+            const priorityLevel = os.constants.priority.PRIORITY_BELOW_NORMAL !== undefined 
+              ? os.constants.priority.PRIORITY_BELOW_NORMAL 
+              : 10;
             os.setPriority(proc.pid, priorityLevel);
-            fileLog('[upscale-local-ncnn] Set Windows OS Priority to ABOVE_NORMAL for PID: ' + proc.pid);
+            fileLog('[upscale-local-ncnn] Set Windows OS Priority to BELOW_NORMAL (protecting UI smoothness) for PID: ' + proc.pid);
           }
         } catch (pErr) {
           fileLog('[upscale-local-ncnn] Priority allocation note: ' + pErr.message);

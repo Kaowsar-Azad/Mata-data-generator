@@ -59,7 +59,7 @@ const LOCAL_MODEL_OPTIONS = [
   { id: 'span', label: 'SPAN (NomosPhoto)', desc: 'Ultra Fast & Realistic Skin Texture', icon: Sparkles, color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' },
   { id: 'realsr', label: 'RealSR (Photo Restoration)', desc: 'Restores Real Camera & Compressed Photos', icon: Camera, color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.12)' },
   { id: 'realesrgan-x4plus', label: 'General Photo', desc: 'RealESRGAN Default Model', icon: Camera, color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' },
-  { id: 'remacri', label: 'Portrait & Faces', desc: 'Remacri AI (Skin Textures)', icon: User, color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' },
+  { id: 'remacri', label: 'Portrait & Faces', desc: 'Remacri (Skin Textures)', icon: User, color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' },
   { id: 'ultrasharp', label: 'Ultrasharp', desc: 'High Contrast & Fine Detail', icon: Gem, color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
   { id: 'realesrgan-x4plus-anime', label: 'Anime & Vector Art', desc: 'RealESRGAN Anime Edition', icon: Palette, color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.12)' },
 ];

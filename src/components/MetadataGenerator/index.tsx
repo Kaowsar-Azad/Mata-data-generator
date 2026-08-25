@@ -241,6 +241,13 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const [upscaleEngine, setUpscaleEngine] = useState(() => localStorage.getItem("upscaleEngine") || "mata_ai");
   const [engineDropdownOpen, setEngineDropdownOpen] = useState(false);
   const engineDropdownRef = useRef<any>(null);
+  const [hardwareTier, setHardwareTier] = useState('low-end');
+
+  useEffect(() => {
+    if (window.electronAPI?.getHardwareTier) {
+      window.electronAPI.getHardwareTier().then((tier: string) => setHardwareTier(tier)).catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: any) => {
@@ -399,48 +406,40 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     return 'ultrasharp';
   };
 
-  const hasFaceOrPerson = (metadata: any) => {
-    if (!metadata) return false;
-    const keywords = Array.isArray(metadata.keywords) 
-      ? metadata.keywords.map(k => k.toLowerCase()) 
-      : (typeof metadata.keywords === 'string' ? metadata.keywords.split(',').map(k => k.trim().toLowerCase()) : []);
+  const resolveUpscaleModel = (metadata: any, originalFileName: string, activeEngine: string, tier: string) => {
+    let modelName = 'span';
+    const keywordStr = (Array.isArray(metadata?.keywords) ? metadata.keywords.join(',') : (metadata?.keywords || '')).toString().toLowerCase();
+    const titleStr = (metadata?.title || '').toString().toLowerCase();
+    const allMeta = keywordStr.trim() ? keywordStr : titleStr;
     
-    const faceKeywords = [
-      'face', 'human', 'person', 'people', 'man', 'woman', 'girl', 'boy', 'portrait', 
-      'model', 'eye', 'eyes', 'hair', 'lips', 'mouth', 'nose', 'portraiture', 'headshot',
-      'selfie', 'smile', 'facial', 'couple', 'family', 'photographer', 'worker'
-    ];
-    
-    const hasKeyword = keywords.some(kw => faceKeywords.some(fkw => kw.includes(fkw)));
-    const textContext = `${metadata.title || ''} ${metadata.description || ''}`.toLowerCase();
-    const hasText = faceKeywords.some(fkw => textContext.includes(fkw));
-    
-    return hasKeyword || hasText;
-  };
+    let isAnime = false;
+    let hasFace = false;
+    let is3dRender = false;
 
-  const detectModelFromMetadata = (metadata: any, filePath: any) => {
-    const text = (`${filePath || ''} ${metadata?.title || ''} ${metadata?.keywords || ''} ${metadata?.description || ''}`).toLowerCase();
-    
-    const isAnimeOrVector = 
-      text.includes('anime') || 
-      text.includes('vector') || 
-      text.includes('illustration') || 
-      text.includes('cartoon') || 
-      text.includes('drawing') || 
-      text.includes('clipart') || 
-      text.includes('flat design') || 
-      text.includes('graphic');
-      
-    const is3dRender = 
-      text.includes('3d render') || 
-      text.includes('cgi') || 
-      text.includes('unreal engine') || 
-      text.includes('octane render') || 
-      text.includes('cinema4d');
+    if (allMeta.trim()) {
+      isAnime = /\b(anime|vector|cartoon|illustration|illust|drawing|art|clipart|graphic|digital|interface|ui|ux|logo|icon|design|abstract|pattern)\b/i.test(allMeta);
+      hasFace = /\b(person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie|men|women|guy|lady|child|kid|baby|toddler|teen|adult|couple|crowd|family|group|character|avatar)\b/i.test(allMeta);
+      is3dRender = /\b(3d|render|cgi|unreal|octane|cinema4d)\b/i.test(allMeta);
+    } else {
+      const fname = (originalFileName || '').toLowerCase();
+      isAnime = /\b(anime|vector|cartoon|illustration|illust|drawing|art|clipart|graphic|digital|interface|ui|ux|logo|icon|design|abstract|pattern)\b|\.svg|\.ai|\.eps/i.test(fname);
+      hasFace = /\b(person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie|men|women|guy|lady|child|kid|baby|toddler|teen|adult|couple|crowd|family|group|character|avatar)\b/i.test(fname);
+      is3dRender = /\b(3d|render|cgi|unreal|octane|cinema4d)\b/i.test(fname);
+    }
 
-    if (isAnimeOrVector) return 'realesrgan-x4plus-anime';
-    if (is3dRender) return 'realesrgan-x4plus';
-    return 'ultrasharp'; // Default for real photos
+    if (activeEngine === 'mata_ai') { // Balanced
+      if (isAnime) modelName = 'realesrgan-x4plus-anime';
+      else if (hasFace) modelName = tier === 'high-end' ? 'realsr' : 'span';
+      else modelName = 'span';
+    } else if (activeEngine === 'auto_detect') {
+      if (isAnime) modelName = 'realesrgan-x4plus-anime';
+      else if (is3dRender) modelName = 'realesrgan-x4plus';
+      else if (hasFace) modelName = 'remacri';
+      else modelName = 'ultrasharp';
+    } else {
+      modelName = pickMataAIModel(originalFileName, activeEngine);
+    }
+    return modelName;
   };
 
   useEffect(() => {
@@ -1144,14 +1143,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 const upscaledMimeType = outputFormat === 'png' ? 'image/png' : 'image/jpeg';
 
                 const smartNameForModel = img.file?.name || originalFileName;
-                let modelName;
-                if (activeEngine === 'auto_detect') {
-                  modelName = detectModelFromMetadata(metadata, smartNameForModel);
-                } else if (activeEngine === 'mata_ai') {
-                  modelName = hasFaceOrPerson(metadata) ? 'mata_ai_face' : 'mata_ai';
-                } else {
-                  modelName = pickMataAIModel(smartNameForModel, activeEngine);
-                }
+                let modelName = resolveUpscaleModel(metadata, smartNameForModel, activeEngine, hardwareTier);
                 
                 console.log(`[Mata AI] Engine: ${activeEngine} | Model: ${modelName} | File: ${smartNameForModel}`);
                 setImages(prev => prev.map(i => i.id === img.id ? { ...i, upscaleModel: modelName } : i));

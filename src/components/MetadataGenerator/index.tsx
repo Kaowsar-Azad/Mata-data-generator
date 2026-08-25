@@ -435,7 +435,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       if (isAnime) modelName = 'realesrgan-x4plus-anime';
       else if (is3dRender) modelName = 'realesrgan-x4plus';
       else if (hasFace) modelName = 'remacri';
-      else modelName = 'ultrasharp';
+      else modelName = tier === 'high-end' ? 'ultrasharp' : 'span';
     } else {
       modelName = pickMataAIModel(originalFileName, activeEngine);
     }

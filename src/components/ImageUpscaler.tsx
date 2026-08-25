@@ -308,7 +308,7 @@ export function ImageUpscaler() {
           } else if (hasFace) {
             modelToUse = 'remacri';
           } else {
-            modelToUse = 'ultrasharp';
+            modelToUse = hardwareTier === 'high-end' ? 'ultrasharp' : 'span';
           }
         }
       } else if (localModel === 'fast') {

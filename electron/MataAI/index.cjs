@@ -17,26 +17,6 @@ function detectIntelGPU() {
   }
 }
 
-// ─────────────────────────────────────────────
-// UTILITY: Detect Vector / Anime content
-// ─────────────────────────────────────────────
-function isVectorOrAnimeFile(filePath) {
-  const name = (filePath || '').toLowerCase();
-  return (
-    name.includes('anime')        ||
-    name.includes('vector')       ||
-    name.includes('cartoon')      ||
-    name.includes('illustration') ||
-    name.includes('illust')       ||
-    name.includes('drawing')      ||
-    name.includes('art')          ||
-    name.includes('clip')         ||
-    name.includes('graphic')      ||
-    name.endsWith('.svg')         ||
-    name.endsWith('.ai')          ||
-    name.endsWith('.eps')
-  );
-}
 
 // ─────────────────────────────────────────────
 // LAYER 1: Smart Pre-Processing
@@ -153,45 +133,49 @@ function setupMataAi(ipcMain, fileLog) {
       const outDir = path.dirname(outputPath);
       if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
-      if (modelName === 'auto_model_detect' || modelName === 'auto_detect') {
-        const isAnimeOrVector = isVectorOrAnimeFile(inputPath);
-        const name = path.basename(inputPath).toLowerCase();
-        const is3dRender = 
-          name.includes('3d') || name.includes('render') || name.includes('cgi') || 
-          name.includes('unreal') || name.includes('octane') || name.includes('cinema4d');
-        const hasFace = /person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie/i.test(name);
+      if (['auto_model_detect', 'auto_detect', 'balanced', 'mata_ai', 'mata_ai_face'].includes(modelName)) {
+        const os = require('os');
+        const { execSync } = require('child_process');
+        const ramGB = os.totalmem() / (1024 * 1024 * 1024);
+        let gpuName = '';
+        try { gpuName = execSync('wmic path win32_VideoController get name', { timeout: 3000 }).toString().toLowerCase(); } catch (e) {}
+        const isHighEnd = (/nvidia|geforce|rtx|gtx|radeon rx/i.test(gpuName) || ramGB >= 24);
 
-        if (isAnimeOrVector) {
-          fileLog('[Mata AI] Auto Model Detect -> Vector/Anime detected: using realesrgan-x4plus-anime.');
-          modelName = 'realesrgan-x4plus-anime';
-        } else if (is3dRender) {
-          fileLog('[Mata AI] Auto Model Detect -> 3D Render detected: using realesrgan-x4plus.');
-          modelName = 'realesrgan-x4plus';
-        } else if (hasFace) {
-          fileLog('[Mata AI] Auto Model Detect -> Portrait/Face detected: using remacri.');
-          modelName = 'remacri';
-        } else {
-          fileLog('[Mata AI] Auto Model Detect -> Real Photo/General: using ultrasharp.');
-          modelName = 'ultrasharp';
-        }
-      } else if (modelName === 'fast') {
-        fileLog('[Mata AI] Fast selected -> using pure Sharp Lanczos3 (1-2s).');
-        modelName = 'fast_sharp';
-      } else if (modelName === 'balanced') {
         const name = path.basename(inputPath).toLowerCase();
-        const hasFace = /person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie/i.test(name);
-        if (hasFace) {
-          fileLog('[Mata AI] Balanced -> Face detected: using remacri.');
-          modelName = 'remacri';
+        const isAnimeOrVector = /\b(anime|vector|cartoon|illustration|illust|drawing|art|clipart|graphic|digital|interface|ui|ux|logo|icon|design|abstract|pattern)\b|\.svg|\.ai|\.eps/i.test(name);
+        const hasFace = /\b(person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie|men|women|guy|lady|child|kid|baby|toddler|teen|adult|couple|crowd|family|group|character|avatar)\b/i.test(name);
+        const is3dRender = /\b(3d|render|cgi|unreal|octane|cinema4d)\b/i.test(name);
+
+        if (modelName === 'balanced' || modelName === 'mata_ai') {
+          if (isAnimeOrVector) {
+            fileLog(`[Mata AI] ${modelName} -> Vector/Anime detected: using realesrgan-x4plus-anime.`);
+            modelName = 'realesrgan-x4plus-anime';
+          } else if (hasFace) {
+            modelName = isHighEnd ? 'realsr' : 'span';
+            fileLog(`[Mata AI] ${modelName} -> Face detected: using ${modelName} (HighEnd=${isHighEnd}).`);
+          } else {
+            fileLog(`[Mata AI] ${modelName} -> Fallback: using span.`);
+            modelName = 'span';
+          }
+        } else if (modelName === 'mata_ai_face') {
+          modelName = isHighEnd ? 'realsr' : 'span';
+          fileLog(`[Mata AI] mata_ai_face -> using ${modelName} (HighEnd=${isHighEnd}).`);
         } else {
-          fileLog('[Mata AI] Balanced -> No face detected: using realesrgan-x4plus-anime.');
-          modelName = 'realesrgan-x4plus-anime';
+          // auto_detect
+          if (isAnimeOrVector) {
+            fileLog('[Mata AI] Auto Detect -> Vector/Anime detected: using realesrgan-x4plus-anime.');
+            modelName = 'realesrgan-x4plus-anime';
+          } else if (is3dRender) {
+            fileLog('[Mata AI] Auto Detect -> 3D Render detected: using realesrgan-x4plus.');
+            modelName = 'realesrgan-x4plus';
+          } else if (hasFace) {
+            fileLog('[Mata AI] Auto Detect -> Portrait/Face detected: using remacri.');
+            modelName = 'remacri';
+          } else {
+            modelName = isHighEnd ? 'ultrasharp' : 'span';
+            fileLog(`[Mata AI] Auto Detect -> Real Photo/General: using ${modelName} (HighEnd=${isHighEnd}).`);
+          }
         }
-      } else if (modelName === 'mata_ai_face') {
-        fileLog('[Mata AI] Face detected! Routing to remacri for realistic human details.');
-        modelName = 'remacri';
-      } else if (modelName === 'mata_ai') {
-        modelName = 'realesrgan-x4plus-anime';
       }
 
       if (modelName === 'fast_sharp') {

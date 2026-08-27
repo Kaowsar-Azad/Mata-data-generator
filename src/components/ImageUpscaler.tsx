@@ -53,18 +53,19 @@ interface ResultItem {
 }
 
 const LOCAL_MODEL_OPTIONS = [
-  { id: 'fast', label: 'Fast', desc: 'High-Speed (Resolution upscale only)', icon: Zap, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' },
-  { id: 'balanced', label: 'Balanced', desc: 'Recommended', icon: SlidersHorizontal, color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
+  { id: 'fast', label: 'Fast (Sharp)', desc: 'High-Speed (Resolution upscale only)', icon: Zap, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' },
+  { id: 'balanced', label: 'Balanced', desc: 'Recommended (Auto hardware & context matching)', icon: SlidersHorizontal, color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
   { id: 'auto_model_detect', label: 'Auto Model Detect', desc: 'Smart AI Content Detection', icon: Target, color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },
-  { id: 'span', label: 'SPAN (NomosPhoto)', desc: 'Ultra Fast & Realistic Skin Texture', icon: Sparkles, color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' },
-  { id: 'realsr', label: 'RealSR (Photo Restoration)', desc: 'Restores Real Camera & Compressed Photos', icon: Camera, color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.12)' },
-  { id: 'realesrgan-x4plus', label: 'General Photo', desc: 'RealESRGAN Default Model', icon: Camera, color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' },
-  { id: 'remacri', label: 'Portrait & Faces', desc: 'Remacri (Skin Textures)', icon: User, color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' },
+  { id: 'span', label: 'SPAN', desc: 'Ultra Fast & Realistic Skin Texture', icon: Sparkles, color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' },
+  { id: 'realsr', label: 'RealSR', desc: 'Photo Restoration & Compressed Photos', icon: Camera, color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.12)' },
+  { id: 'realesrgan-x4plus', label: 'RealESRGAN-x4plus', desc: 'General Photo (Default)', icon: Camera, color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' },
+  { id: 'remacri', label: 'Remacri', desc: 'Portrait, Faces & Skin Textures', icon: User, color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' },
   { id: 'ultrasharp', label: 'Ultrasharp', desc: 'High Contrast & Fine Detail', icon: Gem, color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
-  { id: 'realesrgan-x4plus-anime', label: 'Anime & Vector Art', desc: 'RealESRGAN Anime Edition', icon: Palette, color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.12)' },
+  { id: 'realesrgan-x4plus-anime', label: 'RealESRGAN-x4plus-Anime', desc: 'Anime & Vector Art', icon: Palette, color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.12)' },
 ];
 
 const OUTPUT_FORMAT_OPTIONS = [
+  { id: 'auto', label: 'Original Format', desc: 'Keep original file extension', icon: ImageIcon, color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
   { id: 'jpg', label: 'JPG / JPEG', desc: 'Standard compression (Smaller size)', icon: ImageIcon, color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },
   { id: 'png', label: 'PNG', desc: 'Lossless quality (Maximum fidelity)', icon: Layers, color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
 ];
@@ -82,7 +83,7 @@ export function ImageUpscaler() {
   const [results, setResults] = useState<ResultItem[]>([]);
   const [localModel, setLocalModel] = useState<string>("balanced");
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
-  const [outputFormat, setOutputFormat] = useState<string>("jpg");
+  const [outputFormat, setOutputFormat] = useState<string>("auto");
   const [isFormatDropdownOpen, setIsFormatDropdownOpen] = useState(false);
   const [currentFileProgress, setCurrentFileProgress] = useState<number>(0);
   const [completedCount, setCompletedCount] = useState<number>(0);
@@ -324,7 +325,14 @@ export function ImageUpscaler() {
         effectiveSaveDir = `${folderPath}${pathSeparator}Upscaled`;
       }
       
-      const resData = await window.electronAPI.upscaleLocalNcnn(pathArg, currentScale, modelToUse, outputFormat, effectiveSaveDir);
+      let resolvedFormat = outputFormat;
+      if (outputFormat === 'auto') {
+        const extMatch = fileObj.name.match(/\.([a-z0-9]+)$/i);
+        const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
+        resolvedFormat = (ext === 'png') ? 'png' : 'jpg';
+      }
+      
+      const resData = await window.electronAPI.upscaleLocalNcnn(pathArg, currentScale, modelToUse, resolvedFormat, effectiveSaveDir);
       if (!resData.success) {
         throw new Error(resData.error || "Local GPU upscaling failed");
       }

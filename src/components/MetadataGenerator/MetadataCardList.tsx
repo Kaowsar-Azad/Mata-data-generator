@@ -130,7 +130,7 @@ const MetadataCard = memo(({
               <div className="premium-indicator-spinner" />
               <Maximize2 className="w-2.5 h-2.5 premium-indicator-inner" />
             </div>
-            <span>Auto-Upscaling image to {upscaleScale}x{img.upscaleModel ? ` [${img.upscaleModel.replace('mata_ai_face', 'Balanced').replace('mata_ai', 'Balanced')}]` : ''}...{img.upscaleProgress !== undefined && img.upscaleProgress > 0 ? ` ${Math.round(img.upscaleProgress)}%` : ''}</span>
+            <span>Auto-Upscaling image to {upscaleScale}x{img.upscaleModel ? ` [${img.upscaleModel === 'balanced' ? 'Balanced' : img.upscaleModel}]` : ''}...{img.upscaleProgress !== undefined && img.upscaleProgress > 0 ? ` ${Math.round(img.upscaleProgress)}%` : ''}</span>
           </div>
         )}
         {img.status === "scanning" && (

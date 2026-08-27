@@ -133,7 +133,7 @@ function setupMataAi(ipcMain, fileLog) {
       const outDir = path.dirname(outputPath);
       if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
-      if (['auto_model_detect', 'auto_detect', 'balanced', 'mata_ai', 'mata_ai_face'].includes(modelName)) {
+      if (['auto_model_detect', 'auto_detect', 'balanced', 'mata_ai_face'].includes(modelName)) {
         const os = require('os');
         const { execSync } = require('child_process');
         const ramGB = os.totalmem() / (1024 * 1024 * 1024);
@@ -146,7 +146,7 @@ function setupMataAi(ipcMain, fileLog) {
         const hasFace = /\b(person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie|men|women|guy|lady|child|kid|baby|toddler|teen|adult|couple|crowd|family|group|character|avatar)\b/i.test(name);
         const is3dRender = /\b(3d|render|cgi|unreal|octane|cinema4d)\b/i.test(name);
 
-        if (modelName === 'balanced' || modelName === 'mata_ai') {
+        if (modelName === 'balanced') {
           if (isAnimeOrVector) {
             fileLog(`[Mata AI] ${modelName} -> Vector/Anime detected: using realesrgan-x4plus-anime.`);
             modelName = 'realesrgan-x4plus-anime';
@@ -375,7 +375,34 @@ function setupMataAi(ipcMain, fileLog) {
             }
           }
 
-          const fileCreated = fs.existsSync(outputPath);
+          let fileCreated = fs.existsSync(outputPath);
+
+          // Cleanup accidental duplicates created by buggy NCNN wrappers (e.g. creating .png when requested .jpg)
+          try {
+            const baseWithoutExt = outputPath.substring(0, outputPath.lastIndexOf('.'));
+            const extensions = ['.jpg', '.png', '.webp', '.jpeg'];
+            for (const ext of extensions) {
+              const altPath = baseWithoutExt + ext;
+              if (altPath !== outputPath && fs.existsSync(altPath)) {
+                if (fileCreated) {
+                  fs.unlinkSync(altPath); // Delete unwanted duplicate
+                  fileLog('[upscale-local-ncnn] Deleted unwanted duplicate format: ' + altPath);
+                } else {
+                  // NCNN only created the wrong format. Convert it to requested format.
+                  fileLog('[upscale-local-ncnn] NCNN ignored extension, converting ' + ext + ' to ' + outputFormat + '...');
+                  if (outputFormat === 'jpg' || outputFormat === 'jpeg') {
+                    await sharp(altPath).jpeg({ quality: 95 }).toFile(outputPath);
+                  } else {
+                    await sharp(altPath).png({ compressionLevel: 6 }).toFile(outputPath);
+                  }
+                  fs.unlinkSync(altPath);
+                  fileCreated = true;
+                }
+              }
+            }
+          } catch (cleanupErr) {
+            fileLog('[upscale-local-ncnn] Duplicate cleanup error: ' + cleanupErr.message);
+          }
 
           if (fileCreated) {
             // Fix RIFF/WebP -> JPG

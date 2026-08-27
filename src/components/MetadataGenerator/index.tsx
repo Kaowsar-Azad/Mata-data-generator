@@ -233,12 +233,20 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const autoRemoveRedRef = useRef(autoRemoveRed);
   autoRemoveRedRef.current = autoRemoveRed;
   const [embedScale, setEmbedScale] = useState(() => parseInt(localStorage.getItem("embedScale")) || 2);
-  const [embedEngine, setEmbedEngine] = useState(() => localStorage.getItem("embedEngine") || "mata_ai");
+  const [embedEngine, setEmbedEngine] = useState(() => {
+    let val = localStorage.getItem("embedEngine");
+    if (val === "mata_ai") val = "balanced";
+    return val || "balanced";
+  });
   const [embeddingCount, setEmbeddingCount] = useState(0);
   const isEmbedding = embeddingCount > 0;
   const [autoUpscale, setAutoUpscale] = useState(() => localStorage.getItem("autoUpscale") === "true");
   const [upscaleScale, setUpscaleScale] = useState(() => Math.min(parseInt(localStorage.getItem("upscaleScale")) || 2, 4));
-  const [upscaleEngine, setUpscaleEngine] = useState(() => localStorage.getItem("upscaleEngine") || "mata_ai");
+  const [upscaleEngine, setUpscaleEngine] = useState(() => {
+    let val = localStorage.getItem("upscaleEngine");
+    if (val === "mata_ai") val = "balanced";
+    return val || "balanced";
+  });
   const [engineDropdownOpen, setEngineDropdownOpen] = useState(false);
   const engineDropdownRef = useRef<any>(null);
   const [hardwareTier, setHardwareTier] = useState('low-end');
@@ -261,7 +269,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
   const UPSCALE_ENGINE_OPTIONS = [
     { id: 'fast', label: 'Fast', icon: Zap, color: '#d97706', desc: 'High-Speed Performance' },
-    { id: 'mata_ai', label: 'Balanced', icon: Sparkles, color: '#16a34a', desc: 'Smart AI Auto-Selection' },
+    { id: 'balanced', label: 'Balanced', icon: Sparkles, color: '#16a34a', desc: 'Smart AI Auto-Selection' },
     { id: 'auto_detect', label: 'Auto Detect', icon: Target, color: '#2563eb', desc: 'Auto Photo / Anime / 3D' },
   ];
 
@@ -427,7 +435,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       is3dRender = /\b(3d|render|cgi|unreal|octane|cinema4d)\b/i.test(fname);
     }
 
-    if (activeEngine === 'mata_ai') { // Balanced
+    if (activeEngine === 'balanced') { // Balanced
       if (isAnime) modelName = 'realesrgan-x4plus-anime';
       else if (hasFace) modelName = tier === 'high-end' ? 'realsr' : 'span';
       else modelName = 'span';
@@ -1100,7 +1108,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             }
 
             const activeScale = autoUpscale ? upscaleScale : (autoEmbedRef.current ? embedScale : 2);
-            const activeEngine = autoUpscale ? upscaleEngine : (autoEmbedRef.current ? embedEngine : 'mata_ai');
+            const activeEngine = autoUpscale ? upscaleEngine : (autoEmbedRef.current ? embedEngine : 'balanced');
             const targetPath = img.visualFile?.path || (!img.isEps && !img.isVideo ? img.file?.path : null);
             const needsUpscale = (autoUpscale && window.electronAPI && targetPath && !img.isVideo);
 
@@ -2642,10 +2650,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                             userSelect: 'none'
                           }}
                         >
-                          {upscaleEngine === 'mata_ai' && <Sparkles style={{ width: '0.82rem', height: '0.82rem', color: '#16a34a' }} />}
+                          {upscaleEngine === 'balanced' && <Sparkles style={{ width: '0.82rem', height: '0.82rem', color: '#16a34a' }} />}
                           {upscaleEngine === 'auto_detect' && <Target style={{ width: '0.82rem', height: '0.82rem', color: '#2563eb' }} />}
                           {upscaleEngine === 'fast' && <Zap style={{ width: '0.82rem', height: '0.82rem', color: '#d97706' }} />}
-                          <span>{upscaleEngine === 'mata_ai' ? 'Balanced' : (upscaleEngine === 'auto_detect' ? 'Auto Detect' : 'Fast')}</span>
+                          <span>{upscaleEngine === 'balanced' ? 'Balanced' : (upscaleEngine === 'auto_detect' ? 'Auto Detect' : 'Fast')}</span>
                           <ChevronDown style={{ width: '0.75rem', height: '0.75rem', transform: engineDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s ease', opacity: 0.7 }} />
                         </button>
 

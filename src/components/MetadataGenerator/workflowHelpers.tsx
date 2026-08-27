@@ -16,7 +16,7 @@ export function StatusBadge({ status, progress, upscaleModel }: any) {
       }`}
     >
       {status === "upscaling"
-        ? `upscaling${upscaleModel ? ` [${upscaleModel.replace('mata_ai_face', 'Balanced').replace('mata_ai', 'Balanced')}]` : ''}${progress !== undefined && progress > 0 ? ` (${Math.round(progress)}%)` : ''}`
+        ? `upscaling${upscaleModel ? ` [${upscaleModel === 'balanced' ? 'Balanced' : upscaleModel}]` : ''}${progress !== undefined && progress > 0 ? ` (${Math.round(progress)}%)` : ''}`
         : status === "upscale_queued" ? "Queued for Upscale" : status}
     </span>
   );

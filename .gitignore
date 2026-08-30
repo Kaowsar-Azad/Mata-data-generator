@@ -69,19 +69,5 @@ bin/test.zip
 bin/upscayl/output_*.jpg
 bin/upscayl/test_out.jpg
 
-# Build helper scripts
-update_groq_scoring.cjs
-download_gs.cjs
-download_models.cjs
-copy-gs.cjs
-list_gemini_models.js
-
 # ML/AI Models
 .models/
-
-# Sensitive App Logic & Prompts
-src/services/apis/
-src/services/promptEngine/
-src/services/geminiService.js
-src/services/trademarks.json
-src/services/apiUsageTracker.js

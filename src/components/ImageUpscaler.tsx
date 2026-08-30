@@ -12,7 +12,6 @@ import {
   Settings, 
   Zap, 
   CheckCircle2, 
-  ChevronRight, 
   ArrowRight,
   Plus,
   Trash2,
@@ -20,14 +19,10 @@ import {
   Camera,
   User,
   Palette,
-  Maximize2,
   ChevronDown,
   Check,
-  Scale,
-  Focus,
   SlidersHorizontal,
   Gem,
-  Flame,
   Layers,
   Square
 } from "lucide-react";
@@ -61,7 +56,8 @@ const LOCAL_MODEL_OPTIONS = [
   { id: 'realesrgan-x4plus', label: 'RealESRGAN-x4plus', desc: 'General Photo (Default)', icon: Camera, color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' },
   { id: 'remacri', label: 'Remacri', desc: 'Portrait, Faces & Skin Textures', icon: User, color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' },
   { id: 'ultrasharp', label: 'Ultrasharp', desc: 'High Contrast & Fine Detail', icon: Gem, color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
-  { id: 'realesrgan-x4plus-anime', label: 'RealESRGAN-x4plus-Anime', desc: 'Anime & Vector Art', icon: Palette, color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.12)' },
+  { id: 'realesrgan-x4plus-anime', label: 'RealESRGAN-x4plus-Anime', desc: 'Anime & Vector Art (4x Native)', icon: Palette, color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.12)' },
+  { id: 'realesr-animevideov3', label: 'RealESR-AnimeVideoV3', desc: 'Fast Anime (Supports 2x, 3x, 4x Native)', icon: Palette, color: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.12)' },
 ];
 
 const OUTPUT_FORMAT_OPTIONS = [
@@ -111,12 +107,31 @@ export function ImageUpscaler() {
   const modelDropdownRef = useRef<HTMLDivElement>(null);
   const formatDropdownRef = useRef<HTMLDivElement>(null);
   const isCancelledRef = useRef<boolean>(false);
+  const generationRef = useRef<number>(0);
+
+  const fileDimensionsRef = useRef(fileDimensions);
+  fileDimensionsRef.current = fileDimensions;
+
+  useEffect(() => {
+    return () => {
+      // Cleanup blob URLs on unmount to prevent memory leaks (Bug #4)
+      setFilePreviews(prev => {
+        Object.values(prev).forEach(url => {
+          if (url && url.startsWith('blob:')) URL.revokeObjectURL(url);
+        });
+        return {};
+      });
+    };
+  }, []);
 
   const handleStop = () => {
     isCancelledRef.current = true;
     setIsProcessing(false);
     setActiveIndex(-1);
     setStatusText("Upscaling stopped.");
+    if (window.electronAPI?.cancelUpscaleLocalNcnn) {
+      window.electronAPI.cancelUpscaleLocalNcnn();
+    }
   };
 
   useEffect(() => {
@@ -135,7 +150,7 @@ export function ImageUpscaler() {
   useEffect(() => {
     selectedFiles.forEach((f: any) => {
       const key = f.path || f.name;
-      if (!fileDimensions[key]) {
+      if (!fileDimensionsRef.current[key]) {
         let src = '';
         if (f.isElectron && f.path) {
           src = f.path.startsWith('http') || f.path.startsWith('data:')
@@ -187,7 +202,10 @@ export function ImageUpscaler() {
         const total = selectedFilesRef.current.length;
         if (total > 0) {
           setProgress(prevOverall => {
-            const currentOverall = Math.round((completedCountRef.current / total) * 100 + (val / total));
+            let currentOverall = Math.round((completedCountRef.current / total) * 100 + (val / total));
+            if (completedCountRef.current < total && currentOverall === 100) {
+              currentOverall = 99;
+            }
             return Math.min(100, Math.max(prevOverall, currentOverall));
           });
         }
@@ -228,10 +246,11 @@ export function ImageUpscaler() {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
     setSelectedFiles(prev => {
-      const existingNames = prev.map((f: any) => f.name);
-      const newFiles = files.filter(f => !existingNames.includes(f.name));
+      const existingKeys = prev.map((f: any) => `${f.name}-${f.size || 0}`);
+      const newFiles = files.filter(f => !existingKeys.includes(`${f.name}-${f.size || 0}`));
       return [...prev, ...newFiles];
     });
+    e.target.value = '';
   };
 
   const handleSelectFolder = async () => {
@@ -247,7 +266,25 @@ export function ImageUpscaler() {
     setSelectedFiles(prev => {
       const removed = prev[indexToRemove];
       if (removed) {
-        setResults(rPrev => rPrev.filter(r => r.name !== removed.name));
+        const removedKey = removed.path || removed.name;
+        setResults(rPrev => rPrev.filter(r => (r.fileObj?.path || r.name) !== removedKey));
+        
+        // Clean up object URL to prevent memory leak
+        setFilePreviews(prevPreviews => {
+          if (prevPreviews[removedKey] && prevPreviews[removedKey].startsWith('blob:')) {
+            URL.revokeObjectURL(prevPreviews[removedKey]);
+          }
+          const newPreviews = { ...prevPreviews };
+          delete newPreviews[removedKey];
+          return newPreviews;
+        });
+
+        // Clean up dimensions
+        setFileDimensions(prevDims => {
+          const newDims = { ...prevDims };
+          delete newDims[removedKey];
+          return newDims;
+        });
       }
       return prev.filter((_, idx) => idx !== indexToRemove);
     });
@@ -318,10 +355,9 @@ export function ImageUpscaler() {
 
       let effectiveSaveDir = outputFolder;
       if (!effectiveSaveDir && pathArg) {
-        const normalizedPath = pathArg.replace(/\\/g, '/');
-        const lastSeparator = normalizedPath.lastIndexOf('/');
-        const folderPath = lastSeparator > -1 ? pathArg.substring(0, lastSeparator) : '.';
         const pathSeparator = pathArg.includes('\\') ? '\\' : '/';
+        const lastSeparator = pathArg.lastIndexOf(pathSeparator);
+        const folderPath = lastSeparator > -1 ? pathArg.substring(0, lastSeparator) : '.';
         effectiveSaveDir = `${folderPath}${pathSeparator}Upscaled`;
       }
       
@@ -329,27 +365,18 @@ export function ImageUpscaler() {
       if (outputFormat === 'auto') {
         const extMatch = fileObj.name.match(/\.([a-z0-9]+)$/i);
         const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
-        resolvedFormat = (ext === 'png') ? 'png' : 'jpg';
+        resolvedFormat = (ext === 'png' || ext === 'webp') ? ext : 'jpg';
       }
       
       const resData = await window.electronAPI.upscaleLocalNcnn(pathArg, currentScale, modelToUse, resolvedFormat, effectiveSaveDir);
+      if (resData.cancelled) {
+        return { success: false, cancelled: true };
+      }
       if (!resData.success) {
         throw new Error(resData.error || "Local GPU upscaling failed");
       }
       
-      if (effectiveSaveDir) {
-        return { success: true, path: resData.path, engine: 'localNcnn' };
-      } else {
-        const url = `data:image/${resData.format || 'jpeg'};base64,${resData.base64}`;
-        const a = document.createElement('a');
-        a.href = url;
-        const lastDot = fileObj.name.lastIndexOf('.');
-        const ext = `.${resData.format || 'jpg'}`;
-        const baseName = lastDot > -1 ? fileObj.name.substring(0, lastDot) : fileObj.name;
-        a.download = `${baseName}_${currentScale}x_LocalGPU${ext}`;
-        a.click();
-        return { success: true, engine: 'localNcnn' };
-      }
+      return { success: true, path: resData.path, engine: 'localNcnn' };
     }
 
     throw new Error("No upscaler method available. Please use Local GPU mode.");
@@ -373,25 +400,38 @@ export function ImageUpscaler() {
     setResults(initialResults);
 
     isCancelledRef.current = false;
+    const currentGeneration = ++generationRef.current;
     let completed = 0;
 
     for (let i = 0; i < selectedFiles.length; i++) {
-      if (isCancelledRef.current) {
+      if (isCancelledRef.current || currentGeneration !== generationRef.current) {
         break;
       }
 
       const fileObj = selectedFiles[i];
+      if (!fileObj) continue;
+
+      const fileKey = fileObj.path || fileObj.name;
       setStatusText(`Processing ${fileObj.name} (${i + 1}/${selectedFiles.length})...`);
       setActiveIndex(i);
       setCurrentFileProgress(0);
       
-      setResults(prev => prev.map(r => r.name === fileObj.name ? { ...r, status: 'processing' } : r));
+      setResults(prev => prev.map(r => (r.fileObj?.path || r.name) === fileKey ? { ...r, status: 'processing' } : r));
 
       try {
         const resData = await upscaleSingleFile(fileObj, scale);
-        setResults(prev => prev.map(r => r.name === fileObj.name ? { ...r, status: 'success', path: resData.path, engine: resData.engine } : r));
+        if (resData.cancelled) {
+          setResults(prev => prev.map(r => (r.fileObj?.path || r.name) === fileKey ? { ...r, status: 'pending' } : r));
+          break;
+        }
+        setResults(prev => prev.map(r => (r.fileObj?.path || r.name) === fileKey ? { ...r, status: 'success', path: resData.path, engine: resData.engine } : r));
       } catch (err: any) {
-        setResults(prev => prev.map(r => r.name === fileObj.name ? { ...r, status: 'error', error: err.message || "Failed" } : r));
+        let errorMsg = err.message || "An error occurred during upscaling.";
+        if (errorMsg.length > 200 || errorMsg.includes("No space left on device") || errorMsg.includes("unable to write") || errorMsg.includes("unable to open for write")) {
+          errorMsg = "Upscaling failed: Your storage is full or an unexpected system error occurred. Please clear some disk space and try again.";
+        }
+        setResults(prev => prev.map(r => (r.fileObj?.path || r.name) === fileKey ? { ...r, status: 'error', error: errorMsg } : r));
+        setError(errorMsg);
       }
 
       completed++;
@@ -399,7 +439,9 @@ export function ImageUpscaler() {
       setProgress(Math.round((completed / selectedFiles.length) * 100));
     }
 
-    setStatusText("Upscaling complete!");
+    if (!isCancelledRef.current) {
+      setStatusText("Upscaling complete!");
+    }
     setIsProcessing(false);
     setActiveIndex(-1);
   };
@@ -408,11 +450,11 @@ export function ImageUpscaler() {
     const resultItem = results[index];
     if (!resultItem || resultItem.status !== 'error') return;
 
+    isCancelledRef.current = false;
     setIsProcessing(true);
     setStatusText(`Retrying ${resultItem.name}...`);
     setCurrentFileProgress(0);
     setActiveIndex(index);
-    setCompletedCount(0);
     
     setResults(prev => {
       const updated = [...prev];
@@ -420,8 +462,10 @@ export function ImageUpscaler() {
       return updated;
     });
 
+    const fileKey = resultItem.fileObj?.path || resultItem.name;
+
     try {
-      const fileObj = selectedFiles.find(f => f.name === resultItem.name) || resultItem.fileObj;
+      const fileObj = selectedFiles.find(f => (f.path || f.name) === fileKey) || resultItem.fileObj;
       if (!fileObj) {
         throw new Error("Original file reference not found.");
       }
@@ -433,13 +477,19 @@ export function ImageUpscaler() {
         updated[index] = { ...updated[index], status: 'success', path: resData.path, engine: resData.engine };
         return updated;
       });
+      setCompletedCount(prev => prev + 1);
       setStatusText("Retry complete!");
     } catch (err: any) {
+      let errorMsg = err.message || "An error occurred during upscaling.";
+      if (errorMsg.length > 200 || errorMsg.includes("No space left on device") || errorMsg.includes("unable to write") || errorMsg.includes("unable to open for write")) {
+        errorMsg = "Upscaling failed: Your storage is full or an unexpected system error occurred. Please clear some disk space and try again.";
+      }
       setResults(prev => {
         const updated = [...prev];
-        updated[index] = { ...updated[index], status: 'error', error: err.message || "Failed" };
+        updated[index] = { ...updated[index], status: 'error', error: errorMsg };
         return updated;
       });
+      setError(errorMsg);
       setStatusText("Retry failed.");
     } finally {
       setIsProcessing(false);
@@ -461,7 +511,7 @@ export function ImageUpscaler() {
       gap: '1.25rem'
     }}>
       <style>{`
-        .upscaler-grid {
+        .mata-upscaler-grid {
           display: grid;
           grid-template-columns: 290px 1fr;
           gap: 1.25rem;
@@ -471,20 +521,20 @@ export function ImageUpscaler() {
           box-sizing: border-box;
         }
         @media (max-width: 880px) {
-          .upscaler-grid {
+          .mata-upscaler-grid {
             grid-template-columns: 1fr;
           }
         }
-        .custom-file-list::-webkit-scrollbar {
+        .mata-file-list::-webkit-scrollbar {
           width: 6px;
         }
-        .custom-file-list::-webkit-scrollbar-thumb {
+        .mata-file-list::-webkit-scrollbar-thumb {
           background: rgba(150, 150, 150, 0.2);
           border-radius: 4px;
         }
       `}</style>
 
-      <div className="upscaler-grid">
+      <div className="mata-upscaler-grid">
         
         {/* Left Column: Settings Panel (Visually on Left) */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', order: 1 }}>
@@ -839,7 +889,11 @@ export function ImageUpscaler() {
                     <button
                       key={val}
                       type="button"
-                      onClick={() => { setScale(val); setIsCustomScale(false); }}
+                      onClick={() => { 
+                        setScale(val); 
+                        setCustomScaleValue(val);
+                        setIsCustomScale(false); 
+                      }}
                       disabled={isProcessing}
                       style={{
                         padding: '0.45rem 0.5rem',
@@ -926,6 +980,7 @@ export function ImageUpscaler() {
               )}
               <p style={{ fontSize: '0.68rem', color: 'var(--text-3)', marginTop: '0.45rem', lineHeight: 1.35, fontWeight: 500, margin: '0.45rem 0 0 0' }}>
                 💡 2x is optimal for photo clarity. 4x or higher is best for low-res images.
+                {scale > 4 && <span style={{ color: 'var(--danger)', display: 'block', marginTop: '0.2rem' }}>⚠️ <strong>Warning:</strong> Scaling above 4x uses standard interpolation and may not add AI details.</span>}
               </p>
             </div>
 
@@ -956,7 +1011,7 @@ export function ImageUpscaler() {
               <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                 <input 
                   type="text" 
-                  value={outputFolder || "Auto: [Source Folder]/Upscaled"} 
+                  value={outputFolder || "Default: Source Folder/Upscaled"} 
                   readOnly 
                   style={{
                     flex: 1,
@@ -1016,17 +1071,17 @@ export function ImageUpscaler() {
           <button
             type="button"
             onClick={startUpscaling}
-            disabled={isProcessing || selectedFiles.length === 0}
+            disabled={isProcessing || selectedFiles.length === 0 || (completedCount === selectedFiles.length && selectedFiles.length > 0)}
             style={{
               width: '100%',
               padding: '0.85rem',
-              background: 'linear-gradient(135deg, var(--primary), #3b82f6)',
+              background: (completedCount === selectedFiles.length && selectedFiles.length > 0 && !isProcessing) ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, var(--primary), #3b82f6)',
               color: '#fff',
               border: 'none',
               borderRadius: '0.85rem',
               fontWeight: 800,
               fontSize: '0.92rem',
-              cursor: (isProcessing || selectedFiles.length === 0) ? 'not-allowed' : 'pointer',
+              cursor: (isProcessing || selectedFiles.length === 0 || (completedCount === selectedFiles.length && selectedFiles.length > 0)) ? 'not-allowed' : 'pointer',
               opacity: (isProcessing || selectedFiles.length === 0) ? 0.6 : 1,
               display: 'flex',
               alignItems: 'center',
@@ -1044,6 +1099,8 @@ export function ImageUpscaler() {
                 <span>{progress}% Processing</span>
                 <div style={{ position: 'absolute', bottom: 0, left: 0, height: '3.5px', background: 'rgba(255,255,255,0.6)', width: `${progress}%`, transition: 'width 0.3s ease' }} />
               </>
+            ) : completedCount === selectedFiles.length && selectedFiles.length > 0 ? (
+              <><CheckCircle2 style={{ width: '1.1rem', height: '1.1rem' }} /> All Upscaled Successfully</>
             ) : (
               <><Zap style={{ width: '1.1rem', height: '1.1rem' }} /> Start Upscaling {selectedFiles.length > 0 ? `(${selectedFiles.length})` : ''}</>
             )}
@@ -1057,6 +1114,19 @@ export function ImageUpscaler() {
           {selectedFiles.length === 0 ? (
             <div 
               onClick={handleSelectFilesClick}
+              onDragOver={(e: any) => { e.preventDefault(); e.stopPropagation(); }}
+              onDrop={(e: any) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  const files = Array.from(e.dataTransfer.files) as File[];
+                  setSelectedFiles(prev => {
+                    const existingKeys = prev.map((f: any) => `${f.name}-${f.size || 0}`);
+                    const newFiles = files.filter(f => !existingKeys.includes(`${f.name}-${f.size || 0}`));
+                    return [...prev, ...newFiles];
+                  });
+                }
+              }}
               style={{
                 background: 'linear-gradient(145deg, var(--surface-1), var(--surface-2))',
                 border: '2px dashed rgba(37, 99, 235, 0.3)',
@@ -1104,14 +1174,6 @@ export function ImageUpscaler() {
                   JPG, PNG, WEBP
                 </div>
               </div>
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleWebFileInput} 
-                multiple 
-                accept="image/jpeg,image/png,image/webp" 
-                style={{ display: 'none' }} 
-              />
             </div>
           ) : (
             /* Selected Files Container: Replaces dropzone entirely when files are selected */
@@ -1163,25 +1225,30 @@ export function ImageUpscaler() {
                     fontSize: '0.75rem', 
                     fontWeight: 700 
                   }}>
-                    <Download style={{ width: '0.8rem', height: '0.8rem' }} /> {selectedFiles.length} Selected
+                    <Layers style={{ width: '0.8rem', height: '0.8rem' }} /> {selectedFiles.length} Selected
                   </span>
 
                   {/* 2. Upscale Done Counter Badge */}
-                  <span style={{ 
-                    color: results.filter(r => r.status === 'success').length > 0 ? '#10b981' : '#3b82f6', 
-                    background: results.filter(r => r.status === 'success').length > 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.08)', 
-                    border: results.filter(r => r.status === 'success').length > 0 ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(59, 130, 246, 0.3)', 
-                    padding: '3px 9px', 
-                    borderRadius: '6px', 
-                    display: 'inline-flex', 
-                    alignItems: 'center', 
-                    gap: '4px', 
-                    fontSize: '0.75rem', 
-                    fontWeight: 700,
-                    transition: 'all 0.2s ease'
-                  }}>
-                    <CheckCircle2 style={{ width: '0.8rem', height: '0.8rem' }} /> Upscale Done ({results.filter(r => r.status === 'success').length})
-                  </span>
+                  {(() => {
+                    const successCount = results.filter(r => r.status === 'success').length;
+                    return (
+                      <span style={{ 
+                        color: successCount > 0 ? '#10b981' : '#3b82f6', 
+                        background: successCount > 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(59, 130, 246, 0.08)', 
+                        border: successCount > 0 ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(59, 130, 246, 0.3)', 
+                        padding: '3px 9px', 
+                        borderRadius: '6px', 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: '4px', 
+                        fontSize: '0.75rem', 
+                        fontWeight: 700,
+                        transition: 'all 0.2s ease'
+                      }}>
+                        <CheckCircle2 style={{ width: '0.8rem', height: '0.8rem' }} /> Upscale Done ({successCount})
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
@@ -1235,8 +1302,13 @@ export function ImageUpscaler() {
                       <button 
                         type="button"
                         onClick={() => {
+                          Object.values(filePreviews).forEach(url => {
+                            if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+                          });
                           setSelectedFiles([]);
                           setResults([]);
+                          setFilePreviews({});
+                          setFileDimensions({});
                           setProgress(0);
                           setCompletedCount(0);
                           setCurrentFileProgress(0);
@@ -1268,7 +1340,7 @@ export function ImageUpscaler() {
 
               {/* Rows List */}
               <div 
-                className="custom-file-list"
+                className="mata-file-list"
                 style={{ 
                   maxHeight: '440px', 
                   overflowY: 'auto', 
@@ -1288,11 +1360,11 @@ export function ImageUpscaler() {
                   const targetW = origW ? origW * scale : 0;
                   const targetH = origH ? origH * scale : 0;
                   const isCurrent = activeIndex === i;
-                  const result = results.find(r => r.name === f.name);
+                  const result = results.find(r => (r.fileObj?.path || r.name) === key);
 
                   return (
                     <div 
-                      key={f.name + i}
+                      key={key}
                       style={{ 
                         position: 'relative',
                         borderRadius: '0.75rem',
@@ -1308,6 +1380,7 @@ export function ImageUpscaler() {
                               : (result?.status === 'error' ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--glass-border)')),
                         display: 'flex',
                         flexDirection: 'column',
+                        flexShrink: 0,
                         overflow: 'hidden',
                         padding: '0.6rem 0.85rem',
                         boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
@@ -1464,19 +1537,45 @@ export function ImageUpscaler() {
                               <CheckCircle2 style={{ width: '0.8rem', height: '0.8rem' }} /> Done
                             </span>
                           ) : result?.status === 'error' ? (
-                            <span style={{ 
-                              fontSize: '0.75rem', 
-                              color: 'var(--danger)', 
-                              fontWeight: 800, 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              gap: '0.25rem',
-                              background: 'rgba(239,68,68,0.1)',
-                              padding: '0.25rem 0.55rem',
-                              borderRadius: '0.4rem'
-                            }}>
-                              <AlertCircle style={{ width: '0.8rem', height: '0.8rem' }} /> Error
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <span style={{ 
+                                fontSize: '0.75rem', 
+                                color: 'var(--danger)', 
+                                fontWeight: 800, 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '0.25rem',
+                                background: 'rgba(239,68,68,0.1)',
+                                padding: '0.25rem 0.55rem',
+                                borderRadius: '0.4rem'
+                              }}>
+                                <AlertCircle style={{ width: '0.8rem', height: '0.8rem' }} /> Error
+                              </span>
+                              {!isProcessing && (
+                                <button 
+                                  type="button"
+                                  onClick={(e: any) => { e.stopPropagation(); retryUpscale(i); }}
+                                  style={{
+                                    background: 'var(--surface-1)',
+                                    border: '1px solid var(--glass-border)',
+                                    color: 'var(--text-2)',
+                                    cursor: 'pointer',
+                                    fontSize: '0.7rem',
+                                    fontWeight: 700,
+                                    padding: '0.25rem 0.5rem',
+                                    borderRadius: '0.4rem',
+                                    transition: 'all 0.2s ease',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.2rem'
+                                  }}
+                                  onMouseEnter={(e: any) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.borderColor = 'var(--primary)'; }}
+                                  onMouseLeave={(e: any) => { e.currentTarget.style.color = 'var(--text-2)'; e.currentTarget.style.borderColor = 'var(--glass-border)'; }}
+                                >
+                                  <RefreshCw style={{ width: '0.7rem', height: '0.7rem' }} /> Retry
+                                </button>
+                              )}
+                            </div>
                           ) : null}
 
                           {!isProcessing && (

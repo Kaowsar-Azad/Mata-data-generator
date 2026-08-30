@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveAllKeys: (allKeys) => ipcRenderer.invoke('save-all-keys', allKeys),
   loadAllKeys: () => ipcRenderer.invoke('load-all-keys'),
   writeMetadata: (filePath, title, description, keywords, categories) => ipcRenderer.invoke('write-metadata', filePath, title, description, keywords, categories),
+  readExif: (filePath) => ipcRenderer.invoke('read-exif', filePath).catch(() => ({ success: false })),
+  getHardwareTier: () => ipcRenderer.invoke('get-hardware-tier').catch(() => 'low-end'),
   checkFileExists: (filePath) => ipcRenderer.invoke('check-file-exists', filePath),
   saveFtpConfig: (config) => ipcRenderer.invoke('save-ftp-config', config),
   getFtpConfig: () => ipcRenderer.invoke('get-ftp-config'),
@@ -32,6 +34,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveFile: (filePath, bufferArray) => ipcRenderer.invoke('save-file', filePath, bufferArray),
   getImageDimensions: (filePath) => ipcRenderer.invoke('get-image-dimensions', filePath),
   setUploadConcurrency: (concurrency) => ipcRenderer.invoke('set-upload-concurrency', concurrency),
-  upscaleLocalNcnn: (filePath, scale, modelName, format, saveDir) => ipcRenderer.invoke('upscale-local-ncnn', filePath, scale, modelName, format, saveDir)
+  upscaleLocalNcnn: (filePath, scale, modelName, format, saveDir) => ipcRenderer.invoke('upscale-local-ncnn', filePath, scale, modelName, format, saveDir),
+  cancelUpscaleLocalNcnn: () => ipcRenderer.invoke('cancel-upscale-local-ncnn'),
+  onUpscaleProgress: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('upscale-progress', listener);
+    return () => {
+      ipcRenderer.removeListener('upscale-progress', listener);
+    };
+  }
 });
 

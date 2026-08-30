@@ -5,61 +5,6 @@ const os = require('os');
 const sharp = require('sharp');
 
 // ─────────────────────────────────────────────
-// UTILITY: Intel GPU Detection (for fallback)
-// ─────────────────────────────────────────────
-function detectIntelGPU() {
-  try {
-    const { execSync } = require('child_process');
-    const stdout = execSync('wmic path win32_VideoController get name', { timeout: 3000 }).toString();
-    return stdout.toLowerCase().includes('intel');
-  } catch (e) {
-    return false;
-  }
-}
-
-
-// ─────────────────────────────────────────────
-// LAYER 1: Smart Pre-Processing
-// Resize large images before NCNN to reduce GPU time.
-// NCNN will still 4x; we size input so output ~ origW * scale.
-// ─────────────────────────────────────────────
-const PRE_RESIZE_THRESHOLD = 1500; // longest side in px — pre-resize aggressively for speed
-
-async function smartPreProcess(inputPath, scale, fileLog) {
-  const meta = await sharp(inputPath).metadata();
-  const longestSide = Math.max(meta.width, meta.height);
-
-  if (longestSide <= PRE_RESIZE_THRESHOLD) {
-    return { path: inputPath, tempPath: null };
-  }
-
-  // Feed size so that NCNN 4x output === origSize * scale
-  const targetFeedW = Math.round(meta.width  * scale / 4);
-  const targetFeedH = Math.round(meta.height * scale / 4);
-
-  if (targetFeedW >= meta.width && targetFeedH >= meta.height) {
-    return { path: inputPath, tempPath: null };
-  }
-
-  const tempPath = inputPath + '.mata_pre.tmp.png';
-  fileLog('[Mata AI] Pre-process: ' + meta.width + 'x' + meta.height + ' -> ' + targetFeedW + 'x' + targetFeedH + ' before NCNN');
-
-  await sharp(inputPath)
-    .resize(targetFeedW, targetFeedH, {
-      kernel: sharp.kernel.lanczos3,
-      fastShrinkOnLoad: false,
-      withoutEnlargement: false,
-    })
-    .png()
-    .toFile(tempPath);
-
-  fileLog('[Mata AI] Pre-process done. Temp: ' + tempPath);
-  return { path: tempPath, tempPath };
-}
-
-
-
-// ─────────────────────────────────────────────
 // Sharp Fallback Upscaler
 // ─────────────────────────────────────────────
 async function upscaleLocalHighFidelitySharp(inputPath, outputPath, scale, outputFormat, fileLog) {
@@ -89,7 +34,22 @@ async function upscaleLocalHighFidelitySharp(inputPath, outputPath, scale, outpu
 // ─────────────────────────────────────────────
 // IPC HANDLER: upscale-local-ncnn
 // ─────────────────────────────────────────────
+let activeUpscaleProc = null;
+
 function setupMataAi(ipcMain, fileLog) {
+  ipcMain.handle('cancel-upscale-local-ncnn', () => {
+    if (activeUpscaleProc) {
+      try {
+        fileLog('[Mata AI] Canceling active upscale process (PID: ' + activeUpscaleProc.pid + ')');
+        activeUpscaleProc.killedByCancel = true;
+        activeUpscaleProc.kill('SIGKILL');
+      } catch (err) {
+        fileLog('[Mata AI] Error killing process: ' + err.message);
+      }
+      activeUpscaleProc = null;
+    }
+  });
+
   ipcMain.handle('toggle-devtools', (event) => {
     try {
       const { BrowserWindow } = require('electron');
@@ -132,51 +92,6 @@ function setupMataAi(ipcMain, fileLog) {
 
       const outDir = path.dirname(outputPath);
       if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-
-      if (['auto_model_detect', 'auto_detect', 'balanced', 'mata_ai_face'].includes(modelName)) {
-        const os = require('os');
-        const { execSync } = require('child_process');
-        const ramGB = os.totalmem() / (1024 * 1024 * 1024);
-        let gpuName = '';
-        try { gpuName = execSync('wmic path win32_VideoController get name', { timeout: 3000 }).toString().toLowerCase(); } catch (e) {}
-        const isHighEnd = (/nvidia|geforce|rtx|gtx|radeon rx/i.test(gpuName) || ramGB >= 24);
-
-        const name = path.basename(inputPath).toLowerCase();
-        const isAnimeOrVector = /\b(anime|vector|cartoon|illustration|illust|drawing|art|clipart|graphic|digital|interface|ui|ux|logo|icon|design|abstract|pattern)\b|\.svg|\.ai|\.eps/i.test(name);
-        const hasFace = /\b(person|portrait|face|human|man|woman|girl|boy|people|model|headshot|selfie|men|women|guy|lady|child|kid|baby|toddler|teen|adult|couple|crowd|family|group|character|avatar)\b/i.test(name);
-        const is3dRender = /\b(3d|render|cgi|unreal|octane|cinema4d)\b/i.test(name);
-
-        if (modelName === 'balanced') {
-          if (isAnimeOrVector) {
-            fileLog(`[Mata AI] ${modelName} -> Vector/Anime detected: using realesrgan-x4plus-anime.`);
-            modelName = 'realesrgan-x4plus-anime';
-          } else if (hasFace) {
-            modelName = isHighEnd ? 'realsr' : 'span';
-            fileLog(`[Mata AI] ${modelName} -> Face detected: using ${modelName} (HighEnd=${isHighEnd}).`);
-          } else {
-            fileLog(`[Mata AI] ${modelName} -> Fallback: using span.`);
-            modelName = 'span';
-          }
-        } else if (modelName === 'mata_ai_face') {
-          modelName = isHighEnd ? 'realsr' : 'span';
-          fileLog(`[Mata AI] mata_ai_face -> using ${modelName} (HighEnd=${isHighEnd}).`);
-        } else {
-          // auto_detect
-          if (isAnimeOrVector) {
-            fileLog('[Mata AI] Auto Detect -> Vector/Anime detected: using realesrgan-x4plus-anime.');
-            modelName = 'realesrgan-x4plus-anime';
-          } else if (is3dRender) {
-            fileLog('[Mata AI] Auto Detect -> 3D Render detected: using realesrgan-x4plus.');
-            modelName = 'realesrgan-x4plus';
-          } else if (hasFace) {
-            fileLog('[Mata AI] Auto Detect -> Portrait/Face detected: using remacri.');
-            modelName = 'remacri';
-          } else {
-            modelName = isHighEnd ? 'ultrasharp' : 'span';
-            fileLog(`[Mata AI] Auto Detect -> Real Photo/General: using ${modelName} (HighEnd=${isHighEnd}).`);
-          }
-        }
-      }
 
       if (modelName === 'fast_sharp') {
         fileLog('[Mata AI] Fast Mode selected! Bypassing NCNN and using pure Sharp Lanczos3 (no fake details, no cartoon effect, 2 seconds).');
@@ -227,7 +142,6 @@ function setupMataAi(ipcMain, fileLog) {
       }
 
       const finalInputPath  = inputPath;
-      const tempResizedPath = null;
 
       // Tile size: 256 ensures zero-crash stability and high GPU throughput on Intel UHD & laptop GPUs
       let tileSize = '256';
@@ -317,6 +231,7 @@ function setupMataAi(ipcMain, fileLog) {
         };
 
         const proc = spawn(activeExePath, args, { cwd: activeCwd, env: spawnEnv });
+        activeUpscaleProc = proc;
 
         // Set BELOW_NORMAL Priority to protect Windows OS, Electron UI, and mouse from freezing/lagging
         try {
@@ -364,15 +279,17 @@ function setupMataAi(ipcMain, fileLog) {
         proc.stderr.on('data', handleData);
 
         proc.on('close', async (code) => {
+          const wasCancelled = proc.killedByCancel;
+          if (activeUpscaleProc === proc) activeUpscaleProc = null;
           try {
             if (event && !event.sender.isDestroyed()) {
               event.sender.send('upscale-progress', { filePath: inputPath, progress: 100 });
             }
           } catch (_) {}
-          if (tempResizedPath && fs.existsSync(tempResizedPath)) {
-            try { fs.unlinkSync(tempResizedPath); } catch (e) {
-              fileLog('[Mata AI] Could not clean pre-process temp: ' + e.message);
-            }
+
+          if (wasCancelled) {
+            fileLog('[upscale-local-ncnn] Process was cancelled by user. Skipping fallback.');
+            return resolve({ success: false, cancelled: true, error: 'Cancelled by user' });
           }
 
           let fileCreated = fs.existsSync(outputPath);
@@ -471,9 +388,14 @@ function setupMataAi(ipcMain, fileLog) {
         });
 
         proc.on('error', async (err) => {
-          if (tempResizedPath && fs.existsSync(tempResizedPath)) {
-            try { fs.unlinkSync(tempResizedPath); } catch (_) {}
+          const wasCancelled = proc.killedByCancel;
+          if (activeUpscaleProc === proc) activeUpscaleProc = null;
+          
+          if (wasCancelled) {
+            fileLog('[upscale-local-ncnn] Process was cancelled by user on error event. Skipping fallback.');
+            return resolve({ success: false, cancelled: true, error: 'Cancelled by user' });
           }
+
           fileLog('[upscale-local-ncnn] Spawn error: ' + err.message + '. Sharp fallback...');
           try {
             await upscaleLocalHighFidelitySharp(inputPath, outputPath, scale, outputFormat, fileLog);

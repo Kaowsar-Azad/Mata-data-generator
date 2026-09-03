@@ -64,13 +64,13 @@ function setupMataAi(ipcMain, fileLog) {
     return false;
   });
 
-  ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName, format, saveDir) => {
+  ipcMain.handle('upscale-local-ncnn', async (event, inputPath, scale, modelName, format, saveDir, customSuffix) => {
     modelName = modelName || 'realesrgan-x4plus';
     format    = format    || 'jpg';
     saveDir   = saveDir   || null;
 
     try {
-      fileLog('[upscale-local-ncnn] model=' + modelName + '  scale=' + scale + 'x  fmt=' + format);
+      fileLog('[upscale-local-ncnn] model=' + modelName + '  scale=' + scale + 'x  fmt=' + format + (customSuffix ? '  suffix=' + customSuffix : ''));
 
       const parsedPath   = path.parse(inputPath);
       const outputFormat = format === 'jpeg' ? 'jpg' : format;
@@ -85,7 +85,8 @@ function setupMataAi(ipcMain, fileLog) {
       const exeName      = isUpscaylBin ? 'upscayl-bin.exe' : 'realesrgan-ncnn-vulkan.exe';
       const exePath      = path.join(binDir, exeName);
 
-      const filenameSuffix = modelName.replace(/[^a-zA-Z0-9]/g, '_');
+      const suffixToUse = customSuffix || modelName;
+      const filenameSuffix = suffixToUse.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
       const outputPath = saveDir
         ? path.join(saveDir, parsedPath.name + '_' + scale + 'x_' + filenameSuffix + '.' + outputFormat)
         : path.join(os.tmpdir(), parsedPath.name + '_upscaled_' + scale + 'x.' + outputFormat);

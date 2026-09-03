@@ -15,7 +15,6 @@ import {
   ArrowRight,
   Plus,
   Trash2,
-  Target,
   Camera,
   User,
   Palette,
@@ -50,15 +49,26 @@ interface ResultItem {
 const LOCAL_MODEL_OPTIONS = [
   { id: 'fast', label: 'Fast (Sharp)', desc: 'High-Speed (Resolution upscale only)', icon: Zap, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' },
   { id: 'balanced', label: 'Balanced', desc: 'Recommended (Auto hardware & context matching)', icon: SlidersHorizontal, color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
-  { id: 'auto_model_detect', label: 'Auto Model Detect', desc: 'Smart AI Content Detection', icon: Target, color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },
   { id: 'span', label: 'SPAN', desc: 'Ultra Fast & Realistic Skin Texture', icon: Sparkles, color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' },
   { id: 'realsr', label: 'RealSR', desc: 'Photo Restoration & Compressed Photos', icon: Camera, color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.12)' },
   { id: 'realesrgan-x4plus', label: 'RealESRGAN-x4plus', desc: 'General Photo (Default)', icon: Camera, color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' },
   { id: 'remacri', label: 'Remacri', desc: 'Portrait, Faces & Skin Textures', icon: User, color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' },
   { id: 'ultrasharp', label: 'Ultrasharp', desc: 'High Contrast & Fine Detail', icon: Gem, color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
-  { id: 'realesrgan-x4plus-anime', label: 'RealESRGAN-x4plus-Anime', desc: 'Anime & Vector Art (4x Native)', icon: Palette, color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.12)' },
-  { id: 'realesr-animevideov3', label: 'RealESR-AnimeVideoV3', desc: 'Fast Anime (Supports 2x, 3x, 4x Native)', icon: Palette, color: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.12)' },
+  { id: 'realesrgan-x4plus-anime', label: 'Anime & Vector Art', desc: 'Best for Anime & Vector (High Model, 4x Native)', icon: Palette, color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.12)' },
+  { id: 'realesr-animevideov3', label: 'Fast Anime Model', desc: 'Fast Anime (Supports 2x, 3x, 4x Native)', icon: Palette, color: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.12)' },
 ];
+
+const MODEL_FILENAME_SUFFIX: Record<string, string> = {
+  balanced: 'Balanced',
+  'realesrgan-x4plus-anime': 'Anime_and_Vector_Art',
+  'realesr-animevideov3': 'Fast_Anime_Model',
+  fast: 'Fast',
+  span: 'SPAN',
+  realsr: 'RealSR',
+  'realesrgan-x4plus': 'RealESRGAN_x4plus',
+  remacri: 'Remacri',
+  ultrasharp: 'Ultrasharp',
+};
 
 const OUTPUT_FORMAT_OPTIONS = [
   { id: 'auto', label: 'Original Format', desc: 'Keep original file extension', icon: ImageIcon, color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
@@ -300,7 +310,7 @@ export function ImageUpscaler() {
       }
       
       let modelToUse = localModel;
-      if (localModel === 'auto_model_detect' || localModel === 'auto_detect' || localModel === 'balanced') {
+      if (localModel === 'balanced') {
         const name = (fileObj.name || '').toLowerCase();
         
         // Default filename-based fallback
@@ -329,25 +339,12 @@ export function ImageUpscaler() {
           }
         }
 
-        if (localModel === 'balanced') {
-          if (isAnimeOrVector) {
-            modelToUse = 'realesrgan-x4plus-anime';
-          } else if (hasFace) {
-            modelToUse = hardwareTier === 'high-end' ? 'realsr' : 'span';
-          } else {
-            modelToUse = 'span';
-          }
+        if (isAnimeOrVector) {
+          modelToUse = hardwareTier === 'high-end' ? 'realesrgan-x4plus-anime' : 'realesr-animevideov3';
+        } else if (hasFace) {
+          modelToUse = hardwareTier === 'high-end' ? 'realsr' : 'span';
         } else {
-          // Auto Detect logic
-          if (isAnimeOrVector) {
-            modelToUse = 'realesrgan-x4plus-anime';
-          } else if (is3dRender) {
-            modelToUse = 'realesrgan-x4plus';
-          } else if (hasFace) {
-            modelToUse = 'remacri';
-          } else {
-            modelToUse = hardwareTier === 'high-end' ? 'ultrasharp' : 'span';
-          }
+          modelToUse = 'span';
         }
       } else if (localModel === 'fast') {
         modelToUse = 'fast_sharp';
@@ -368,7 +365,8 @@ export function ImageUpscaler() {
         resolvedFormat = (ext === 'png' || ext === 'webp') ? ext : 'jpg';
       }
       
-      const resData = await window.electronAPI.upscaleLocalNcnn(pathArg, currentScale, modelToUse, resolvedFormat, effectiveSaveDir);
+      const customSuffix = MODEL_FILENAME_SUFFIX[localModel] || localModel;
+      const resData = await window.electronAPI.upscaleLocalNcnn(pathArg, currentScale, modelToUse, resolvedFormat, effectiveSaveDir, customSuffix);
       if (resData.cancelled) {
         return { success: false, cancelled: true };
       }
@@ -495,6 +493,81 @@ export function ImageUpscaler() {
       setIsProcessing(false);
       setActiveIndex(-1);
     }
+  };
+
+  const retryAllErrors = async () => {
+    const errorIndices = results.map((r, i) => r.status === 'error' ? i : -1).filter(i => i !== -1);
+    if (errorIndices.length === 0) return;
+
+    isCancelledRef.current = false;
+    setIsProcessing(true);
+    setStatusText(`Retrying ${errorIndices.length} failed files...`);
+
+    let completed = completedCount;
+
+    for (const index of errorIndices) {
+      if (isCancelledRef.current) break;
+      
+      const resultItem = results[index];
+      setCurrentFileProgress(0);
+      setActiveIndex(index);
+      
+      setResults(prev => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], status: 'processing', error: null };
+        return updated;
+      });
+
+      const fileKey = resultItem.fileObj?.path || resultItem.name;
+      const fileObj = selectedFiles.find(f => (f.path || f.name) === fileKey) || resultItem.fileObj;
+
+      if (!fileObj) {
+        setResults(prev => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], status: 'error', error: "Original file reference not found." };
+          return updated;
+        });
+        continue;
+      }
+
+      try {
+        const resData = await upscaleSingleFile(fileObj, scale);
+        if (resData.cancelled) {
+          setResults(prev => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], status: 'pending' };
+            return updated;
+          });
+          break;
+        }
+        setResults(prev => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], status: 'success', path: resData.path, engine: resData.engine };
+          return updated;
+        });
+        completed++;
+        setCompletedCount(completed);
+        const newProgress = Math.round((completed / selectedFiles.length) * 100);
+        setProgress(newProgress === 100 && completed < selectedFiles.length ? 99 : newProgress);
+      } catch (err: any) {
+        let errorMsg = err.message || "An error occurred during upscaling.";
+        if (errorMsg.length > 200 || errorMsg.includes("No space left on device") || errorMsg.includes("unable to write") || errorMsg.includes("unable to open for write")) {
+          errorMsg = "Upscaling failed: Your storage is full or an unexpected system error occurred. Please clear some disk space and try again.";
+        }
+        setResults(prev => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], status: 'error', error: errorMsg };
+          return updated;
+        });
+        setError(errorMsg);
+      }
+    }
+
+    if (!isCancelledRef.current) {
+      setStatusText("Retry all complete!");
+    }
+    setIsProcessing(false);
+    setActiveIndex(-1);
   };
 
   return (
@@ -1249,6 +1322,57 @@ export function ImageUpscaler() {
                       </span>
                     );
                   })()}
+
+                  {/* 3. Error Counter Badge & Retry All Button */}
+                  {(() => {
+                    const errorCount = results.filter(r => r.status === 'error').length;
+                    if (errorCount === 0) return null;
+                    return (
+                      <>
+                        <span style={{ 
+                          color: '#ef4444', 
+                          background: 'rgba(239, 68, 68, 0.1)', 
+                          border: '1px solid rgba(239, 68, 68, 0.35)', 
+                          padding: '3px 9px', 
+                          borderRadius: '6px', 
+                          display: 'inline-flex', 
+                          alignItems: 'center', 
+                          gap: '4px', 
+                          fontSize: '0.75rem', 
+                          fontWeight: 700,
+                          transition: 'all 0.2s ease'
+                        }}>
+                          <AlertCircle style={{ width: '0.8rem', height: '0.8rem' }} /> Errors ({errorCount})
+                        </span>
+                        {!isProcessing && (
+                          <button 
+                            type="button"
+                            onClick={retryAllErrors}
+                            style={{ 
+                              background: '#ef4444', 
+                              border: 'none', 
+                              color: '#fff', 
+                              fontSize: '0.75rem', 
+                              cursor: 'pointer', 
+                              fontWeight: 700, 
+                              padding: '3px 9px', 
+                              borderRadius: '6px', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: '4px',
+                              boxShadow: '0 2px 5px rgba(239,68,68,0.3)',
+                              transition: 'all 0.2s ease'
+                            }}
+                            onMouseEnter={(e: any) => e.currentTarget.style.opacity = '0.9'}
+                            onMouseLeave={(e: any) => e.currentTarget.style.opacity = '1'}
+                            title="Retry all failed images"
+                          >
+                            <RefreshCw style={{ width: '0.8rem', height: '0.8rem' }} /> Retry All
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
@@ -1351,8 +1475,17 @@ export function ImageUpscaler() {
                   gap: '0.55rem' 
                 }}
               >
-                {selectedFiles.map((f: any, i) => {
+                {[...selectedFiles].sort((a: any, b: any) => {
+                  const rA = results.find(r => (r.fileObj?.path || r.name) === (a.path || a.name));
+                  const rB = results.find(r => (r.fileObj?.path || r.name) === (b.path || b.name));
+                  const statusA = rA?.status || 'pending';
+                  const statusB = rB?.status || 'pending';
+                  if (statusA === 'error' && statusB !== 'error') return -1;
+                  if (statusB === 'error' && statusA !== 'error') return 1;
+                  return 0;
+                }).map((f: any) => {
                   const key = f.path || f.name;
+                  const i = selectedFiles.findIndex(sf => (sf.path || sf.name) === key);
                   const dims = fileDimensions[key];
                   const preview = filePreviews[key];
                   const origW = dims?.width || 0;

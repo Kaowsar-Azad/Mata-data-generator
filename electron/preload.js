@@ -34,7 +34,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveFile: (filePath, bufferArray) => ipcRenderer.invoke('save-file', filePath, bufferArray),
   getImageDimensions: (filePath) => ipcRenderer.invoke('get-image-dimensions', filePath),
   setUploadConcurrency: (concurrency) => ipcRenderer.invoke('set-upload-concurrency', concurrency),
-  upscaleLocalNcnn: (filePath, scale, modelName, format, saveDir) => ipcRenderer.invoke('upscale-local-ncnn', filePath, scale, modelName, format, saveDir),
+  upscaleLocalNcnn: (filePath, scale, modelName, format, saveDir, customSuffix) => ipcRenderer.invoke('upscale-local-ncnn', filePath, scale, modelName, format, saveDir, customSuffix),
   cancelUpscaleLocalNcnn: () => ipcRenderer.invoke('cancel-upscale-local-ncnn'),
   onUpscaleProgress: (callback) => {
     const listener = (event, data) => callback(data);

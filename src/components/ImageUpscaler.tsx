@@ -343,6 +343,8 @@ export function ImageUpscaler() {
           modelToUse = hardwareTier === 'high-end' ? 'realesrgan-x4plus-anime' : 'realesr-animevideov3';
         } else if (hasFace) {
           modelToUse = hardwareTier === 'high-end' ? 'realsr' : 'span';
+        } else if (is3dRender) {
+          modelToUse = hardwareTier === 'high-end' ? 'ultrasharp' : 'span';
         } else {
           modelToUse = 'span';
         }
@@ -1192,7 +1194,12 @@ export function ImageUpscaler() {
                 e.preventDefault();
                 e.stopPropagation();
                 if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                  const files = Array.from(e.dataTransfer.files) as File[];
+                  const allowedExts = ['jpg', 'jpeg', 'png', 'webp'];
+                  const files = (Array.from(e.dataTransfer.files) as File[]).filter(f => {
+                    const ext = f.name.split('.').pop()?.toLowerCase();
+                    return ext && allowedExts.includes(ext);
+                  });
+                  if (files.length === 0) return;
                   setSelectedFiles(prev => {
                     const existingKeys = prev.map((f: any) => `${f.name}-${f.size || 0}`);
                     const newFiles = files.filter(f => !existingKeys.includes(`${f.name}-${f.size || 0}`));
@@ -1281,25 +1288,27 @@ export function ImageUpscaler() {
                     <ImageIcon style={{ width: '1.05rem', height: '1.05rem', color: 'var(--primary)' }} />
                   </div>
                   
-                  <span style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-1)' }}>
-                    Selected Files
-                  </span>
-
-                  {/* 1. Selected Count Badge */}
-                  <span style={{ 
-                    color: '#06b6d4', 
-                    background: 'rgba(6, 182, 212, 0.08)', 
-                    border: '1px solid rgba(6, 182, 212, 0.3)', 
-                    padding: '3px 9px', 
-                    borderRadius: '6px', 
-                    display: 'inline-flex', 
-                    alignItems: 'center', 
-                    gap: '4px', 
-                    fontSize: '0.75rem', 
-                    fontWeight: 700 
-                  }}>
-                    <Layers style={{ width: '0.8rem', height: '0.8rem' }} /> {selectedFiles.length} Selected
-                  </span>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <span style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-1)' }}>
+                      Selected Files
+                    </span>
+                    <span style={{ 
+                      color: '#06b6d4', 
+                      background: 'rgba(6, 182, 212, 0.1)', 
+                      border: '1px solid rgba(6, 182, 212, 0.32)', 
+                      padding: '1px 8px', 
+                      borderRadius: '12px', 
+                      fontSize: '0.78rem', 
+                      fontWeight: 800,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minWidth: '1.5rem',
+                      lineHeight: '1.4'
+                    }}>
+                      {selectedFiles.length}
+                    </span>
+                  </div>
 
                   {/* 2. Upscale Done Counter Badge */}
                   {(() => {

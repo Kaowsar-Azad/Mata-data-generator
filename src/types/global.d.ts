@@ -15,6 +15,9 @@ declare global {
         outputFolder: string,
         customSuffix?: string
       ) => Promise<{ success: boolean, path?: string, format?: string, base64?: string, error?: string, cancelled?: boolean }>;
+      cancelUpscaleLocalNcnn?: () => Promise<void>;
+      readExif?: (path: string) => Promise<{ success: boolean; tags?: any }>;
+      getHardwareTier?: () => Promise<string>;
       toggleDevTools?: () => Promise<boolean>;
       // Include any other existing API declarations here if needed, but we'll focus on what ImageUpscaler uses.
     }

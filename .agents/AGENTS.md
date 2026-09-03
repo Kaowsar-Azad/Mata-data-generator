@@ -62,6 +62,11 @@ The app must be protected against reverse engineering and common vulnerabilities
 - **Exception:** You may only modify these files if the user explicitly writes the text `"Top Sellers Section Unlock"` in the direct chat transcript.
 - **Action:** If changes are needed in this section, you MUST ask the user for permission in the chat first. Do not modify speculatively.
 
+## STRICT POLICY: Image Upscaler Frozen Guard
+- **Rule:** Do NOT modify, rewrite, delete, or append to any file within the Image Upscaler section, specifically `src/components/ImageUpscaler.tsx`, `electron/MataAI/`, `bin/upscayl/`, `bin/span/`, and `bin/realsr/` directories or related upscaling logic under any circumstances.
+- **Exception:** You may only modify these files if the user explicitly grants permission in the direct chat transcript (e.g., "I permit you to modify the Image Upscaler" or "Unlock the Image Upscaler section").
+- **Action:** If changes are needed in this section, you MUST ask the user for permission in the chat first. Do not modify speculatively.
+
 ## STRICT POLICY: Anti-Fake AI & No Fake Data
 - **Rule:** The AI MUST NEVER use fake data, generate fake information, or use fake/simulated logic (e.g., using basic filters like blur or median to simulate Neural Network upscaling) and present it to the user as real.
 - **Rule:** Do NOT write code that simulates a feature deceptively. If a genuine solution is impossible due to hardware/software limits, explicitly inform the user instead of creating a "fake" workaround.

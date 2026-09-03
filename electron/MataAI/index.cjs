@@ -24,6 +24,8 @@ async function upscaleLocalHighFidelitySharp(inputPath, outputPath, scale, outpu
 
   if (outputFormat === 'png') {
     await pipeline.png({ compressionLevel: 6 }).toFile(outputPath);
+  } else if (outputFormat === 'webp') {
+    await pipeline.webp({ quality: 95 }).toFile(outputPath);
   } else {
     await pipeline.jpeg({ quality: 95, mozjpeg: true }).toFile(outputPath);
   }
@@ -310,6 +312,8 @@ function setupMataAi(ipcMain, fileLog) {
                   fileLog('[upscale-local-ncnn] NCNN ignored extension, converting ' + ext + ' to ' + outputFormat + '...');
                   if (outputFormat === 'jpg' || outputFormat === 'jpeg') {
                     await sharp(altPath).jpeg({ quality: 95 }).toFile(outputPath);
+                  } else if (outputFormat === 'webp') {
+                    await sharp(altPath).webp({ quality: 95 }).toFile(outputPath);
                   } else {
                     await sharp(altPath).png({ compressionLevel: 6 }).toFile(outputPath);
                   }
@@ -349,6 +353,8 @@ function setupMataAi(ipcMain, fileLog) {
                 const tmpResize = outputPath + '.res.tmp';
                 if (outputFormat === 'png') {
                   await sharp(outputPath).resize(targetW, targetH, { kernel: sharp.kernel.lanczos3 }).png({ compressionLevel: 6 }).toFile(tmpResize);
+                } else if (outputFormat === 'webp') {
+                  await sharp(outputPath).resize(targetW, targetH, { kernel: sharp.kernel.lanczos3 }).webp({ quality: 95 }).toFile(tmpResize);
                 } else {
                   await sharp(outputPath).resize(targetW, targetH, { kernel: sharp.kernel.lanczos3 }).jpeg({ quality: 95 }).toFile(tmpResize);
                 }

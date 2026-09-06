@@ -10,6 +10,7 @@ export function MetadataEditorPanel({
   setActiveCell,
   selectedCount = 0,
   applyToSelected,
+  enableKeywordRanking,
 }: any) {
   if (!img) {
     return (
@@ -112,6 +113,7 @@ export function MetadataEditorPanel({
             isTextArea
             isKeywords
             img={img}
+            enableKeywordRanking={enableKeywordRanking}
             onApplyToSelected={selectedCount > 1 && typeof applyToSelected === 'function' ? () => applyToSelected(img.id, "keywords", img.result.keywords) : null}
           />
 

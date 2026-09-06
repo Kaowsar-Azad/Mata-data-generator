@@ -111,7 +111,32 @@ This is a hard compliance rule, not a style preference. Violations can get contr
 - If a logo, trademarked design, or unmistakably branded product is visible and cannot be described without implying the brand: do NOT guess at a workaround. Describe only the generic category of object, omit the brand-specific term entirely from every field, and set "policyWarning" to a short factual note (e.g., "Visible logo detected on product; brand references excluded from all fields.").
 - This ban applies with equal force across ALL keyword tiers below — including Tier 5 (commercial use-cases) and Tier 6 (synonyms), where brand names most often slip in disguised as "trending" or "high-value" search terms.
 `;
+
   const policyWarningField = skipPolicyScan ? '' : ',"policyWarning":null';
+
+  const enableRanking = s.enableKeywordRanking !== false;
+
+  const scoringSection = enableRanking ? `
+== KEYWORD RELEVANCE SCORING (keywordScores) ==
+The "keywordScores" object in the final JSON MUST contain one integer score (0–100) for EVERY keyword in the "keywords" list — never a partial sample, never just the top few. Assign scores strictly using these tier bands (they mirror the tier order above and must not overlap):
+
+- TIER 1 (Primary Subjects): 90–100
+- TIER 2 (Attributes): 72–89
+- TIER 3 (Actions & States): 58–71
+- TIER 4 (Moods & Concepts): 42–57
+- TIER 5 (Commercial Use-Cases): 28–41
+- TIER 6 (High-Value Synonyms): 10–27
+
+Within each tier, spread scores across the FULL band in the same descending order as the keyword list itself — the most relevant keyword in that tier gets the top of its band, the least relevant gets the bottom. Divide the band range evenly across however many keywords are in that tier; do not cluster multiple keywords around one repeated mid-value. No two keywords anywhere in the list may receive the exact same score.
+` : "";
+
+  const scoringEnforcement = enableRanking
+    ? `\n"keywordScores" must include an entry for every single keyword in "keywords" — all ${typeof s !== 'undefined' && s.smartMode ? '15 to 30' : promptKeywordsCount} of them, not a sample. The 3-key example below is illustrative of the format only, not the required length.\n`
+    : `\nThe 3-key example below is illustrative of the format only, not the required length. "keywords" must include all ${typeof s !== 'undefined' && s.smartMode ? '15 to 30' : promptKeywordsCount} keywords, not a sample.\n`;
+
+  const jsonSample = enableRanking
+    ? `{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${typeof s !== 'undefined' && s.smartMode ? '15 to 30' : promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":65},"categories":${categoryList}${policyWarningField}}`
+    : `{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${typeof s !== 'undefined' && s.smartMode ? '15 to 30' : promptKeywordsCount} total)","categories":${categoryList}${policyWarningField}}`;
 
   return `${fileContext}
 ${policyRule}
@@ -158,19 +183,7 @@ Allocate the ${typeof s !== 'undefined' && s.smartMode ? '15 to 30' : promptKeyw
 Within each tier, order keywords by descending relevance to the image (most relevant term in that tier first).
 
 If ${typeof s !== 'undefined' && s.smartMode ? '15 to 30' : promptKeywordsCount} is small (15 or fewer), prioritize Tiers 1–3 and reduce or skip Tiers 4–6 as needed. Never pad the list with generic filler just to hit the count.
-
-== KEYWORD RELEVANCE SCORING (keywordScores) ==
-The "keywordScores" object in the final JSON MUST contain one integer score (0–100) for EVERY keyword in the "keywords" list — never a partial sample, never just the top few. Assign scores strictly using these tier bands (they mirror the tier order above and must not overlap):
-
-- TIER 1 (Primary Subjects): 90–100
-- TIER 2 (Attributes): 72–89
-- TIER 3 (Actions & States): 58–71
-- TIER 4 (Moods & Concepts): 42–57
-- TIER 5 (Commercial Use-Cases): 28–41
-- TIER 6 (High-Value Synonyms): 10–27
-
-Within each tier, spread scores across the FULL band in the same descending order as the keyword list itself — the most relevant keyword in that tier gets the top of its band, the least relevant gets the bottom. Divide the band range evenly across however many keywords are in that tier; do not cluster multiple keywords around one repeated mid-value. No two keywords anywhere in the list may receive the exact same score.
-
+${scoringSection}
 GRAMMAR RULES (Adobe Stock NLP requirements):
 - Use SINGULAR nouns only. The algorithm auto-expands to plural. Write "dog" not "dogs", "camera" not "cameras".
 - Use INFINITIVE verb forms only. Write "run", "smile", "hold" — NOT "running", "smiled", "holding".
@@ -180,13 +193,8 @@ QUALITY RULES:
 - STRICT VISIBILITY RULE: ONLY describe what is PHYSICALLY VISIBLE. Never infer tech concepts not shown.
 - NO root duplicates: never use both "camera" and "cameras", or "color" and "colorful". Pick the single most commercial singular form.
 - No banned words: "free", "download", "copyright", "watermark".
-
-"keywordScores" must include an entry for every single keyword in "keywords" — all ${typeof s !== 'undefined' && s.smartMode ? '15 to 30' : promptKeywordsCount} of them, not a sample. The 3-key example below is illustrative of the format only, not the required length.
-
-Output ONLY valid JSON, no markdown, no conversational text:
-{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${typeof s !== 'undefined' && s.smartMode ? '15 to 30' : promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":65},"categories":${categoryList}${policyWarningField}}`;
-
-
+${scoringEnforcement}Output ONLY valid JSON, no markdown, no conversational text:
+${jsonSample}`;
 }
 
 export async function fetchOpenAI(apiKey, prompt, base64Data, mimeType, forceJson = true, promptSettings = {}) {

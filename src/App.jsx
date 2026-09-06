@@ -123,6 +123,7 @@ function App() {
     descMaxChars: 180,
     keywordCount: 48,
     singleWordKeywords: true,
+    enableKeywordRanking: true,
     concurrentLimit: 2,
     mediaTypeHint: 'None / Auto-detect',
     prefixEnabled: false,

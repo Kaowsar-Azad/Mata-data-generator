@@ -30,6 +30,10 @@ export async function fetchOpenAICompatible(provider, endpoint, models, apiKey, 
     const policyWarningRule = skipPolicyScan ? "" : `\n- TRADEMARK & IP SAFETY: You must perform the detailed IP/Trademark Scan requested in the user prompt. If any brand name, trademark, company logo, or protected design is found, you MUST set "policyWarning" to a brief (max 2 sentences), specific, actionable message explaining it. If clean, set to null.`;
     const policyWarningRuleNum = skipPolicyScan ? "" : `\n2. TRADEMARK & IP SAFETY: You must perform the detailed IP/Trademark Scan requested in the user prompt. If any brand name, trademark, company logo, or protected design is found, you MUST set "policyWarning" to a brief (max 2 sentences), specific, actionable message explaining it. If clean, set to null.`;
     
+    const enableRanking = s.enableKeywordRanking !== false;
+    const keywordScoresRule = enableRanking ? `\n4. KEYWORD SCORES: You must score every single keyword 1-100. The number of scores in the "keywordScores" object MUST EXACTLY MATCH the number of keywords in your "keywords" string.` : "";
+    const keywordScoresJson = enableRanking ? `,\n  "keywordScores": {\n    "word1": 95,\n    "word2": 80,\n    "word3": 45\n  }` : "";
+    
     const systemInstruction = forceJson
       ? (isSecurityScan
           ? `You are a professional safety scan assistant. Your ENTIRE job is to analyze the image and respond with ONLY a single valid JSON object conforming EXACTLY to the safety scan guidelines.
@@ -43,19 +47,13 @@ REQUIRED JSON FORMAT:
 
 CRITICAL RULES:
 1. NO REASONING OR PREAMBLE: Do NOT output any reasoning, thinking process, thoughts, or <think> tags. Go straight to the JSON output.${policyWarningRuleNum}
-3. KEYWORD COUNT: You must generate the exact keyword count requested in the user prompt (${targetKwCount} words). Add commercial use-cases, abstract concepts, or industry terms if you need more keywords to reach this target. Do not stop early.
-4. KEYWORD SCORES: You must score every single keyword 1-100. The number of scores in the "keywordScores" object MUST EXACTLY MATCH the number of keywords in your "keywords" string.
+3. KEYWORD COUNT: You must generate the exact keyword count requested in the user prompt (${targetKwCount} words). Add commercial use-cases, abstract concepts, or industry terms if you need more keywords to reach this target. Do not stop early.${keywordScoresRule}
 
 REQUIRED JSON FORMAT:
 {
   "title": "Specific sentence following user prompt guidelines.",
   "description": "Factual details plus commercial use cases.",
-  "keywords": "word1, word2, word3, ... (MUST match the requested count)",
-  "keywordScores": {
-    "word1": 95,
-    "word2": 80,
-    "word3": 45
-  },
+  "keywords": "word1, word2, word3, ... (MUST match the requested count)"${keywordScoresJson},
   "categories": ["Category Name"],
   "commercialConcept": "popular",
   "subjectClarity": "clear",

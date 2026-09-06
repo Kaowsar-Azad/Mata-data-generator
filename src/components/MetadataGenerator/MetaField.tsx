@@ -2,12 +2,21 @@
 import React, { useState, useRef, useEffect } from "react";
 import { CheckCircle2, Copy } from "lucide-react";
 
-export function MetaField({ label, value, onChange, isTextArea, isKeywords, img, onApplyToSelected }: any) {
+export function MetaField({ label, value, onChange, isTextArea, isKeywords, img, onApplyToSelected, enableKeywordRanking }: any) {
   const [copied, setCopied] = useState(false);
   const [isTextMode, setIsTextMode] = useState(false);
   const [newKeyword, setNewKeyword] = useState("");
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const rankingEnabled = enableKeywordRanking ?? true;
+  const hasScores = Boolean(
+    img?.result?.hasKeywordRanking !== false &&
+    img?.result?.keywordScores && 
+    typeof img.result.keywordScores === 'object' &&
+    Object.keys(img.result.keywordScores).length > 0
+  );
+  const showRanking = rankingEnabled && hasScores;
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -73,25 +82,6 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
         }
     }
 
-    // Fallback heuristic based on specific image content relevance
-    const isEpsAsset = Boolean(img?.isEps || (img?.file?.name && /\.(eps|epsf|epsi)$/i.test(img.file.name)));
-    const junk = new Set(isEpsAsset
-      ? ["image", "photo", "picture", "file", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]
-      : ["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]
-    );
-    if (junk.has(kl) || kl.length < 3) return -1; 
-    
-    // Natural fallback based on keyword position if present in keywords string
-    if (img && img.result && img.result.keywords) {
-      const allKws = img.result.keywords.split(',').map((k: string) => k.toLowerCase().trim());
-      const kwIdx = allKws.indexOf(kl);
-      if (kwIdx !== -1) {
-        if (kwIdx < 15) return Math.max(70, Math.round(95 - (kwIdx * 1.6)));
-        if (kwIdx < 35) return Math.max(30, Math.round(68 - ((kwIdx - 15) * 1.8)));
-        return Math.max(5, Math.round(28 - ((kwIdx - 35) * 1.5)));
-      }
-    }
-    
     return -1; // Missing score
   };
 
@@ -121,7 +111,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
       <div className="flex justify-between items-center mb-1">
         <div className="flex items-center gap-3">
           <span className="meta-label" style={{ marginBottom: 0 }}>{label}</span>
-          {isKeywords && !isTextMode && (
+          {isKeywords && !isTextMode && showRanking && (
             <div className="flex items-center gap-4 text-xs text-muted font-medium ml-3">
               <span className="flex items-center gap-2"><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }}></div> High</span>
               <span className="flex items-center gap-2"><div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b' }}></div> Medium</span>
@@ -200,27 +190,33 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
         >
           {(value || '').split(',').map((k: string) => k.trim()).filter(Boolean).map((kw: string, idx: number) => {
             const cleanedKw = kw.replace(/\s+\d+$/, '');
-            const score = getKeywordScore(cleanedKw, img);
-            let isGreen = false;
-            let isYellow = false;
-            let isRed = false;
+            let colorStr = 'var(--text-2, #475569)';
+            let bgStr = 'var(--surface-2, #f0f2f5)';
+            let borderStr = '1px solid var(--surface-3, #e2e8f0)';
 
-            if (score === -1) {
-              isRed = true;
-            } else {
-              if (img?.result?.provider === 'mistral') {
-                isGreen = score >= 60;
-                isYellow = score >= 30 && score < 60;
-                isRed = score < 30;
+            if (showRanking) {
+              const score = getKeywordScore(cleanedKw, img);
+              let isGreen = false;
+              let isYellow = false;
+              let isRed = false;
+
+              if (score === -1) {
+                isRed = true;
               } else {
-                isGreen = score >= 70;
-                isYellow = score >= 30 && score < 70;
-                isRed = score < 30;
+                if (img?.result?.provider === 'mistral') {
+                  isGreen = score >= 60;
+                  isYellow = score >= 30 && score < 60;
+                  isRed = score < 30;
+                } else {
+                  isGreen = score >= 70;
+                  isYellow = score >= 30 && score < 70;
+                  isRed = score < 30;
+                }
               }
+              colorStr = isGreen ? '#10b981' : isYellow ? '#f59e0b' : '#ef4444';
+              bgStr = isGreen ? 'rgba(16, 185, 129, 0.1)' : isYellow ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+              borderStr = `1px solid ${colorStr}40`;
             }
-            
-            let colorStr = isGreen ? '#10b981' : isYellow ? '#f59e0b' : '#ef4444';
-            let bgStr = isGreen ? 'rgba(16, 185, 129, 0.1)' : isYellow ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)';
             
             return (
               <div 
@@ -229,7 +225,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                 style={{ 
                   background: bgStr, 
                   color: 'var(--text-1)', 
-                  border: `1px solid ${colorStr}40`,
+                  border: borderStr,
                   boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
                   fontSize: '0.72rem',
                   fontWeight: '600',
@@ -243,26 +239,33 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                 }}
                 onMouseOver={(e: any) => {
                   e.currentTarget.style.transform = 'scale(1.03)';
-                  e.currentTarget.style.boxShadow = `0 4px 10px ${colorStr}30`;
-                  e.currentTarget.style.borderColor = colorStr;
+                  if (showRanking) {
+                    e.currentTarget.style.boxShadow = `0 4px 10px ${colorStr}30`;
+                    e.currentTarget.style.borderColor = colorStr;
+                  } else {
+                    e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,0.12)';
+                    e.currentTarget.style.borderColor = 'var(--accent)';
+                  }
                 }}
                 onMouseOut={(e: any) => {
                   e.currentTarget.style.transform = 'scale(1)';
                   e.currentTarget.style.boxShadow = '0 2px 5px rgba(0,0,0,0.05)';
-                  e.currentTarget.style.borderColor = `${colorStr}40`;
+                  e.currentTarget.style.borderColor = borderStr;
                 }}
               >
-                <span 
-                  style={{ 
-                    width: '6px', 
-                    height: '6px', 
-                    borderRadius: '50%', 
-                    backgroundColor: colorStr,
-                    display: 'inline-block',
-                    flexShrink: 0,
-                    boxShadow: `0 0 5px ${colorStr}`
-                  }} 
-                />
+                {showRanking && (
+                  <span 
+                    style={{ 
+                      width: '6px', 
+                      height: '6px', 
+                      borderRadius: '50%', 
+                      backgroundColor: colorStr,
+                      display: 'inline-block',
+                      flexShrink: 0,
+                      boxShadow: `0 0 5px ${colorStr}`
+                    }} 
+                  />
+                )}
                 <span className="select-none" style={{ letterSpacing: '0.02em', whiteSpace: 'nowrap' }}>{cleanedKw}</span>
                 <span 
                   role="button"
@@ -270,7 +273,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                   className="flex items-center justify-center rounded-full transition-all"
                   style={{ 
                     cursor: 'pointer',
-                    color: colorStr,
+                    color: showRanking ? colorStr : 'var(--text-3)',
                     padding: '2px',
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -283,11 +286,11 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                   }}
                   onMouseOver={(e: any) => { 
                     e.currentTarget.style.color = '#fff';
-                    e.currentTarget.style.background = colorStr;
+                    e.currentTarget.style.background = showRanking ? colorStr : '#ef4444';
                     e.currentTarget.style.opacity = '1';
                   }}
                   onMouseOut={(e: any) => { 
-                    e.currentTarget.style.color = colorStr;
+                    e.currentTarget.style.color = showRanking ? colorStr : 'var(--text-3)';
                     e.currentTarget.style.background = 'transparent';
                     e.currentTarget.style.opacity = '0.7';
                   }}

@@ -394,6 +394,7 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
     const hasHumanSubject = /\b(person|people|man|woman|child|kid|boy|girl|group|family|couple|model|friend|friends|worker|businessman|businesswoman|photographer|artist|teacher|student|doctor|nurse|player|gamer)\b/i.test((result.title || "") + " " + (result.description || ""));
     const abstractJunk = new Set(["fun", "leisure", "recreation", "hobby", "relaxation", "enjoyment", "lifestyle", "play", "interests", "pastime", "pleasure", "activity", "activities"]);
 
+    const isEpsAsset = Boolean(fileInfo?.isEps || (fileInfo?.fileName && /\.(eps|epsf|epsi)$/i.test(fileInfo.fileName)));
     const seenRoots = new Set();
     const rootCounts = {};
     
@@ -405,7 +406,6 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
       const kl = kw.toLowerCase().trim();
 
       // 1. Hard rejection: empty, length < 2, banned, or generic junk words
-      const isEpsAsset = Boolean(fileInfo?.isEps || (fileInfo?.fileName && /\.(eps|epsf|epsi)$/i.test(fileInfo.fileName)));
       const hardJunk = new Set(isEpsAsset
         ? ["image", "photo", "picture", "file", "thing", "item", "nice", "great", "good", "look", "use"]
         : ["image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use"]
@@ -599,24 +599,17 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
     result.keywords = [...new Set(fallbackWords)].slice(0, s.keywordCount || 49).join(", ");
   }
 
-  // Ensure all final keywords have defined valid scores in keywordScores
-  if (result.keywords) {
-    if (!result.keywordScores || typeof result.keywordScores !== 'object' || Array.isArray(result.keywordScores)) {
-      result.keywordScores = {};
-    }
-    const finalKeyList = result.keywords.split(',').map(k => k.trim()).filter(Boolean);
-    finalKeyList.forEach((k, idx) => {
-      if (result.keywordScores[k] === undefined || result.keywordScores[k] === null || isNaN(Number(result.keywordScores[k]))) {
-        // Natural distribution based on keyword ranking order (Top = Green, Mid = Yellow, Lower = Red)
-        if (idx < 15) {
-          result.keywordScores[k] = Math.max(70, Math.round(95 - (idx * 1.6)));
-        } else if (idx < 35) {
-          result.keywordScores[k] = Math.max(30, Math.round(68 - ((idx - 15) * 1.8)));
-        } else {
-          result.keywordScores[k] = Math.max(5, Math.round(28 - ((idx - 35) * 1.5)));
-        }
-      }
-    });
+  // Handle keywordScores based on ranking settings without fake simulations
+  console.log('[DEBUG postProcessMetadata] s.enableKeywordRanking:', s.enableKeywordRanking);
+  if (s.enableKeywordRanking === false) {
+    console.log('[DEBUG postProcessMetadata] DELETING keywordScores');
+    delete result.keywordScores;
+    result.hasKeywordRanking = false;
+  } else if (result.keywordScores && typeof result.keywordScores === 'object' && Object.keys(result.keywordScores).length > 0) {
+    result.hasKeywordRanking = true;
+  } else {
+    result.hasKeywordRanking = false;
+    delete result.keywordScores;
   }
 
   return result;

@@ -5,7 +5,7 @@ import { StatusBadge, getScoreMeta } from "./workflowHelpers";
 import { MetaField } from "./MetaField";
 
 const MetadataCard = memo(({ 
-  img, hasDuplicateBadge, removeImage, onIgnorePolicy, handleMetaChange, activeProviderName, upscaleScale, ftpConfigs
+  img, hasDuplicateBadge, removeImage, onIgnorePolicy, handleMetaChange, activeProviderName, upscaleScale, ftpConfigs, enableKeywordRanking
 }: any) => {
   return (
     <div className="glass card animate-fade-in file-row">
@@ -93,6 +93,7 @@ const MetadataCard = memo(({
               value={img.result.keywords}
               onChange={(val: any) => handleMetaChange(img.id, "keywords", val)}
               isTextArea isKeywords img={img}
+              enableKeywordRanking={enableKeywordRanking}
             />
             
 
@@ -214,10 +215,11 @@ const MetadataCard = memo(({
          prevProps.activeProviderName === nextProps.activeProviderName &&
          prevProps.upscaleScale === nextProps.upscaleScale &&
          prevProps.ftpConfigs === nextProps.ftpConfigs &&
+         prevProps.enableKeywordRanking === nextProps.enableKeywordRanking &&
          prevProps.onIgnorePolicy === nextProps.onIgnorePolicy;
 });
 
-export function MetadataCardList({ images, duplicatePairs, removeImage, onIgnorePolicy, handleMetaChange, activeProviderName, upscaleScale, ftpConfigs }: any) {
+export function MetadataCardList({ images, duplicatePairs, removeImage, onIgnorePolicy, handleMetaChange, activeProviderName, upscaleScale, ftpConfigs, enableKeywordRanking }: any) {
   return (
     <div className="grid grid-cols-1 gap-4">
       {images.map((img: any) => {
@@ -233,6 +235,7 @@ export function MetadataCardList({ images, duplicatePairs, removeImage, onIgnore
             activeProviderName={activeProviderName}
             upscaleScale={upscaleScale}
             ftpConfigs={ftpConfigs}
+            enableKeywordRanking={enableKeywordRanking}
           />
         );
       })}

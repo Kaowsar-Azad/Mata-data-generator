@@ -1315,7 +1315,7 @@ function getWorkerLimit(host) {
 async function createFtpClient(config) {
   const ftp    = require('basic-ftp');
   const client = new ftp.Client();
-  client.ftp.timeout = 300000;
+  client.ftp.timeout = 60000;
   await client.access({
     host:          config.host?.trim(),
     user:          config.user?.trim(),

@@ -165,17 +165,42 @@ ABSOLUTE MINIMUM STANDARD: Every single keyword must be a highly relevant, comme
 This is a hard compliance rule, not a style preference. Violations can get contributor accounts suspended.
 - NEVER output a brand name, company name, trademarked term, product model name, protected character/design name, sports team name, or celebrity name — in the title, the description, OR any keyword — even if the brand is clearly visible, spoken, written, or present in the source filename.
 - Before finalizing your output, scan every noun in the title, description, and full keyword list against known brands. If a term is, or could plausibly be, a registered trademark, replace it with its generic functional equivalent. Examples:
-  - "Apple Watch" / "iPhone" -> "smartwatch" / "smartphone"
-  - "Nike" / "Nikes" -> "athletic shoes"
-  - "Coca-Cola" / "Coke" -> "carbonated soft drink"
-  - "Photoshop" -> "photo editing software"
-  - "Tesla" -> "electric car"
-  - Sports team names/kits -> "professional sports team" / "athletic jersey"
+  - "Apple Watch" / "iPhone" → "smartwatch" / "smartphone"
+  - "Nike" / "Nikes" → "athletic shoes"
+  - "Coca-Cola" / "Coke" → "carbonated soft drink"
+  - "Photoshop" → "photo editing software"
+  - "Tesla" → "electric car"
+  - Sports team names/kits → "professional sports team" / "athletic jersey"
 - If a logo, trademarked design, or unmistakably branded product is visible and cannot be described without implying the brand: do NOT guess at a workaround. Describe only the generic category of object, omit the brand-specific term entirely from every field, and set "policyWarning" to a short factual note (e.g., "Visible logo detected on product; brand references excluded from all fields.").
 - This ban applies with equal force across ALL keyword tiers below — including Tier 5 (commercial use-cases) and Tier 6 (synonyms), where brand names most often slip in disguised as "trending" or "high-value" search terms.
 `;
 
   const policyWarningField = skipPolicyScan ? '' : ',"policyWarning":null';
+
+  const enableRanking = s.enableKeywordRanking !== false;
+
+  const scoringSection = enableRanking ? `
+== KEYWORD RELEVANCE SCORING (keywordScores) ==
+The "keywordScores" object in the final JSON MUST contain one integer score (0-100) for EVERY keyword in the "keywords" list — never a partial sample, never just the top few.
+
+Rules for scoring:
+1. Rank each keyword based on its true relevance to the image. 
+2. Let the scores spread naturally between 1 and 100 based on true relevance. Do NOT artificially compress them or force them into a strict countdown.
+3. If a keyword is highly relevant, score it high (e.g., 70-100). You can give multiple keywords similar high scores if they are equally important.
+4. If a keyword is moderately relevant, score it lower (e.g., 30-69).
+5. The least relevant or abstract keywords MUST score lower (e.g., 1-29).
+6. Do NOT force every score to be strictly lower than the previous one. It's okay if multiple keywords have the same score, as long as it reflects their true relevance.
+` : "";
+
+  const scoringVerificationItem = enableRanking ? `\n- "keywordScores" contains a valid integer score for every keyword based on true relevance.` : "";
+
+  const scoringEnforcement = enableRanking
+    ? `\n"keywordScores" must include an entry for every single keyword in "keywords" — all ${promptKeywordsCount} of them, not a sample. The 3-key example below is illustrative of the format only, not the required length.\n`
+    : `\nThe 3-key example below is illustrative of the format only, not the required length. "keywords" must include all ${promptKeywordsCount} keywords, not a sample.\n`;
+
+  const jsonSample = enableRanking
+    ? `{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":65},"categories":${categoryList}${policyWarningField}}`
+    : `{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${promptKeywordsCount} total)","categories":${categoryList}${policyWarningField}}`;
 
   return `${fileContext}
 ${policyRule}
@@ -194,7 +219,7 @@ Rules:
 - For vectors/illustrations: explicitly state the style ("flat vector illustration", "3D render", "seamless pattern", "glyph icon set").
 - Forbidden words: stunning, vibrant, captivating, breathtaking, mesmerizing, showcasing, beautifully, perfect, amazing.
 - Target Length: STRICTLY between 25 and 70 characters. Compose the full grammatically complete sentence FIRST, then check its length. If it runs long, shorten it by trimming an adjective or a secondary detail — never by cutting the sentence off mid-word or mid-clause. If it runs short, add one concise contextual detail. The title must never trail off or end mid-thought.
-- NEVER end the title on a preposition, conjunction, or article (e.g., never end with "for", "with", "and", "in", "on", "of", "the", "a"). The final word must complete the thought — a concrete noun, or an adjective directly modifying one.\${s.negTitleEnabled && s.negTitleWords ? \`\\n- Forbidden in title: \${s.negTitleWords}.\` : ""}
+- NEVER end the title on a preposition, conjunction, or article (e.g., never end with "for", "with", "and", "in", "on", "of", "the", "a"). The final word must complete the thought — a concrete noun, or an adjective directly modifying one.${s.negTitleEnabled && s.negTitleWords ? `\n- Forbidden in title: ${s.negTitleWords}.` : ""}
 - CRITICAL FOR ADOBE STOCK: Every important noun, adjective and verb in your title MUST also appear in the keyword list.
 
 == DESCRIPTION (SEO Optimized Detail) ==
@@ -206,7 +231,7 @@ Rules:
 - Keep it professional, objective, and active voice.
 - Forbidden words: stunning, breathtaking, meticulously, "This image shows", "Here we can see".
 - Target Length: STRICTLY between 50 and 100 characters.
-\${policyRule}
+${policyRule}
 == KEYWORDS STRATEGY (UNIFIED TIER-ORDER SYSTEM) ==
 Generate EXACTLY ${promptKeywordsCount} keywords total. There is only ONE ranking system in this prompt: the tier order below. Output the keyword list in this exact tier sequence — Tier 1 keywords first, Tier 6 keywords last. Because Adobe Stock and Shutterstock weight earlier keyword positions more heavily in search, this tier order IS the ranking. Do not apply any separate position/slot scheme on top of it — there isn't one.
 
@@ -222,18 +247,7 @@ Allocate the ${promptKeywordsCount} keywords across tiers using these target pro
 Within each tier, order keywords by descending relevance to the image (most relevant term in that tier first).
 
 If ${promptKeywordsCount} is small (15 or fewer), prioritize Tiers 1-3 and reduce or skip Tiers 4-6 as needed. Never pad the list with generic filler just to hit the count.
-
-== KEYWORD RELEVANCE SCORING (keywordScores) ==
-The "keywordScores" object in the final JSON MUST contain one integer score (0-100) for EVERY keyword in the "keywords" list — never a partial sample, never just the top few.
-
-Rules for scoring:
-1. Rank each keyword based on its true relevance to the image. 
-2. Let the scores spread naturally between 1 and 100 based on true relevance. Do NOT artificially compress them or force them into a strict countdown.
-3. If a keyword is highly relevant, score it high (e.g., 70-100). You can give multiple keywords similar high scores if they are equally important.
-4. If a keyword is moderately relevant, score it lower (e.g., 30-69).
-5. The least relevant or abstract keywords MUST score lower (e.g., 1-29).
-6. Do NOT force every score to be strictly lower than the previous one. It's okay if multiple keywords have the same score, as long as it reflects their true relevance.
-
+${scoringSection}
 GRAMMAR RULES (Adobe Stock NLP requirements):
 - Use SINGULAR nouns only. The algorithm auto-expands to plural. Write "dog" not "dogs", "camera" not "cameras".
 - Use INFINITIVE verb forms only. Write "run", "smile", "hold" — NOT "running", "smiled", "holding".
@@ -247,14 +261,10 @@ QUALITY RULES:
 Before writing your final answer, silently verify each of these — do NOT print this checklist, only the final JSON:
 - Title is one complete sentence, 25-70 characters, does not end on a preposition/conjunction/article.
 - Description follows the 2-sentence formula, 50-100 characters.
-- Exactly ${promptKeywordsCount} keywords, ordered Tier 1 -> Tier 6, singular nouns, infinitive verbs, no brand names anywhere.
-- "keywordScores" contains a valid integer score for every keyword based on true relevance.
+- Exactly ${promptKeywordsCount} keywords, ordered Tier 1 -> Tier 6, singular nouns, infinitive verbs, no brand names anywhere.${scoringVerificationItem}
 - Output is valid JSON only — no markdown, no commentary, no trailing text before or after the braces.
-
-"keywordScores" must include an entry for every single keyword in "keywords" — all ${promptKeywordsCount} of them, not a sample. The 3-key example below is illustrative of the format only, not the required length.
-
-Output ONLY valid JSON, no markdown, no conversational text:
-{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":65},"categories":${categoryList}${policyWarningField}}`;
+${scoringEnforcement}Output ONLY valid JSON, no markdown, no conversational text:
+${jsonSample}`;
 }
 
 /**

@@ -1856,21 +1856,6 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           }
         }
       }
-      const isEpsAsset = Boolean(img?.isEps || (img?.file?.name && /\.(eps|epsf|epsi)$/i.test(img.file.name)));
-      const junk = new Set(isEpsAsset
-        ? ["image", "photo", "picture", "file", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]
-        : ["design", "image", "photo", "picture", "file", "graphic", "visual", "element", "object", "thing", "item", "nice", "great", "good", "look", "use", "fun", "enjoyment", "reality", "pastime", "recreation", "interests", "relaxation", "simulate"]
-      );
-      if (junk.has(kl) || kl.length < 3) return -1;
-      if (img && img.result && img.result.keywords) {
-        const allKws = img.result.keywords.split(',').map((k: string) => k.toLowerCase().trim());
-        const kwIdx = allKws.indexOf(kl);
-        if (kwIdx !== -1) {
-          if (kwIdx < 15) return Math.max(70, Math.round(95 - (kwIdx * 1.6)));
-          if (kwIdx < 35) return Math.max(30, Math.round(68 - ((kwIdx - 15) * 1.8)));
-          return Math.max(5, Math.round(28 - ((kwIdx - 35) * 1.5)));
-        }
-      }
       return -1;
     };
 
@@ -2270,15 +2255,6 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               <div style={{ fontWeight: 700, color: 'var(--text-2)', fontSize: '0.85rem' }}>
                 {progressStats.percent}%
               </div>
-              {!isProcessing && (
-                <button
-                  onClick={() => setProgressStats({ total: 0, success: 0, error: 0, processed: 0, percent: 0, successPercent: 0, errorPercent: 0, isRetry: false })}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: '2px', display: 'flex', alignItems: 'center' }}
-                  title="Dismiss summary"
-                >
-                  <X style={{ width: '0.85rem', height: '0.85rem' }} />
-                </button>
-              )}
             </div>
           </div>
           <div style={{ height: '9px', background: '#e2e8f0', borderRadius: '999px', overflow: 'hidden', display: 'flex', width: '100%' }}>
@@ -2437,8 +2413,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 <FileSpreadsheet style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Export CSV ({doneCount})
               </button>
 
-              {/* Clean Yellow/Red buttons (conditional) */}
-              {doneCount > 0 && !autoEmbed && (
+              {/* Clean Yellow/Red buttons (conditional on ranking enabled) */}
+              {doneCount > 0 && !autoEmbed && (promptSettings?.enableKeywordRanking !== false) && (
                 <>
                   <div style={{ width: '1px', height: '1.4rem', background: 'var(--glass-border, #e2e8f0)', margin: '0 4px' }} />
                     <button
@@ -2552,7 +2528,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   </label>
                 </div>
 
-                {autoEmbed && (
+                {autoEmbed && (promptSettings?.enableKeywordRanking !== false) && (
                   <>
                     <div 
                       className={`${autoRemoveYellow ? 'btn-glass-amber-custom' : 'btn-glass-inactive'} flex items-center gap-2 select-none`}
@@ -2889,6 +2865,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   activeProviderName={activeProviderName}
                   upscaleScale={upscaleScale}
                   ftpConfigs={ftpConfigs}
+                  enableKeywordRanking={promptSettings?.enableKeywordRanking ?? true}
                 />
               )}
             </div>
@@ -2903,6 +2880,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   setActiveCell={setActiveCell}
                   selectedCount={selectedRows.size}
                   applyToSelected={applyToSelected}
+                  enableKeywordRanking={promptSettings?.enableKeywordRanking ?? true}
                 />
               </div>
             )}

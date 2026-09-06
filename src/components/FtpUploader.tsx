@@ -179,16 +179,11 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
     setTestResult(null);
   }, [editingConfig?.id]);
 
-  // Prevent UI getting stuck if renderer reloaded and all active uploads finished
+  // Force unlock if the UI was reloaded or stuck during an active session
   useEffect(() => {
-    if (isUploading && files.length > 0) {
-      const allDone = files.every(f => f.status === 'success' || f.status === 'error');
-      if (allDone) {
-        setIsUploading(false);
-        setCurrentJobId(null);
-      }
-    }
-  }, [files, isUploading]);
+    setIsUploading(false);
+    setCurrentJobId(null);
+  }, []);
 
   useEffect(() => {
     return () => {

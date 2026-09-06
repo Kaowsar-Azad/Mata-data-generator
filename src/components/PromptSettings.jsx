@@ -248,6 +248,12 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
                 />
 
                 <ToggleSwitch
+                  label="Keyword Ranking & Color"
+                  checked={settings.enableKeywordRanking ?? true}
+                  onChange={(v) => update("enableKeywordRanking", v)}
+                />
+
+                <ToggleSwitch
                   label={
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Policy & Copyright Scan

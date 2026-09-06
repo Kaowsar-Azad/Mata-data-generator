@@ -113,6 +113,31 @@ This is a hard compliance rule, not a style preference. Violations can get contr
 `;
   const policyWarningField = skipPolicyScan ? '' : ',"policyWarning":null';
 
+  const enableRanking = s.enableKeywordRanking !== false;
+
+  const scoringSection = enableRanking ? `
+== KEYWORD RELEVANCE SCORING (keywordScores) ==
+CRITICAL MANDATORY RULE: The "keywordScores" object MUST contain one integer score (1–100) for EVERY SINGLE keyword present in the "keywords" list. DO NOT skip any keyword!
+
+Rules for scoring:
+1. Rank each keyword based on its true relevance to the image. 
+2. The most relevant keywords (highly matching) MUST score between 60 and 100.
+3. Moderately relevant keywords MUST score between 30 and 59.
+4. The least relevant or abstract keywords MUST score between 1 and 29.
+5. Every score must be strictly lower than the one before it — never equal, never higher.
+6. Make sure to distribute the scores across these ranges (60-100, 30-59, 1-29) based on their relevance.
+` : "";
+
+  const scoringVerificationItem = enableRanking ? `\n- "keywordScores" has one unique, strictly-decreasing score per keyword (1-100), matching the keyword list order exactly.` : "";
+
+  const scoringEnforcement = enableRanking
+    ? `\n"keywordScores" must include an entry for every single keyword in "keywords" — all ${promptKeywordsCount} of them. Do NOT skip any keyword. The 3-key example below is illustrative of the format only, not the required length.\n`
+    : `\nThe 3-key example below is illustrative of the format only, not the required length. "keywords" must include all ${promptKeywordsCount} keywords, not a sample.\n`;
+
+  const jsonSample = enableRanking
+    ? `{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":65},"categories":${categoryList}${policyWarningField}}`
+    : `{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${promptKeywordsCount} total)","categories":${categoryList}${policyWarningField}}`;
+
   return `${fileContext}
 ${policyRule}
 
@@ -159,17 +184,7 @@ Within each tier, order keywords by descending relevance to the image (most rele
 
 If ${promptKeywordsCount} is small (15 or fewer), prioritize Tiers 1–3 and reduce or skip Tiers 4–6 as needed. Never pad the list with generic filler just to hit the count.
 
-== KEYWORD RELEVANCE SCORING (keywordScores) ==
-CRITICAL MANDATORY RULE: The "keywordScores" object MUST contain one integer score (1–100) for EVERY SINGLE keyword present in the "keywords" list. DO NOT skip any keyword!
-
-Rules for scoring:
-1. Rank each keyword based on its true relevance to the image. 
-2. The most relevant keywords (highly matching) MUST score between 60 and 100.
-3. Moderately relevant keywords MUST score between 30 and 59.
-4. The least relevant or abstract keywords MUST score between 1 and 29.
-5. Every score must be strictly lower than the one before it — never equal, never higher.
-6. Make sure to distribute the scores across these ranges (60-100, 30-59, 1-29) based on their relevance.
-
+${scoringSection}
 GRAMMAR RULES (Adobe Stock NLP requirements):
 - Use SINGULAR nouns only. The algorithm auto-expands to plural. Write "dog" not "dogs", "camera" not "cameras".
 - Use INFINITIVE verb forms only. Write "run", "smile", "hold" — NOT "running", "smiled", "holding".
@@ -183,16 +198,10 @@ QUALITY RULES:
 Before writing your final answer, silently verify each of these — do NOT print this checklist, only the final JSON:
 - Title is one complete sentence, 25–70 characters, does not end on a preposition/conjunction/article.
 - Description follows the 2-sentence formula, 50–100 characters.
-- Exactly ${promptKeywordsCount} keywords, ordered Tier 1 → Tier 6, singular nouns, infinitive verbs, no brand names anywhere.
-- "keywordScores" has one unique, strictly-decreasing score per keyword (1-100), matching the keyword list order exactly.
+- Exactly ${promptKeywordsCount} keywords, ordered Tier 1 → Tier 6, singular nouns, infinitive verbs, no brand names anywhere.${scoringVerificationItem}
 - Output is valid JSON only — no markdown, no commentary, no trailing text before or after the braces.
-
-"keywordScores" must include an entry for every single keyword in "keywords" — all ${promptKeywordsCount} of them. Do NOT skip any keyword. The 3-key example below is illustrative of the format only, not the required length.
-
-Output ONLY valid JSON, no markdown, no conversational text:
-{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":65},"categories":${categoryList}${policyWarningField}}`;
-
-
+${scoringEnforcement}Output ONLY valid JSON, no markdown, no conversational text:
+${jsonSample}`;
 }
 
 export async function fetchMistral(apiKey, prompt, base64Data, mimeType, forceJson = true, promptSettings = {}) {

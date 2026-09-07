@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteKey: (provider, index) => ipcRenderer.invoke('delete-key', provider, index),
   saveAllKeys: (allKeys) => ipcRenderer.invoke('save-all-keys', allKeys),
   loadAllKeys: () => ipcRenderer.invoke('load-all-keys'),
+  prewarmExifTool: () => ipcRenderer.invoke('prewarm-exiftool'),
   writeMetadata: (filePath, title, description, keywords, categories) => ipcRenderer.invoke('write-metadata', filePath, title, description, keywords, categories),
   readExif: (filePath) => ipcRenderer.invoke('read-exif', filePath).catch(() => ({ success: false })),
   getHardwareTier: () => ipcRenderer.invoke('get-hardware-tier').catch(() => 'low-end'),

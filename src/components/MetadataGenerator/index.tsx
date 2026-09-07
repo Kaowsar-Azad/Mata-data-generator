@@ -239,6 +239,14 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   });
   const [embeddingCount, setEmbeddingCount] = useState(0);
   const isEmbedding = embeddingCount > 0;
+  const [embedTracker, setEmbedTracker] = useState<{
+    active: boolean;
+    total: number;
+    completed: number;
+    activeCount: number;
+    failed: number;
+    isComplete: boolean;
+  } | null>(null);
   const [autoUpscale, setAutoUpscale] = useState(() => localStorage.getItem("autoUpscale") === "true");
   const [upscaleScale, setUpscaleScale] = useState(() => Math.min(parseInt(localStorage.getItem("upscaleScale")) || 2, 4));
   const [upscaleEngine, setUpscaleEngine] = useState(() => {
@@ -253,6 +261,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   useEffect(() => {
     if (window.electronAPI?.getHardwareTier) {
       window.electronAPI.getHardwareTier().then((tier: string) => setHardwareTier(tier)).catch(() => {});
+    }
+    if (window.electronAPI?.prewarmExifTool) {
+      window.electronAPI.prewarmExifTool().catch(() => {});
     }
   }, []);
 
@@ -381,6 +392,45 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   useEffect(() => {
     localStorage.setItem("autoUpscale", autoUpscale.toString());
   }, [autoUpscale]);
+
+  const handleAutoUpscaleToggle = (e: any) => {
+    const isChecked = e.target.checked;
+    if (!isChecked) {
+      setAutoUpscale(false);
+      return;
+    }
+
+    const epsFilesCount = images.filter((img: any) => img.isEps).length;
+    const normalFilesCount = images.filter((img: any) => !img.isEps && !img.isVideo).length;
+
+    if (epsFilesCount > 0) {
+      if (normalFilesCount === 0) {
+        showToast("Auto Upscale does not work on EPS files.", "warning");
+        setAutoUpscale(false);
+      } else {
+        showToast(`${normalFilesCount} files will be upscaled. ${epsFilesCount} EPS files will be skipped.`, "info");
+        setAutoUpscale(true);
+      }
+    } else {
+      setAutoUpscale(true);
+    }
+  };
+
+  useEffect(() => {
+    if (autoUpscale && images.length > 0) {
+      const epsFilesCount = images.filter((img: any) => img.isEps).length;
+      const normalFilesCount = images.filter((img: any) => !img.isEps && !img.isVideo).length;
+      
+      if (epsFilesCount > 0) {
+        if (normalFilesCount === 0) {
+          showToast("Auto Upscale disabled: Not supported for EPS files.", "warning");
+          setAutoUpscale(false);
+        } else {
+          showToast(`${normalFilesCount} files will be upscaled. ${epsFilesCount} EPS files will be skipped.`, "info");
+        }
+      }
+    }
+  }, [images.length]);
 
   useEffect(() => {
     localStorage.setItem("upscaleScale", upscaleScale.toString());
@@ -752,6 +802,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     cellRefs.current = {};
     setDuplicatePairs([]);
     setDismissedDuplicates(false);
+    setEmbedTracker(null);
+    setEmbeddingCount(0);
   };
 
   const stopProcessing = () => {
@@ -819,6 +871,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     setProgress(0);
     cancelRef.current = false;
 
+    try {
     const currentImages = imagesRef.current;
 
     const toProcess = currentImages.filter((img: any) => {
@@ -1103,7 +1156,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             const activeScale = autoUpscale ? upscaleScale : (autoEmbedRef.current ? embedScale : 2);
             const activeEngine = autoUpscale ? upscaleEngine : (autoEmbedRef.current ? embedEngine : 'balanced');
             const targetPath = img.visualFile?.path || (!img.isEps && !img.isVideo ? img.file?.path : null);
-            const needsUpscale = (autoUpscale && window.electronAPI && targetPath && !img.isVideo);
+            const needsUpscale = (autoUpscale && window.electronAPI && targetPath && !img.isVideo && !img.isEps);
 
             setImages((prev: any) =>
               prev.map((item: any) =>
@@ -1349,12 +1402,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     }
 
     if (cancelRef.current) {
-      setIsProcessing(false);
       return;
     }
 
-    setIsProcessing(false);
-    
     if (autoEmbedRef.current && window.electronAPI && embedPromises.length > 0) {
       await Promise.allSettled(embedPromises);
     }
@@ -1373,6 +1423,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         }
       }
     }, 500);
+    
+    } finally {
+      setIsProcessing(false);
+    }
   };
   
   const embedMetadataToFiles = async (imagesToProcess, forceUpload = false, skipAdobeUpload = false) => {
@@ -1399,10 +1453,19 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         setUploadBatchIds([]);
       }
       
+      setEmbedTracker({
+        active: true,
+        total: currentImages.length,
+        completed: 0,
+        activeCount: 0,
+        failed: 0,
+        isComplete: false
+      });
+      
       setImages(prev => prev.map(img => {
         const shouldEmbed = currentImages.some(ci => ci.id === img.id);
         if (shouldEmbed) {
-          return { ...img, embeddingStatus: "embedding", embeddingError: null };
+          return { ...img, embeddingStatus: "pending", embeddingError: null };
         }
         return img;
       }));
@@ -1410,10 +1473,15 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       const embeddedImages: any[] = [];
       const filesToUpload: any[] = [];
       
-      for (const img of currentImages) {
+      const processSingleImage = async (img: any) => {
         try {
           if (cancelRef.current) return;
-          if (!imagesRef.current.some((i: any) => i.id === img.id)) continue;
+          if (!imagesRef.current.some((i: any) => i.id === img.id)) return;
+
+          // Transition this specific item to active embedding
+          setImages(prev => prev.map(i => (i as any).id === img.id ? { ...i, embeddingStatus: "embedding", embeddingError: null } : i));
+          setEmbedTracker(prev => prev ? { ...prev, activeCount: prev.activeCount + 1 } : null);
+
           const pathsToEmbed = [];
 
           // Resolve primary path — verify it exists on disk, fallback to original if renamed path is gone
@@ -1491,21 +1559,62 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   } 
                 : item
             ));
+            setEmbedTracker(prev => prev ? {
+              ...prev,
+              completed: prev.completed + 1,
+              activeCount: Math.max(0, prev.activeCount - 1)
+            } : null);
           } else {
             setImages(prev => prev.map(item => 
               (item as any).id === img.id 
                 ? { ...item, embeddingStatus: "error", embeddingError: getUserFriendlyErrorMessage(errMsg, 'Embedding') } 
                 : item
             ));
+            setEmbedTracker(prev => prev ? {
+              ...prev,
+              failed: prev.failed + 1,
+              activeCount: Math.max(0, prev.activeCount - 1)
+            } : null);
           }
-        } catch (err) {
+        } catch (err: any) {
           setImages(prev => prev.map(item => 
             (item as any).id === img.id 
               ? { ...item, embeddingStatus: "error", embeddingError: getUserFriendlyErrorMessage(err.message, 'Embedding') } 
               : item
           ));
+          setEmbedTracker(prev => prev ? {
+            ...prev,
+            failed: prev.failed + 1,
+            activeCount: Math.max(0, prev.activeCount - 1)
+          } : null);
         }
-      }
+      };
+
+      // Concurrent Embedding Worker Pool (Balanced concurrency: 2 with gentle yield to protect laptop responsiveness)
+      const CONCURRENT_EMBED_LIMIT = 2;
+      let currentIndex = 0;
+      const embedWorker = async () => {
+        while (currentIndex < currentImages.length) {
+          if (cancelRef.current) break;
+          const targetImg = currentImages[currentIndex++];
+          if (targetImg) {
+            await processSingleImage(targetImg);
+            // Gentle 40ms yield to keep UI frame rate smooth and eliminate laptop lag
+            await new Promise(r => setTimeout(r, 40));
+          }
+        }
+      };
+
+      const workerCount = Math.min(CONCURRENT_EMBED_LIMIT, currentImages.length);
+      const workers = Array.from({ length: workerCount }, () => embedWorker());
+      await Promise.all(workers);
+
+      setEmbedTracker(prev => prev ? {
+        ...prev,
+        active: false,
+        isComplete: true,
+        activeCount: 0
+      } : null);
       
       const uploadConfigs = activeFtpConfigs;
 
@@ -1954,17 +2063,17 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const activeProviderName = getProviderName(Array.isArray(apiProvider) ? apiProvider[0] : apiProvider);
 
   const metadataDoneCount = images.filter((i) => i.result !== null).length;
-  const upscaleDoneCount = images.filter((i) => i.status === "done" && (i.upscaleModel || i.upscaleProgress !== undefined)).length;
+  const upscaleDoneCount = images.filter((i) => i.status === "done" && (i.upscaleModel || i.upscaleProgress !== undefined || i.isEps || i.isVideo)).length;
   const doneCount = images.filter((i) => i.status === "done").length;
-  const allDoneCount = images.filter((i) => i.status === "done" && (!autoEmbed || i.embeddingStatus === "success") && (!autoUpscale || i.upscaleProgress !== undefined)).length;
+  const allDoneCount = images.filter((i) => i.status === "done" && (!autoEmbed || i.embeddingStatus === "success") && (!autoUpscale || i.upscaleProgress !== undefined || i.isEps || i.isVideo)).length;
   const errorCount = images.filter((i) => i.status === "error").length;
   const pendingCount = images.filter((i) => i.status === "pending").length;
   const epsCount = images.filter((i) => i.isEps).length;
 
   const embeddingSuccessCount = images.filter((i) => i.embeddingStatus === "success").length;
   const embeddingErrorCount = images.filter((i) => i.embeddingStatus === "error").length;
-  const localEmbedErrorCount = images.filter((i) => i.embeddingStatus === "error" && (!i.embeddingError || !i.embeddingError.includes(':'))).length;
-  const ftpErrorCount = images.filter((i) => i.embeddingStatus === "error" && i.embeddingError && i.embeddingError.includes(':')).length;
+  const ftpErrorCount = images.filter((i) => i.embeddingStatus === "error" && i.embeddingError && i.embeddingError.includes('FTP Upload')).length;
+  const localEmbedErrorCount = embeddingErrorCount - ftpErrorCount;
   const policyViolationCount = images.filter((i) => i.result?.policyWarning || (i.result?.policyReason && i.result.policyReason.trim().length > 0)).length;
 
   return (
@@ -2039,29 +2148,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         </div>
       )}
 
-      {/* ERROR BANNER 2: LOCAL EMBEDDING FAILED */}
-      {localEmbedErrorCount > 0 && (
-        <div className="glass card animate-fade-in mt-4" style={{ borderLeft: '4px solid var(--danger)', background: 'rgba(248,113,113,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h3 style={{ color: 'var(--danger)', fontSize: '1.05rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <RefreshCw className="w-4 h-4" /> 
-              {localEmbedErrorCount} File{localEmbedErrorCount !== 1 ? 's' : ''} Failed to Embed (Local Save)
-            </h3>
-            <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
-              Metadata could not be embedded or saved locally. Please try again.
-            </p>
-          </div>
-          <button
-            className="btn-primary shrink-0"
-            style={{ background: 'var(--danger)', boxShadow: '0 4px 15px rgba(248,113,113,0.3)' }}
-            disabled={isEmbedding}
-            onClick={() => retryEmbedAndUpload()}
-          >
-            {isEmbedding ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            {isEmbedding ? 'Retrying...' : 'Retry Embedding'}
-          </button>
-        </div>
-      )}
+
 
       {/* ERROR BANNER 3: FTP UPLOAD FAILED */}
       {ftpErrorCount > 0 && (
@@ -2208,6 +2295,95 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             >
               <X style={{ width: '0.9rem', height: '0.9rem' }} />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated Embedding Progress Tracker */}
+      {embedTracker && (
+        <div style={{
+          width: '100%',
+          margin: '10px 0',
+          padding: '12px 18px',
+          background: embedTracker.isComplete 
+            ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(5, 150, 105, 0.12))'
+            : 'linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.12))',
+          borderRadius: '12px',
+          border: embedTracker.isComplete 
+            ? '1px solid rgba(16, 185, 129, 0.35)'
+            : '1px solid rgba(139, 92, 246, 0.35)',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.04)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          transition: 'all 0.3s ease'
+        }}>
+          {/* Header row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {embedTracker.isComplete ? (
+                <CheckCircle2 style={{ width: '1.2rem', height: '1.2rem', color: '#10b981' }} />
+              ) : (
+                <Loader2 className="animate-spin" style={{ width: '1.2rem', height: '1.2rem', color: '#8b5cf6' }} />
+              )}
+              <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-1)' }}>
+                {embedTracker.isComplete 
+                  ? `Embedding Complete! (${embedTracker.completed} of ${embedTracker.total} files embedded)`
+                  : `Embedding Metadata (${embedTracker.completed} of ${embedTracker.total} files completed)`}
+              </span>
+            </div>
+            
+            {/* Badges and percentage */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {!embedTracker.isComplete && (embedTracker.total - (embedTracker.completed + embedTracker.failed)) > 0 && (
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', background: 'rgba(100, 116, 139, 0.15)', padding: '2px 8px', borderRadius: '999px' }}>
+                  {embedTracker.total - (embedTracker.completed + embedTracker.failed)} Queued
+                </span>
+              )}
+              {embedTracker.failed > 0 && (
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#ef4444', background: 'rgba(239, 68, 68, 0.15)', padding: '2px 8px', borderRadius: '999px' }}>
+                  {embedTracker.failed} Failed
+                </span>
+              )}
+              <span style={{ fontWeight: 800, fontSize: '0.9rem', color: embedTracker.isComplete ? '#10b981' : '#8b5cf6' }}>
+                {embedTracker.total > 0 ? Math.round((embedTracker.completed / embedTracker.total) * 100) : 0}%
+              </span>
+              {embedTracker.isComplete && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '4px' }}>
+                  {localEmbedErrorCount > 0 && (
+                    <button
+                      className="btn-primary"
+                      style={{ background: 'var(--danger)', boxShadow: '0 2px 8px rgba(248,113,113,0.3)', padding: '0.25rem 0.6rem', fontSize: '0.75rem', height: 'auto', minHeight: 'unset', borderRadius: '4px', gap: '4px' }}
+                      disabled={isEmbedding}
+                      onClick={() => retryEmbedAndUpload()}
+                    >
+                      {isEmbedding ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                      {isEmbedding ? 'Retrying...' : 'Retry Failed'}
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => setEmbedTracker(null)} 
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: '2px', display: 'flex' }}
+                    title="Dismiss"
+                  >
+                    <X style={{ width: '1rem', height: '1rem' }} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Progress bar track */}
+          <div style={{ height: '7px', background: 'rgba(0,0,0,0.06)', borderRadius: '999px', overflow: 'hidden', width: '100%' }}>
+            <div style={{
+              height: '100%',
+              width: `${embedTracker.total > 0 ? Math.round((embedTracker.completed / embedTracker.total) * 100) : 0}%`,
+              background: embedTracker.isComplete 
+                ? 'linear-gradient(90deg, #10b981, #059669)'
+                : 'linear-gradient(90deg, #6366f1, #8b5cf6)',
+              borderRadius: '999px',
+              transition: 'width 0.25s ease'
+            }} />
           </div>
         </div>
       )}
@@ -2581,7 +2757,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                       type="checkbox" 
                       className="ios-toggle ios-toggle-green-custom"
                       checked={autoUpscale} 
-                      onChange={(e: any) => setAutoUpscale(e.target.checked)}
+                      onChange={handleAutoUpscaleToggle}
                     />
                     <span style={{ fontWeight: 500 }}>Auto upscale</span>
                   </label>

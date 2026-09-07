@@ -137,6 +137,7 @@ const MetadataGridRow = memo(({
           {img.embeddingStatus && img.embeddingStatus !== 'none' && (
             <div
               className={`grid-embed-chip ${
+                img.embeddingStatus === 'pending' ? 'bg-slate-500/10 text-slate-400' :
                 img.embeddingStatus === 'embedding' ? 'bg-indigo-500/10 text-indigo-500' :
                 img.embeddingStatus === 'uploading' ? 'bg-amber-500/10 text-amber-500' :
                 img.embeddingStatus === 'success' ? 'bg-green-500/10 text-green-500' :
@@ -144,6 +145,7 @@ const MetadataGridRow = memo(({
               }`}
               title={img.embeddingStatus === 'error' ? img.embeddingError : ''}
             >
+              {img.embeddingStatus === 'pending' && 'Queued'}
               {img.embeddingStatus === 'embedding' && 'Embedding'}
               {img.embeddingStatus === 'uploading' && 'FTP'}
               {img.embeddingStatus === 'success' && 'Embedded'}

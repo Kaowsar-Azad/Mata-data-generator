@@ -1,5 +1,5 @@
 import React, { memo } from "react";
-import { Video, Loader2, FileCode2, Image as ImageIcon, AlertTriangle, CheckCircle2, X, Upload, ShieldAlert, Sparkles, Bot, Maximize2 } from "lucide-react";
+import { Video, Loader2, FileCode2, Image as ImageIcon, AlertTriangle, CheckCircle2, X, Upload, ShieldAlert, Sparkles, Bot, Maximize2, Clock } from "lucide-react";
 import { MdCloudUpload } from "react-icons/md";
 import { StatusBadge, getScoreMeta } from "./workflowHelpers";
 import { MetaField } from "./MetaField";
@@ -163,8 +163,9 @@ const MetadataCard = memo(({
         )}
         
         {img.embeddingStatus && img.embeddingStatus !== 'none' && (
-          <div className={`mt-3 p-2 rounded text-xs flex items-center gap-2 ${img.embeddingStatus === 'embedding' ? 'bg-indigo-500/10 text-indigo-400' : img.embeddingStatus === 'uploading' ? 'bg-amber-500/10 text-amber-500 w-full' : img.embeddingStatus === 'success' ? 'bg-green-500/10 text-green-400 font-medium' : 'bg-red-500/10 text-red-400'}`} style={{ width: '100%' }}>
-            {img.embeddingStatus === 'embedding' && <><Loader2 className="w-3 h-3 animate-spin" /><span>Embedding metadata into file...</span></>}
+          <div className={`mt-3 p-2 rounded text-xs flex items-center gap-2 ${img.embeddingStatus === 'pending' ? 'bg-slate-500/10 text-slate-400 font-medium' : img.embeddingStatus === 'embedding' ? 'bg-indigo-500/10 text-indigo-400' : img.embeddingStatus === 'uploading' ? 'bg-amber-500/10 text-amber-500 w-full' : img.embeddingStatus === 'success' ? 'bg-green-500/10 text-green-400 font-medium' : 'bg-red-500/10 text-red-400'}`} style={{ width: '100%' }}>
+            {img.embeddingStatus === 'pending' && <><Clock className="w-3.5 h-3.5 text-slate-400 animate-pulse" /><span>Queued (Waiting to embed)...</span></>}
+            {img.embeddingStatus === 'embedding' && <><Loader2 className="w-3 h-3 animate-spin text-indigo-500" /><span>Embedding metadata into file...</span></>}
             {img.embeddingStatus === 'uploading' && (() => {
               const singleProgress = (() => {
                 if (typeof img.uploadProgress === 'number') return img.uploadProgress;

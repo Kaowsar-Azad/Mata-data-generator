@@ -12,10 +12,23 @@ if (ffmpegStatic) { ffmpeg.setFfmpegPath(ffmpegStatic); }
 const { setupMataAi } = require('./MataAI/index.cjs');
 
 const LOG_FILE = path.join(os.tmpdir(), 'imagemetadata_electron.log');
+
+// Rotate log file if it exceeds 10MB to eliminate heavy NTFS append overhead
+try {
+  if (fs.existsSync(LOG_FILE)) {
+    const stats = fs.statSync(LOG_FILE);
+    if (stats.size > 10 * 1024 * 1024) {
+      const oldLog = path.join(os.tmpdir(), 'imagemetadata_electron.old.log');
+      try { if (fs.existsSync(oldLog)) fs.unlinkSync(oldLog); } catch (e) {}
+      fs.renameSync(LOG_FILE, oldLog);
+    }
+  }
+} catch (e) {}
+
 function fileLog(...args) {
   try {
     const msg = `[${new Date().toISOString()}] ${args.map(a => a instanceof Error ? a.stack || a.message : (typeof a === 'object' ? JSON.stringify(a) : a)).join(' ')}\n`;
-    fs.appendFileSync(LOG_FILE, msg);
+    fs.appendFile(LOG_FILE, msg, () => {});
     console.log(...args);
   } catch (e) {
     console.error('Logging failed:', e);
@@ -71,6 +84,9 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+
+  // Pre-warm ExifTool in background so first embed has 0ms cold-start delay
+  getExifTool().catch(err => fileLog('[getExifTool prewarm error]', err));
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -639,8 +655,8 @@ ipcMain.handle('remove-bg-hf', async (event, inputPath, token) => {
 let exiftoolInstance = null;
 
 async function getExifTool() {
-  fileLog('[getExifTool] Initializing or retrieving ExifTool instance...');
   if (!exiftoolInstance) {
+    fileLog('[getExifTool] Initializing ExifTool instance...');
     const { ExifTool, exiftoolPath } = require('exiftool-vendored');
     try {
       const resolvedPath = await exiftoolPath();
@@ -648,33 +664,77 @@ async function getExifTool() {
     } catch (e) {
       fileLog('[getExifTool] Failed resolving exiftoolPath:', e);
     }
-    exiftoolInstance = new ExifTool({ maxProcs: 2, taskTimeoutMillis: 60000 });
-    fileLog('[getExifTool] ExifTool instance created.');
+    const cpuCount = os.cpus() ? os.cpus().length : 4;
+    const workerCount = Math.min(2, Math.max(1, cpuCount >= 4 ? 2 : 1));
+    exiftoolInstance = new ExifTool({ maxProcs: workerCount, taskTimeoutMillis: 60000 });
+    fileLog(`[getExifTool] ExifTool instance created with maxProcs: ${workerCount}`);
   }
   return exiftoolInstance;
 }
 
+ipcMain.handle('prewarm-exiftool', async () => {
+  try {
+    await getExifTool();
+    return { ready: true };
+  } catch (e) {
+    fileLog('[prewarm-exiftool error]', e);
+    return { ready: false, error: e.message };
+  }
+});
+
+// ── Persistent Metadata Cache helper functions for Red Dot prevention (In-Memory + Debounced Disk Write) ──
+const METADATA_CACHE_FILE = path.join(app.getPath('userData'), 'metadata-history-cache.json');
+let inMemoryMetadataCache = null;
+let cacheFlushTimeout = null;
+
+function loadMetadataCache() {
+  if (inMemoryMetadataCache !== null) return inMemoryMetadataCache;
+  try {
+    if (fs.existsSync(METADATA_CACHE_FILE)) {
+      inMemoryMetadataCache = JSON.parse(fs.readFileSync(METADATA_CACHE_FILE, 'utf8') || '{}');
+    } else {
+      inMemoryMetadataCache = {};
+    }
+  } catch (e) {
+    fileLog('[cache] Failed parsing cache file, resetting:', e);
+    inMemoryMetadataCache = {};
+  }
+  return inMemoryMetadataCache;
+}
+
+function flushMetadataCacheToDisk() {
+  if (!inMemoryMetadataCache) return;
+  try {
+    fs.writeFile(METADATA_CACHE_FILE, JSON.stringify(inMemoryMetadataCache), 'utf8', (err) => {
+      if (err) fileLog('[cache] Error writing metadata cache to disk:', err);
+    });
+  } catch (err) {
+    fileLog('[cache] Error flushing metadata cache:', err);
+  }
+}
+
 app.on('will-quit', () => {
-  fileLog('[app will-quit] Ending ExifTool instance...');
+  fileLog('[app will-quit] Ending ExifTool instance & persisting cache...');
+  if (cacheFlushTimeout) {
+    clearTimeout(cacheFlushTimeout);
+    cacheFlushTimeout = null;
+  }
+  if (inMemoryMetadataCache) {
+    try {
+      fs.writeFileSync(METADATA_CACHE_FILE, JSON.stringify(inMemoryMetadataCache), 'utf8');
+    } catch (e) {
+      fileLog('[cache] Error on final cache sync:', e);
+    }
+  }
   if (exiftoolInstance) {
     exiftoolInstance.end();
     fileLog('[app will-quit] ExifTool instance ended.');
   }
 });
 
-// ── Persistent Metadata Cache helper functions for Red Dot prevention ──
-const METADATA_CACHE_FILE = path.join(app.getPath('userData'), 'metadata-history-cache.json');
-
 async function saveMetadataToCache(originalPath, newFileName, title, description, keywords, categories) {
   try {
-    let cache = {};
-    if (fs.existsSync(METADATA_CACHE_FILE)) {
-      try {
-        cache = JSON.parse(fs.readFileSync(METADATA_CACHE_FILE, 'utf8') || '{}');
-      } catch (e) {
-        fileLog('[cache] Failed parsing cache file, resetting:', e);
-      }
-    }
+    const cache = loadMetadataCache();
     
     const entry = {
       title,
@@ -692,8 +752,10 @@ async function saveMetadataToCache(originalPath, newFileName, title, description
       cache[newKey] = entry;
     }
     
-    fs.writeFileSync(METADATA_CACHE_FILE, JSON.stringify(cache, null, 2), 'utf8');
-    fileLog('[cache] Metadata saved for keys:', [origKey, newFileName?.toLowerCase().trim()].filter(Boolean));
+    // Non-blocking debounced flush to disk (500ms)
+    if (cacheFlushTimeout) clearTimeout(cacheFlushTimeout);
+    cacheFlushTimeout = setTimeout(flushMetadataCacheToDisk, 500);
+    fileLog('[cache] Metadata saved in-memory for keys:', [origKey, newFileName?.toLowerCase().trim()].filter(Boolean));
   } catch (err) {
     fileLog('[cache] Error saving to metadata cache:', err);
   }
@@ -701,8 +763,7 @@ async function saveMetadataToCache(originalPath, newFileName, title, description
 
 async function getMetadataFromCache(fileName) {
   try {
-    if (!fs.existsSync(METADATA_CACHE_FILE)) return null;
-    const cache = JSON.parse(fs.readFileSync(METADATA_CACHE_FILE, 'utf8') || '{}');
+    const cache = loadMetadataCache();
     const key = fileName.toLowerCase().trim();
     
     if (cache[key]) {
@@ -933,6 +994,16 @@ ipcMain.handle('write-metadata', async (event, filePath, title, description, key
     };
 
     fileLog('[write-metadata] Writing tags to file:', tags);
+    
+    // Clean up any lingering _exiftool_tmp file from a previous crashed run
+    try {
+      if (fs.existsSync(filePath + '_exiftool_tmp')) {
+        fs.unlinkSync(filePath + '_exiftool_tmp');
+        fileLog('[write-metadata] Cleaned up existing _exiftool_tmp file');
+      }
+    } catch (cleanupErr) {
+      fileLog('[write-metadata] Pre-write cleanup error:', cleanupErr);
+    }
     
     // "-overwrite_original" ensures no *_original backup files are created
     const writePromise = exiftool.write(filePath, tags, ["-overwrite_original", "-codedcharacterset=utf8"]);
@@ -1692,19 +1763,21 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
 
       const slot = await acquireSlot(entry); // blocks until a connection is free
       let total_transferred = 0;
-      const fileSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
-
-      const isAdobe = config.host && (
-        config.host.toLowerCase().includes('adobe') ||
-        config.host.toLowerCase().includes('adobestock') ||
-        config.host.toLowerCase().includes('contributor.stock')
-      );
-
-      let finalRemoteName = fileName;
-      const MAX_RETRIES = 5;
-      let uploadSuccess = false;
+      let fileSize = 0;
 
       try {
+        fileSize = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+
+        const isAdobe = config.host && (
+          config.host.toLowerCase().includes('adobe') ||
+          config.host.toLowerCase().includes('adobestock') ||
+          config.host.toLowerCase().includes('contributor.stock')
+        );
+
+        let finalRemoteName = fileName;
+        const MAX_RETRIES = 5;
+        let uploadSuccess = false;
+
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
           if (uploadSuccess) break;
 

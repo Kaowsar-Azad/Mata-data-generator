@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   writeMetadata: (filePath, title, description, keywords, categories) => ipcRenderer.invoke('write-metadata', filePath, title, description, keywords, categories),
   readExif: (filePath) => ipcRenderer.invoke('read-exif', filePath).catch(() => ({ success: false })),
   getHardwareTier: () => ipcRenderer.invoke('get-hardware-tier').catch(() => 'low-end'),
+  getEmbedConcurrency: () => ipcRenderer.invoke('get-embed-concurrency').catch(() => 4),
   checkFileExists: (filePath) => ipcRenderer.invoke('check-file-exists', filePath),
   saveFtpConfig: (config) => ipcRenderer.invoke('save-ftp-config', config),
   getFtpConfig: () => ipcRenderer.invoke('get-ftp-config'),

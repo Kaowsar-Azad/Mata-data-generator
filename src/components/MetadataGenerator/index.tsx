@@ -5,7 +5,7 @@ declare global {
   }
 }
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { MdCloudUpload } from "react-icons/md";
 import {
   Upload,
@@ -734,7 +734,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     addImages(Array.from(e.dataTransfer.files));
   };
 
-  const removeImage = (id: any) => {
+  const removeImage = useCallback((id: any) => {
     setImages((prev: any) => {
       const img = prev.find((i: any) => i.id === id);
       if (img && img.preview && img.preview.startsWith('blob:')) {
@@ -749,9 +749,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     });
 
     setDuplicatePairs((prev: any) => prev.filter((p: any) => p.id1 !== id && p.id2 !== id));
-  };
+  }, []);
 
-  const handleApprovePolicy = (id: any) => {
+  const handleApprovePolicy = useCallback((id: any) => {
     setImages((prev: any) =>
       prev.map((img: any) => {
         if (img.id === id) {
@@ -777,7 +777,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       // By using imagesRef.current inside processBatch, it will pick up the updated state
       processBatch();
     }, 50);
-  };
+  }, []);
 
   const clearAll = () => {
     cancelRef.current = true;
@@ -1473,36 +1473,48 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       const embeddedImages: any[] = [];
       const filesToUpload: any[] = [];
       
+      // Batched UI state updates to prevent freezing React event loop with 500+ renders
+      const pendingStatusUpdates = new Map<any, any>();
+      let statusFlushTimer: any = null;
+
+      const flushStatusUpdates = () => {
+        if (pendingStatusUpdates.size === 0) return;
+        const updates = new Map(pendingStatusUpdates);
+        pendingStatusUpdates.clear();
+        setImages(prev => prev.map(item => {
+          const patch = updates.get((item as any).id);
+          return patch ? { ...item, ...patch } : item;
+        }));
+      };
+
+      const queueStatusUpdate = (id: any, patch: any) => {
+        const existing = pendingStatusUpdates.get(id) || {};
+        pendingStatusUpdates.set(id, { ...existing, ...patch });
+        if (!statusFlushTimer) {
+          statusFlushTimer = setTimeout(() => {
+            statusFlushTimer = null;
+            flushStatusUpdates();
+          }, 200);
+        }
+      };
+
       const processSingleImage = async (img: any) => {
         try {
           if (cancelRef.current) return;
           if (!imagesRef.current.some((i: any) => i.id === img.id)) return;
 
           // Transition this specific item to active embedding
-          setImages(prev => prev.map(i => (i as any).id === img.id ? { ...i, embeddingStatus: "embedding", embeddingError: null } : i));
+          queueStatusUpdate(img.id, { embeddingStatus: "embedding", embeddingError: null });
           setEmbedTracker(prev => prev ? { ...prev, activeCount: prev.activeCount + 1 } : null);
 
           const pathsToEmbed = [];
 
-          // Resolve primary path — verify it exists on disk, fallback to original if renamed path is gone
+          // Primary path — let backend writeMetadata verify disk and handle alternate extensions
           let resolvedPrimaryPath = img.renamedPath || img.file?.path;
-          if (resolvedPrimaryPath && window.electronAPI?.checkFileExists) {
-            const check = await window.electronAPI.checkFileExists(resolvedPrimaryPath);
-            resolvedPrimaryPath = check.resolvedPath; // may swap .jpeg <-> .jpg or stay same
-            if (!check.exists && img.file?.path && img.file.path !== resolvedPrimaryPath) {
-              // Fallback to original file path if renamed path is completely missing
-              const origCheck = await window.electronAPI.checkFileExists(img.file.path);
-              if (origCheck.exists) resolvedPrimaryPath = origCheck.resolvedPath;
-            }
-          }
           if (resolvedPrimaryPath) pathsToEmbed.push({ type: 'primary', path: resolvedPrimaryPath });
 
-          // Resolve visual path for EPS files
+          // Visual path for EPS files
           let resolvedVisualPath = img.renamedVisualPath || img.visualFile?.path;
-          if (resolvedVisualPath && window.electronAPI?.checkFileExists) {
-            const check = await window.electronAPI.checkFileExists(resolvedVisualPath);
-            resolvedVisualPath = check.resolvedPath;
-          }
           if (img.isEps && resolvedVisualPath && resolvedVisualPath !== resolvedPrimaryPath) {
             pathsToEmbed.push({ type: 'visual', path: resolvedVisualPath });
           }
@@ -1548,28 +1560,22 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             if (newPrimaryPath) filesToUpload.push(newPrimaryPath);
             if (newVisualPath && newVisualPath !== newPrimaryPath) filesToUpload.push(newVisualPath);
             
-            setImages(prev => prev.map(item => 
-              (item as any).id === img.id 
-                ? { 
-                    ...item, 
-                    embeddingStatus: ((autoEmbedRef.current || forceUpload) && activeFtpConfigs.length > 0) ? "uploading" : "success", 
-                    renamedPath: newPrimaryPath,
-                    renamedVisualPath: newVisualPath,
-                    renamedName: newPrimaryName
-                  } 
-                : item
-            ));
+            queueStatusUpdate(img.id, {
+              embeddingStatus: ((autoEmbedRef.current || forceUpload) && activeFtpConfigs.length > 0) ? "uploading" : "success",
+              renamedPath: newPrimaryPath,
+              renamedVisualPath: newVisualPath,
+              renamedName: newPrimaryName
+            });
             setEmbedTracker(prev => prev ? {
               ...prev,
               completed: prev.completed + 1,
               activeCount: Math.max(0, prev.activeCount - 1)
             } : null);
           } else {
-            setImages(prev => prev.map(item => 
-              (item as any).id === img.id 
-                ? { ...item, embeddingStatus: "error", embeddingError: getUserFriendlyErrorMessage(errMsg, 'Embedding') } 
-                : item
-            ));
+            queueStatusUpdate(img.id, {
+              embeddingStatus: "error",
+              embeddingError: getUserFriendlyErrorMessage(errMsg, 'Embedding')
+            });
             setEmbedTracker(prev => prev ? {
               ...prev,
               failed: prev.failed + 1,
@@ -1577,11 +1583,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             } : null);
           }
         } catch (err: any) {
-          setImages(prev => prev.map(item => 
-            (item as any).id === img.id 
-              ? { ...item, embeddingStatus: "error", embeddingError: getUserFriendlyErrorMessage(err.message, 'Embedding') } 
-              : item
-          ));
+          queueStatusUpdate(img.id, {
+            embeddingStatus: "error",
+            embeddingError: getUserFriendlyErrorMessage(err.message, 'Embedding')
+          });
           setEmbedTracker(prev => prev ? {
             ...prev,
             failed: prev.failed + 1,
@@ -1590,8 +1595,13 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         }
       };
 
-      // Concurrent Embedding Worker Pool (Balanced concurrency: 2 with gentle yield to protect laptop responsiveness)
-      const CONCURRENT_EMBED_LIMIT = 2;
+      // Concurrent Embedding Worker Pool dynamically scaled to CPU cores
+      const hardwareCores = (navigator as any).hardwareConcurrency || 4;
+      const detectedLimit = window.electronAPI?.getEmbedConcurrency 
+        ? await window.electronAPI.getEmbedConcurrency() 
+        : Math.min(6, Math.max(2, Math.floor(hardwareCores * 0.75)));
+      const CONCURRENT_EMBED_LIMIT = Math.min(detectedLimit, currentImages.length);
+
       let currentIndex = 0;
       const embedWorker = async () => {
         while (currentIndex < currentImages.length) {
@@ -1599,15 +1609,19 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           const targetImg = currentImages[currentIndex++];
           if (targetImg) {
             await processSingleImage(targetImg);
-            // Gentle 40ms yield to keep UI frame rate smooth and eliminate laptop lag
-            await new Promise(r => setTimeout(r, 40));
           }
         }
       };
 
-      const workerCount = Math.min(CONCURRENT_EMBED_LIMIT, currentImages.length);
-      const workers = Array.from({ length: workerCount }, () => embedWorker());
+      const workers = Array.from({ length: CONCURRENT_EMBED_LIMIT }, () => embedWorker());
       await Promise.all(workers);
+
+      // Final synchronous flush of all queued status updates
+      if (statusFlushTimer) {
+        clearTimeout(statusFlushTimer);
+        statusFlushTimer = null;
+      }
+      flushStatusUpdates();
 
       setEmbedTracker(prev => prev ? {
         ...prev,
@@ -1904,7 +1918,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     e.target.value = "";
   };
 
-  const handleMetaChange = (id: any, field: any, value: any) => {
+  const handleMetaChange = useCallback((id: any, field: any, value: any) => {
     setImages((prev: any) =>
       prev.map((img: any) => {
         if (img.id === id && img.result) {
@@ -1913,9 +1927,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         return img;
       })
     );
-  };
+  }, []);
 
-  const applyToSelected = (sourceId: any, field: any, value: any) => {
+  const applyToSelected = useCallback((sourceId: any, field: any, value: any) => {
     if (selectedRows.size < 2) return;
     setImages((prev: any) =>
       prev.map((img: any) => {
@@ -1925,7 +1939,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         return img;
       })
     );
-  };
+  }, [selectedRows]);
 
   const removeKeywordsByColor = (color: any) => {
     const getKeywordScore = (keyword: any, img: any) => {
@@ -2012,7 +2026,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     }));
   };
 
-  const getGridImages = () => {
+  const getGridImages = useCallback(() => {
     let list = [...images];
     if (gridFilter.trim()) {
       const q = gridFilter.toLowerCase();
@@ -2042,7 +2056,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     });
 
     return list;
-  };
+  }, [images, gridFilter, gridSort]);
 
   const toggleSort = (field: any) => {
     setGridSort(prev => ({
@@ -2346,7 +2360,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 </span>
               )}
               <span style={{ fontWeight: 800, fontSize: '0.9rem', color: embedTracker.isComplete ? '#10b981' : '#8b5cf6' }}>
-                {embedTracker.total > 0 ? Math.round((embedTracker.completed / embedTracker.total) * 100) : 0}%
+                {embedTracker.total > 0 ? Math.round(((embedTracker.completed + embedTracker.failed) / embedTracker.total) * 100) : 0}%
               </span>
               {embedTracker.isComplete && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '4px' }}>
@@ -2377,7 +2391,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           <div style={{ height: '7px', background: 'rgba(0,0,0,0.06)', borderRadius: '999px', overflow: 'hidden', width: '100%' }}>
             <div style={{
               height: '100%',
-              width: `${embedTracker.total > 0 ? Math.round((embedTracker.completed / embedTracker.total) * 100) : 0}%`,
+              width: `${embedTracker.total > 0 ? Math.round(((embedTracker.completed + embedTracker.failed) / embedTracker.total) * 100) : 0}%`,
               background: embedTracker.isComplete 
                 ? 'linear-gradient(90deg, #10b981, #059669)'
                 : 'linear-gradient(90deg, #6366f1, #8b5cf6)',

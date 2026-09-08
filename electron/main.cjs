@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, net } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, net, powerSaveBlocker } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -60,6 +60,12 @@ if (!isDev) {
   });
 }
 
+// Disable Chromium background throttling & power-saving modes so tasks run at full power when minimized
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -71,6 +77,7 @@ function createWindow() {
       contextIsolation: true,
       webSecurity: false,
       sandbox: true,
+      backgroundThrottling: false,
     },
     autoHideMenuBar: true,
   });
@@ -83,6 +90,22 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Boost process priority so Windows scheduler gives full CPU time even when minimized
+  try {
+    os.setPriority(process.pid, os.constants.priority.PRIORITY_ABOVE_NORMAL);
+    fileLog('[System] Process priority boosted to ABOVE_NORMAL for unrestricted background processing');
+  } catch (e) {
+    fileLog('[System setPriority error]', e);
+  }
+
+  // Prevent OS from sleeping or putting app into Eco/Efficiency mode during operations
+  try {
+    const blockerId = powerSaveBlocker.start('prevent-app-suspension');
+    fileLog('[PowerSaveBlocker] App suspension prevented, blocker ID:', blockerId);
+  } catch (e) {
+    fileLog('[PowerSaveBlocker error]', e);
+  }
+
   createWindow();
 
   // Pre-warm ExifTool in background so first embed has 0ms cold-start delay
@@ -665,12 +688,17 @@ async function getExifTool() {
       fileLog('[getExifTool] Failed resolving exiftoolPath:', e);
     }
     const cpuCount = os.cpus() ? os.cpus().length : 4;
-    const workerCount = Math.min(2, Math.max(1, cpuCount >= 4 ? 2 : 1));
+    const workerCount = Math.min(6, Math.max(2, Math.floor(cpuCount * 0.75)));
     exiftoolInstance = new ExifTool({ maxProcs: workerCount, taskTimeoutMillis: 60000 });
     fileLog(`[getExifTool] ExifTool instance created with maxProcs: ${workerCount}`);
   }
   return exiftoolInstance;
 }
+
+ipcMain.handle('get-embed-concurrency', () => {
+  const cpuCount = os.cpus() ? os.cpus().length : 4;
+  return Math.min(6, Math.max(2, Math.floor(cpuCount * 0.75)));
+});
 
 ipcMain.handle('prewarm-exiftool', async () => {
   try {

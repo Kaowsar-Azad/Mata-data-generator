@@ -15,6 +15,7 @@ import { PromptEnginePage } from './components/PromptEngine/PromptEnginePage'
 import { PromptEngineSettings } from './components/PromptEngine/PromptEngineSettings'
 import { Sparkles, Zap, Image as ImageIcon, Eraser, Box, ChevronLeft, ChevronRight, Server, Key, Camera, Maximize, Cpu, Wand2, TrendingUp, Terminal } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { ErrorBoundary } from './components/common/ErrorBoundary'
 
 const tabVariants = {
   active: (isFlexColumn) => ({
@@ -29,7 +30,7 @@ const tabVariants = {
   }
 };
 
-const TabWrapper = ({ active, children, isFlexColumn, padding }) => (
+const TabWrapper = ({ active, children, isFlexColumn, padding, tabName }) => (
   <motion.div
     custom={isFlexColumn}
     variants={tabVariants}
@@ -46,7 +47,9 @@ const TabWrapper = ({ active, children, isFlexColumn, padding }) => (
       overflowY: active ? 'auto' : 'hidden'
     }}
   >
-    {children}
+    <ErrorBoundary name={tabName || "Feature Tab"}>
+      {children}
+    </ErrorBoundary>
   </motion.div>
 );
 
@@ -449,7 +452,7 @@ function App() {
 
       {/* ─── MAIN WORKSPACE ─── */}
       <main className="dashboard-main" style={{ position: 'relative', overflow: 'hidden' }}>
-        <TabWrapper active={activeTab === 'metadata'}>
+        <TabWrapper active={activeTab === 'metadata'} tabName="Metadata Generator">
           <ImageWorkflow 
             apiKeys={apiKeys} 
             apiProvider={apiProvider} 
@@ -459,7 +462,7 @@ function App() {
           />
         </TabWrapper>
         
-        <TabWrapper active={activeTab === 'promptengine'}>
+        <TabWrapper active={activeTab === 'promptengine'} tabName="Prompt Engine">
           <PromptEnginePage 
             apiKeys={apiKeys} 
             apiProvider={apiProvider} 
@@ -467,15 +470,15 @@ function App() {
           />
         </TabWrapper>
         
-        <TabWrapper active={activeTab === 'prompt'}>
+        <TabWrapper active={activeTab === 'prompt'} tabName="Image to Prompt">
           <ImageToPrompt apiKeys={apiKeys} apiProvider={apiProvider} promptSettings={promptSettings} setPromptSettings={setPromptSettings} />
         </TabWrapper>
         
-        <TabWrapper active={activeTab === 'removebg'}>
+        <TabWrapper active={activeTab === 'removebg'} tabName="Background Remover">
           <BackgroundRemover />
         </TabWrapper>
         
-        <TabWrapper active={activeTab === 'ftp'} isFlexColumn={true} padding="1rem">
+        <TabWrapper active={activeTab === 'ftp'} isFlexColumn={true} padding="1rem" tabName="Microstock Uploader (FTP)">
           <FtpUploader 
             ftpConfigs={ftpConfigs} 
             setFtpConfigs={setFtpConfigs}
@@ -484,23 +487,23 @@ function App() {
           />
         </TabWrapper>
 
-        <TabWrapper active={activeTab === 'topsellers'}>
+        <TabWrapper active={activeTab === 'topsellers'} tabName="Top Sellers">
           <TopSellers />
         </TabWrapper>
 
-        <TabWrapper active={activeTab === 'vector'}>
+        <TabWrapper active={activeTab === 'vector'} tabName="Vector Magic">
           <VectorMagic />
         </TabWrapper>
         
-        <TabWrapper active={activeTab === 'upscale'}>
+        <TabWrapper active={activeTab === 'upscale'} tabName="Image Upscaler">
           <ImageUpscaler />
         </TabWrapper>
         
-        <TabWrapper active={activeTab === 'aiimage'}>
+        <TabWrapper active={activeTab === 'aiimage'} tabName="AI Image Generator">
           <AiImageGenerator apiKeys={apiKeys} apiProvider={apiProvider} />
         </TabWrapper>
         
-        <TabWrapper active={activeTab === 'epspreview'}>
+        <TabWrapper active={activeTab === 'epspreview'} tabName="Auto EPS Preview">
           <EpsPreviewGenerator />
         </TabWrapper>
       </main>

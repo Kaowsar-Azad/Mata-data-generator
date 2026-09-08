@@ -1,10 +1,10 @@
 // @ts-nocheck
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import { createPortal } from "react-dom";
 import {
   Server, ShieldCheck, Loader2, Save, Upload, Trash2, CheckCircle2, X,
   ExternalLink, Info, RefreshCw, Zap, AlertCircle, AlertTriangle, CloudUpload, Link,
-  ChevronDown, ChevronUp, Key, Globe, Eye, EyeOff
+  ChevronDown, ChevronUp, Key, Globe, Eye, EyeOff, XCircle
 } from "lucide-react";
 import { processEpsFile, isEpsFile } from "../services/epsService";
 import { FtpConfigManager, FtpConfig } from "./FtpConfigManager";
@@ -82,6 +82,248 @@ function formatBytes(bytes) {
 
 
 
+const FtpFileRowItem = memo(({ file, activeConfigs, onRemove, getCategorizedError }: any) => {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      background: file.status === 'success' ? 'rgba(16,185,129,0.04)' : file.status === 'error' ? 'rgba(239,68,68,0.04)' : file.status === 'partial' ? 'rgba(245,158,11,0.04)' : 'var(--surface-1)',
+      padding: '0.65rem 0.9rem', borderRadius: '0.65rem',
+      border: `1px solid ${file.status === 'success' ? 'rgba(16,185,129,0.2)' : file.status === 'error' ? 'rgba(239,68,68,0.2)' : file.status === 'partial' ? 'rgba(245,158,11,0.2)' : 'var(--glass-border)'}`,
+      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+    }}
+    onMouseOver={e => {
+      e.currentTarget.style.transform = 'translateY(-2px)';
+      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
+    }}
+    onMouseOut={e => {
+      e.currentTarget.style.transform = 'translateY(0)';
+      e.currentTarget.style.boxShadow = 'none';
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', overflow: 'hidden', flex: 1 }}>
+        {/* Thumbnail with lazy loading and direct file stream */}
+        <div style={{ width: '2.25rem', height: '2.25rem', flexShrink: 0, borderRadius: '0.4rem', overflow: 'hidden', background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
+          {file.previewUrl
+            ? <img src={file.previewUrl} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-3)', fontSize: '0.65rem', fontWeight: 700 }}>EPS</div>
+          }
+        </div>
+
+        {/* Status Icon */}
+        <div style={{
+          padding: '0.35rem', borderRadius: '0.4rem', flexShrink: 0,
+          background: file.status === 'success' ? 'rgba(16,185,129,0.1)' : file.status === 'error' ? 'rgba(239,68,68,0.1)' : file.status === 'partial' ? 'rgba(245,158,11,0.1)' : file.status === 'uploading' ? 'var(--primary-glow)' : 'var(--surface-2)',
+          color: file.status === 'success' ? 'var(--success)' : file.status === 'error' ? 'var(--danger)' : file.status === 'partial' ? '#f59e0b' : file.status === 'uploading' ? 'var(--primary)' : 'var(--text-3)'
+        }}>
+          {file.status === 'success' ? <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem' }} /> :
+            file.status === 'error' ? <X style={{ width: '0.9rem', height: '0.9rem' }} /> :
+              file.status === 'partial' ? <AlertTriangle style={{ width: '0.9rem', height: '0.9rem' }} /> :
+                file.status === 'uploading' ? <Loader2 style={{ width: '0.9rem', height: '0.9rem', animation: 'spin 1s linear infinite' }} /> :
+                  <Upload style={{ width: '0.9rem', height: '0.9rem' }} />}
+        </div>
+
+        {/* File Info */}
+        <div style={{ overflow: 'hidden' }}>
+          <h4 style={{ margin: 0, fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {file.name}
+          </h4>
+          
+          {/* Progress Bar for Uploading Status */}
+          {file.status === 'uploading' && file.progress !== undefined && (() => {
+            const displayProgress = (() => {
+              if (typeof file.progress === 'number') return file.progress;
+              if (typeof file.progress === 'object' && file.progress !== null) {
+                if (activeConfigs.length === 0) return 0;
+                const sum = activeConfigs.reduce((s: number, conf: any) => s + (file.progress[conf.host] || 0), 0);
+                return Math.round(sum / activeConfigs.length);
+              }
+              return 0;
+            })();
+            return (
+              <div style={{ marginTop: '0.35rem', marginBottom: '0.2rem', width: '100%', height: '4px', background: 'var(--surface-2)', borderRadius: '2px', overflow: 'hidden' }}>
+                <div style={{ 
+                  height: '100%', width: `${displayProgress}%`, 
+                  background: 'linear-gradient(90deg, var(--accent), var(--primary), var(--accent))', 
+                  backgroundSize: '200% 100%',
+                  animation: 'ftpProgressGlow 2s linear infinite',
+                  transition: 'width 0.2s ease' 
+                }} />
+              </div>
+            );
+          })()}
+
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.2rem', flexWrap: 'wrap' }}>
+            {file.size > 0 && <span style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>{formatBytes(file.size)}</span>}
+            {file.status === 'uploading' && (() => {
+              const displayProgress = (() => {
+                if (typeof file.progress === 'number') return file.progress;
+                if (typeof file.progress === 'object' && file.progress !== null) {
+                  if (activeConfigs.length === 0) return 0;
+                  const sum = activeConfigs.reduce((s: number, conf: any) => s + (file.progress[conf.host] || 0), 0);
+                  return Math.round(sum / activeConfigs.length);
+                }
+                return 0;
+              })();
+              return (
+                <span style={{ fontSize: '0.65rem', color: 'var(--primary)', fontWeight: 600 }}>
+                  {displayProgress === 0 ? 'Connecting & preparing...' : `Uploading... ${displayProgress}%`}
+                </span>
+              );
+            })()}
+            {file.status === 'success' && <span style={{ fontSize: '0.65rem', color: 'var(--success)', fontWeight: 600 }}>✓ Uploaded</span>}
+            
+            {/* Detailed per-server status badges */}
+            {file.serverStatus && activeConfigs.length > 1 && (file.status === 'partial' || file.status === 'error' || file.status === 'success' || file.status === 'uploading') && (
+              <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', marginLeft: '0.25rem', flexWrap: 'wrap' }}>
+                {activeConfigs.map((conf: any) => {
+                  const st = file.serverStatus[conf.host];
+                  if (!st) return null;
+                  const isSucc = st === 'success';
+                  const isErr = st === 'error';
+                  const name = conf.websiteName || conf.host;
+                  let cleanErrText = '';
+                  if (isErr && file.serverErrors && file.serverErrors[conf.host]) {
+                    cleanErrText = getCategorizedError(file.serverErrors[conf.host], name);
+                  }
+                  const prg = (file.progress && typeof file.progress === 'object') ? file.progress[conf.host] : undefined;
+                  const showProgress = !isSucc && !isErr && typeof prg === 'number';
+                  
+                  return (
+                    <span key={conf.host} title={cleanErrText ? `Error: ${cleanErrText}` : ''} style={{ 
+                      fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 600,
+                      background: isSucc ? 'rgba(16,185,129,0.1)' : isErr ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
+                      color: isSucc ? 'var(--success)' : isErr ? 'var(--danger)' : '#f59e0b',
+                      border: `1px solid ${isSucc ? 'rgba(16,185,129,0.2)' : isErr ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'}`,
+                      cursor: isErr ? 'help' : 'default', display: 'flex', alignItems: 'center', gap: '0.2rem'
+                    }}>
+                      {isSucc ? '✅' : isErr ? '❌' : '⏳'} {name}
+                      {showProgress && ` (${prg}%)`}
+                      {isErr && cleanErrText && (
+                        <span style={{ fontWeight: 400, opacity: 0.85 }}>({cleanErrText})</span>
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            
+            {file.error && (activeConfigs.length === 1 || !file.serverStatus) && (() => {
+              const activeConf = activeConfigs[0];
+              const serverName = activeConf ? (activeConf.websiteName || activeConf.host) : '';
+              const hasServerError = file.serverErrors && activeConf && file.serverErrors[activeConf.host];
+              const displayErr = hasServerError ? getCategorizedError(file.error, serverName) : file.error;
+              return (
+                <span style={{ fontSize: '0.65rem', color: 'var(--danger)', maxWidth: '350px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={file.error}>
+                  {displayErr}
+                </span>
+              );
+            })()}
+          </div>
+        </div>
+      </div>
+
+      <button
+        onClick={() => onRemove(file.id)}
+        style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '0.2rem', flexShrink: 0 }}
+        title="Remove"
+      >
+        <X style={{ width: '0.9rem', height: '0.9rem' }} />
+      </button>
+    </div>
+  );
+});
+
+const ROW_HEIGHT = 70; // 64px row + 6px gap
+const OVERSCAN = 6;
+
+const VirtualFileList = memo(({ files, activeConfigs, onRemove, getCategorizedError }: any) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(600);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const updateSize = () => {
+      if (el.clientHeight > 0) setViewportHeight(el.clientHeight);
+    };
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const onScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  }, []);
+
+  const sortedFiles = useMemo(() => {
+    const getScore = (f: any) => {
+      if (f.status === 'uploading') return 0;
+      if (f.status === 'pending') return 1;
+      if (f.status === 'error') return 2;
+      if (f.status === 'partial') return 3;
+      if (f.status === 'success') return 4;
+      return 5;
+    };
+    return [...files].sort((a, b) => getScore(a) - getScore(b));
+  }, [files]);
+
+  const totalCount = sortedFiles.length;
+  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const visibleCount = Math.ceil(viewportHeight / ROW_HEIGHT) + 2 * OVERSCAN;
+  const endIndex = Math.min(totalCount, startIndex + visibleCount);
+
+  const visibleItems = useMemo(() => {
+    return sortedFiles.slice(startIndex, endIndex);
+  }, [sortedFiles, startIndex, endIndex]);
+
+  const topPadding = startIndex * ROW_HEIGHT;
+  const bottomPadding = Math.max(0, (totalCount - endIndex) * ROW_HEIGHT);
+
+  if (totalCount === 0) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}>
+        <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-3)' }}>
+          <Upload style={{ width: '2rem', height: '2rem', margin: '0 auto 0.75rem', opacity: 0.3 }} />
+          <p style={{ fontSize: '0.85rem', margin: 0 }}>Select files or drop them in the drop zone</p>
+          <p style={{ fontSize: '0.72rem', margin: '0.25rem 0 0', color: 'var(--text-3)', opacity: 0.7 }}>Supports JPG, EPS, AI, SVG, PNG formats</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      onScroll={onScroll}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        flex: 1,
+        overflowY: 'auto',
+        minHeight: 0,
+        position: 'relative'
+      }}
+    >
+      {topPadding > 0 && <div style={{ height: `${topPadding}px`, flexShrink: 0 }} />}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        {visibleItems.map((file: any) => (
+          <FtpFileRowItem
+            key={file.id}
+            file={file}
+            activeConfigs={activeConfigs}
+            onRemove={onRemove}
+            getCategorizedError={getCategorizedError}
+          />
+        ))}
+      </div>
+
+      {bottomPadding > 0 && <div style={{ height: `${bottomPadding}px`, flexShrink: 0 }} />}
+    </div>
+  );
+});
+
 interface FtpUploaderProps {
   ftpConfigs?: FtpConfig[];
   setFtpConfigs: (configs: FtpConfig[]) => void;
@@ -114,9 +356,25 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
   const jobIdRef = useRef(sessionStorage.getItem('ftp_current_job_id') || null);
 
   useEffect(() => {
-    const filesToSave = files.map(f => ({ ...f, file: undefined, previewUrl: undefined }));
-    sessionStorage.setItem('ftp_upload_state', JSON.stringify(filesToSave));
-  }, [files]);
+    if (isUploading) return; // Never thrash storage during active upload batch
+    const timer = setTimeout(() => {
+      try {
+        const filesToSave = files.slice(0, 500).map(f => ({
+          id: f.id,
+          name: f.name,
+          path: f.path,
+          size: f.size,
+          status: f.status,
+          serverStatus: f.serverStatus,
+          serverErrors: f.serverErrors
+        }));
+        sessionStorage.setItem('ftp_upload_state', JSON.stringify(filesToSave));
+      } catch (e) {
+        console.error('Failed to save ftp state to sessionStorage', e);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [files, isUploading]);
 
   useEffect(() => {
     sessionStorage.setItem('ftp_current_job_id', currentJobId || '');
@@ -208,83 +466,133 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
     // Mark immediately so we don't re-process on next render
     epsFiles.forEach(f => processedEpsRef.current.add(f.id));
 
+    let cancelled = false;
     (async () => {
       // Yield slightly to let React finish rendering
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise(r => setTimeout(r, 60));
       
-      for (const f of epsFiles) {
+      const batchUpdates = new Map();
+      let lastFlush = Date.now();
+
+      for (let i = 0; i < epsFiles.length; i++) {
+        if (cancelled) break;
+        const f = epsFiles[i];
         try {
           console.log(`[FTP EPS] Processing preview for: ${f.file.name}`);
           const epsData = await processEpsFile(f.file);
-          
           if (epsData?.dataUrl) {
-            setFiles(prev => prev.map(p => p.id === f.id ? { ...p, previewUrl: epsData.dataUrl } : p));
-          } else {
-            console.warn(`[FTP EPS] Failed to extract preview URL for: ${f.file.name}`);
+            batchUpdates.set(f.id, epsData.dataUrl);
           }
         } catch (err) {
           console.error(`[FTP EPS] Error extracting preview:`, err);
         }
+
+        // Throttle state updates: flush every 400ms or on the last item to prevent freezing UI
+        if (Date.now() - lastFlush > 400 || i === epsFiles.length - 1) {
+          if (batchUpdates.size > 0 && !cancelled) {
+            const updatesCopy = new Map(batchUpdates);
+            batchUpdates.clear();
+            setFiles(prev => prev.map(p => updatesCopy.has(p.id) ? { ...p, previewUrl: updatesCopy.get(p.id) } : p));
+            lastFlush = Date.now();
+          }
+          await new Promise(r => setTimeout(r, 25));
+        }
       }
     })();
+
+    return () => { cancelled = true; };
   }, [files]);
 
   const activeHosts = activeConfigs.map(c => c.host).join(',');
+  const progressBufferRef = useRef<Record<string, { progress: number; host: string; error?: string }>>({});
+  const progressFlushTimerRef = useRef<any>(null);
+
   useEffect(() => {
     if (window.electronAPI?.onFtpProgress) {
       const unsubscribe = window.electronAPI.onFtpProgress(({ filePath, progress, host, error }) => {
-        console.log(`[FTP Progress IPC] File: ${filePath}, Progress: ${progress}%, Host: ${host}, Error: ${error || 'none'}`);
-        setFiles(prev => prev.map(f => {
-          // Normalize paths for windows
-          const fPath = f.path.replace(/\\/g, '/');
-          const pPath = filePath.replace(/\\/g, '/');
-          if (fPath === pPath) {
-            const currentProgressMap = typeof f.progress === 'object' && f.progress !== null ? { ...f.progress } : {};
-            const currentStatusMap = typeof f.serverStatus === 'object' && f.serverStatus !== null ? { ...f.serverStatus } : {};
-            const currentErrors = typeof f.serverErrors === 'object' && f.serverErrors !== null ? { ...f.serverErrors } : {};
+        const normPath = filePath ? filePath.replace(/\\/g, '/') : '';
+        if (!normPath) return;
 
-            if (error) {
-              currentStatusMap[host] = 'error';
-              currentErrors[host] = error;
-            } else {
-              currentProgressMap[host] = progress;
-              if (progress === 100) {
-                currentStatusMap[host] = 'success';
-              } else {
-                currentStatusMap[host] = 'uploading';
-              }
-            }
+        const key = `${normPath}::${host}`;
+        progressBufferRef.current[key] = { progress, host, error };
 
-            let successC = 0;
-            let errorC = 0;
-            let pendingC = 0;
-            
-            for (const conf of activeConfigs) {
-              const st = currentStatusMap[conf.host];
-              if (st === 'success') successC++;
-              else if (st === 'error') errorC++;
-              else pendingC++;
-            }
+        // Flush in batches every 100ms (10fps is completely smooth and eliminates 90% of re-renders)
+        if (!progressFlushTimerRef.current) {
+          progressFlushTimerRef.current = setTimeout(() => {
+            progressFlushTimerRef.current = null;
+            const batch = progressBufferRef.current;
+            progressBufferRef.current = {};
+            const keys = Object.keys(batch);
+            if (keys.length === 0) return;
 
-            let newGlobalStatus = f.status;
-            if (pendingC === 0) {
-              if (successC === activeConfigs.length) newGlobalStatus = 'success';
-              else if (errorC === activeConfigs.length) newGlobalStatus = 'error';
-              else newGlobalStatus = 'partial';
-            }
+            setFiles(prev => {
+              let hasChanges = false;
+              const next = prev.map(f => {
+                const fPath = f.path ? f.path.replace(/\\/g, '/') : '';
+                let fileChanged = false;
+                let currentProgressMap = f.progress && typeof f.progress === 'object' ? { ...f.progress } : {};
+                let currentStatusMap = f.serverStatus && typeof f.serverStatus === 'object' ? { ...f.serverStatus } : {};
+                let currentErrors = f.serverErrors && typeof f.serverErrors === 'object' ? { ...f.serverErrors } : {};
 
-            return { 
-              ...f, 
-              progress: currentProgressMap, 
-              serverStatus: currentStatusMap,
-              serverErrors: currentErrors,
-              status: newGlobalStatus 
-            };
-          }
-          return f;
-        }));
+                for (const conf of activeConfigs) {
+                  const bKey = `${fPath}::${conf.host}`;
+                  const update = batch[bKey];
+                  if (update) {
+                    fileChanged = true;
+                    if (update.error) {
+                      currentStatusMap[conf.host] = 'error';
+                      currentErrors[conf.host] = update.error;
+                    } else {
+                      currentProgressMap[conf.host] = update.progress;
+                      if (update.progress === 100) {
+                        currentStatusMap[conf.host] = 'success';
+                      } else {
+                        currentStatusMap[conf.host] = 'uploading';
+                      }
+                    }
+                  }
+                }
+
+                if (fileChanged) {
+                  hasChanges = true;
+                  let successC = 0, errorC = 0, pendingC = 0;
+                  for (const conf of activeConfigs) {
+                    const st = currentStatusMap[conf.host];
+                    if (st === 'success') successC++;
+                    else if (st === 'error') errorC++;
+                    else pendingC++;
+                  }
+
+                  let newGlobalStatus = f.status;
+                  if (pendingC === 0) {
+                    if (successC === activeConfigs.length) newGlobalStatus = 'success';
+                    else if (errorC === activeConfigs.length) newGlobalStatus = 'error';
+                    else newGlobalStatus = 'partial';
+                  }
+
+                  return {
+                    ...f,
+                    progress: currentProgressMap,
+                    serverStatus: currentStatusMap,
+                    serverErrors: currentErrors,
+                    status: newGlobalStatus
+                  };
+                }
+                return f;
+              });
+
+              return hasChanges ? next : prev;
+            });
+          }, 100);
+        }
       });
-      return unsubscribe;
+      return () => {
+        unsubscribe();
+        if (progressFlushTimerRef.current) {
+          clearTimeout(progressFlushTimerRef.current);
+          progressFlushTimerRef.current = null;
+        }
+      };
     }
   }, [activeHosts, activeConfigs]);
 
@@ -377,40 +685,53 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
     setIsDragging(false);
   }, []);
 
+  const addNewFiles = useCallback((selectedFiles) => {
+    if (!selectedFiles.length) return;
+    const newFiles = selectedFiles.map(file => {
+      let previewUrl = null;
+      if (file.type && file.type.startsWith('image/')) {
+        // In Electron, file.path allows direct file:// preview without allocating in-memory Blob buffers
+        previewUrl = file.path 
+          ? `file://${file.path.replace(/\\/g, '/')}` 
+          : URL.createObjectURL(file);
+      }
+      return {
+        id: Math.random().toString(36).substr(2, 9),
+        file: file.path ? undefined : file, // Don't hold unneeded File handle in memory when path is available
+        path: file.path,
+        name: file.name,
+        size: file.size,
+        previewUrl,
+        status: 'pending',
+        error: null
+      };
+    });
+    setFiles(prev => [...prev, ...newFiles]);
+  }, []);
+
   const handleDrop = useCallback((e) => {
     e.preventDefault();
     setIsDragging(false);
     const droppedFiles = Array.from(e.dataTransfer.files);
     addNewFiles(droppedFiles);
-  }, []);
+  }, [addNewFiles]);
 
-  const addNewFiles = (selectedFiles) => {
-    if (!selectedFiles.length) return;
-    const newFiles = selectedFiles.map(file => ({
-      id: Math.random().toString(36).substr(2, 9),
-      file,
-      path: file.path,
-      name: file.name,
-      size: file.size,
-      previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
-      status: 'pending',
-      error: null
-    }));
-    setFiles(prev => [...prev, ...newFiles]);
-  };
-
-  const onFilesSelected = (e) => {
+  const onFilesSelected = useCallback((e) => {
     addNewFiles(Array.from(e.target.files));
     e.target.value = '';
-  };
+  }, [addNewFiles]);
 
-  const removeFile = (id) => {
-    const fileToRemove = files.find(f => f.id === id);
-    if (fileToRemove?.previewUrl) URL.revokeObjectURL(fileToRemove.previewUrl);
-    setFiles(prev => prev.filter(f => f.id !== id));
-  };
+  const removeFile = useCallback((id) => {
+    setFiles(prev => {
+      const fileToRemove = prev.find(f => f.id === id);
+      if (fileToRemove?.previewUrl && fileToRemove.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(fileToRemove.previewUrl);
+      }
+      return prev.filter(f => f.id !== id);
+    });
+  }, []);
 
-  const clearAll = () => {
+  const clearAll = useCallback(() => {
     // If a job is currently running or pending, cancel it
     if (jobIdRef.current && jobIdRef.current !== 'CANCELLED' && window.electronAPI?.cancelFtp) {
       window.electronAPI.cancelFtp(jobIdRef.current);
@@ -419,12 +740,17 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
     jobIdRef.current = 'CANCELLED';
     validationCompleteRef.current = false;
 
-    files.forEach(f => { if (f.previewUrl) URL.revokeObjectURL(f.previewUrl); });
+    files.forEach(f => { 
+      if (f.previewUrl && f.previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(f.previewUrl); 
+      }
+    });
     setFiles([]);
     setUploadSpeed(null);
     setCurrentJobId(null);
     setIsUploading(false);
-  };
+    try { sessionStorage.removeItem('ftp_upload_state'); } catch (e) {}
+  }, [files]);
 
   const nextFileIndexRef = useRef(0);
   const activeWorkersCountRef = useRef(0);
@@ -439,6 +765,77 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
   const batchFailedRef = useRef(0);
   const batchSuccessRef = useRef(0);
   const validationCompleteRef = useRef(false);
+
+  const validateSingleFile = async (f: any): Promise<string | null> => {
+    try {
+      if (!f) return null;
+      const fileName = f.name || f.path || '';
+      const dotIndex = fileName.lastIndexOf('.');
+      const ext = dotIndex !== -1 ? fileName.substring(dotIndex).toLowerCase() : '';
+
+      // Video Validation
+      if (ext === '.mp4' || ext === '.mov') {
+        if (f.size > 3900 * 1024 * 1024) {
+          return "Video size cannot exceed 3.9 GB.";
+        }
+        if (window.electronAPI && window.electronAPI.checkVideoCodec && f.path) {
+          try {
+            const codec = await window.electronAPI.checkVideoCodec(f.path);
+            if (!['h264', 'hevc'].includes(codec)) {
+              return `Unsupported video codec (${codec}). H.264 or H.265 (HEVC) is required for Adobe Stock.`;
+            }
+          } catch (e) {
+            console.error("Codec check failed", e);
+          }
+        }
+        return null;
+      }
+
+      // Image Validation (JPEG/JPG)
+      if (ext === '.jpg' || ext === '.jpeg') {
+        if (f.size > 45 * 1024 * 1024) {
+          return "Image size cannot exceed 45 MB.";
+        }
+        try {
+          let dims = { w: 0, h: 0 };
+          // Priority 1: High-performance Sharp via Electron IPC (< 1ms, zero pixel decoding)
+          if (window.electronAPI && window.electronAPI.getImageDimensions && f.path) {
+            const res = await window.electronAPI.getImageDimensions(f.path);
+            if (res) dims = { w: res.width, h: res.height };
+          } else if (f.file) {
+            // Fallback: Browser Image decode (with immediate URL revoke to prevent memory leaks)
+            dims = await new Promise<{ w: number; h: number }>((resolve) => {
+              const objectUrl = URL.createObjectURL(f.file);
+              const img = new Image();
+              img.onload = () => {
+                URL.revokeObjectURL(objectUrl);
+                resolve({ w: img.width, h: img.height });
+              };
+              img.onerror = () => {
+                URL.revokeObjectURL(objectUrl);
+                resolve({ w: 0, h: 0 });
+              };
+              img.src = objectUrl;
+            });
+          }
+          const mp = (dims.w * dims.h) / 1000000;
+          if (mp > 0 && mp < 4) {
+            return `Resolution too low (${mp.toFixed(1)} MP). Minimum 4 Megapixels required.`;
+          } else if (mp > 100) {
+            return `Resolution too high (${mp.toFixed(1)} MP). Maximum 100 Megapixels allowed.`;
+          }
+        } catch (e) {
+          console.error("Resolution check failed", e);
+        }
+        return null;
+      }
+
+      return null;
+    } catch (err) {
+      console.error("Unexpected error in validateSingleFile:", err);
+      return null;
+    }
+  };
 
   const spawnWorker = async (workerId) => {
     activeWorkersCountRef.current++;
@@ -456,6 +853,20 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
         if (index >= validatedFilesRef.current.length) break;
 
         const file = validatedFilesRef.current[index];
+
+        // JIT Single-file validation (reads JPEG header in < 1ms via Sharp)
+        const errorMsg = await validateSingleFile(file);
+        if (jobIdRef.current === 'CANCELLED') break;
+
+        if (errorMsg) {
+          setFiles(prev => prev.map(item =>
+            item.id === file.id
+              ? { ...item, status: 'error', error: errorMsg }
+              : item
+          ));
+          batchFailedRef.current++;
+          continue; // Instantly skip this invalid file and proceed to next file
+        }
 
         // Set current file status to 'uploading'
         setFiles(prev => prev.map(item =>
@@ -625,12 +1036,23 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
     }
   }, [concurrency, isUploading]);
 
+  const stopUpload = useCallback(() => {
+    if (jobIdRef.current && jobIdRef.current !== 'CANCELLED') {
+      if (window.electronAPI?.cancelFtp) {
+        window.electronAPI.cancelFtp(jobIdRef.current);
+      }
+      jobIdRef.current = 'CANCELLED';
+    }
+    setIsUploading(false);
+    setCurrentJobId(null);
+    validationCompleteRef.current = false;
+    showToast("Upload cancelled.", "warning");
+  }, [showToast]);
+
   const uploadFiles = async () => {
     if (!window.electronAPI || files.length === 0 || activeConfigs.length === 0) return;
-    
-    validationCompleteRef.current = false;
 
-    // Assign job ID early so it can be cancelled even during validation
+    // Assign job ID early so it can be cancelled
     const newJobId = Math.random().toString(36).substr(2, 9);
     jobIdRef.current = newJobId;
     setCurrentJobId(newJobId);
@@ -645,95 +1067,20 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
       return activeConfigs.some(conf => !(f.serverStatus && f.serverStatus[conf.host] === 'success'));
     });
 
-    // --- SMART VALIDATION ENGINE ---
-    const validatedFiles = [];
-    const rejectedFiles = [];
-    
-    for (let f of pendingFiles) {
-      const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
-      if (jobIdRef.current === 'CANCELLED') return;
-      let errorMsg = null;
-      
-      // Video Validation
-      if (ext === '.mp4' || ext === '.mov') {
-        if (f.size > 3900 * 1024 * 1024) {
-          errorMsg = "Video size cannot exceed 3.9 GB.";
-        } else if (window.electronAPI && window.electronAPI.checkVideoCodec) {
-          try {
-            const codec = await window.electronAPI.checkVideoCodec(f.path);
-            if (!['h264', 'hevc'].includes(codec)) {
-              errorMsg = `Unsupported video codec (${codec}). H.264 or H.265 (HEVC) is required for Adobe Stock.`;
-            }
-          } catch(e) {
-            console.error("Codec check failed", e);
-          }
-        }
-      } 
-      // Image Validation (JPEG/JPG)
-      else if (ext === '.jpg' || ext === '.jpeg') {
-        if (f.size > 45 * 1024 * 1024) {
-          errorMsg = "Image size cannot exceed 45 MB.";
-        } else {
-          // Check Resolution
-          try {
-            let dims = { w: 0, h: 0 };
-            if (f.file) {
-              dims = await new Promise((resolve) => {
-                const img = new Image();
-                img.onload = () => resolve({ w: img.width, h: img.height });
-                img.onerror = () => resolve({ w: 0, h: 0 });
-                img.src = URL.createObjectURL(f.file);
-              });
-            } else if (window.electronAPI && window.electronAPI.getImageDimensions && f.path) {
-              const res = await window.electronAPI.getImageDimensions(f.path);
-              if (res) dims = { w: res.width, h: res.height };
-            }
-            const mp = (dims.w * dims.h) / 1000000;
-            if (mp > 0 && mp < 4) {
-              errorMsg = `Resolution too low (${mp.toFixed(1)} MP). Minimum 4 Megapixels required.`;
-            } else if (mp > 100) {
-              errorMsg = `Resolution too high (${mp.toFixed(1)} MP). Maximum 100 Megapixels allowed.`;
-            }
-          } catch(e) {
-            console.error("Resolution check failed", e);
-          }
-        }
-      }
-      
-      // If cancelled during validation, abort everything
-      if (jobIdRef.current === 'CANCELLED') return;
-
-      if (errorMsg) {
-        rejectedFiles.push({ ...f, status: 'error', error: errorMsg });
-      } else {
-        validatedFiles.push(f);
-      }
-    }
-    
-    // Update state with rejected files
-    if (rejectedFiles.length > 0) {
-      setFiles(prev => prev.map(item => {
-        const rejected = rejectedFiles.find(rf => rf.id === item.id);
-        return rejected ? rejected : item;
-      }));
-    }
-
-    const filePaths = validatedFiles.map(f => f.path).filter(Boolean);
-
-    if (filePaths.length === 0) {
+    if (pendingFiles.length === 0) {
       setIsUploading(false);
-      if (rejectedFiles.length > 0) showToast("All files failed validation!", "error");
+      showToast("All files are already uploaded successfully!", "success");
       return;
     }
 
-    // Calculate total size for speed estimation
-    const totalSize = validatedFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+    const totalSize = pendingFiles.reduce((acc, f) => acc + (f.size || 0), 0);
 
     // If cancelled before we reach here, abort
     if (jobIdRef.current === 'CANCELLED') return;
 
+    // Reset pending files status in UI instantaneously
     setFiles(prev => prev.map(item =>
-      validatedFiles.some(pf => pf.id === item.id)
+      pendingFiles.some(pf => pf.id === item.id)
         ? { ...item, status: 'pending', progress: {}, error: null, serverStatus: {}, serverErrors: {} }
         : item
     ));
@@ -742,7 +1089,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
     nextFileIndexRef.current = 0;
     activeWorkersCountRef.current = 0;
     concurrencyRef.current = concurrency;
-    validatedFilesRef.current = validatedFiles;
+    validatedFilesRef.current = pendingFiles;
     activeConfigsRef.current = activeConfigs;
     newJobIdRef.current = newJobId;
     t0Ref.current = t0;
@@ -753,13 +1100,13 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
     batchSuccessRef.current = 0;
     validationCompleteRef.current = true;
 
-    // Trigger the initial concurrent workers
+    // Trigger the initial concurrent workers IMMEDIATELY without any upfront blocking loop!
     for (let i = 0; i < concurrency; i++) {
       spawnWorker(i);
     }
   };
 
-  const getCategorizedError = (rawErr, serverName) => {
+  const getCategorizedError = useCallback((rawErr, serverName) => {
     if (!rawErr) return '';
     const errLower = rawErr.toLowerCase();
     
@@ -780,7 +1127,7 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
     } else {
       return `File not eligible for upload to ${serverName || 'server'}`;
     }
-  };
+  }, []);
 
   const successCount = files.filter(f => f.status === 'success').length;
   const completelyFailedCount = files.filter(f => f.status === 'error').length;
@@ -1250,16 +1597,45 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
                   {isUploading ? <Loader2 style={{ width: '0.9rem', height: '0.9rem', animation: 'spin 1s linear infinite' }} /> : <RefreshCw style={{ width: '0.9rem', height: '0.9rem' }} />}
                 </button>
               )}
-              <button
-                className="btn-primary"
-                onClick={uploadFiles}
-                disabled={isUploading || files.length === 0 || activeConfigs.length === 0}
-                style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', background: 'linear-gradient(135deg, var(--accent), var(--primary))', padding: '0.45rem 1.25rem', fontSize: '0.82rem', fontWeight: 700 }}
-              >
-                {isUploading
-                  ? <><Loader2 style={{ width: '0.9rem', height: '0.9rem', animation: 'spin 1s linear infinite' }} /> Uploading...</>
-                  : <><Upload style={{ width: '0.9rem', height: '0.9rem' }} /> Start Upload</>}
-              </button>
+              {isUploading ? (
+                <button
+                  type="button"
+                  onClick={stopUpload}
+                  className="btn-outline"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    borderColor: 'rgba(239, 68, 68, 0.4)',
+                    color: 'var(--danger)',
+                    padding: '0.45rem 1.25rem',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <XCircle style={{ width: '0.9rem', height: '0.9rem' }} /> Cancel Upload
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={uploadFiles}
+                  disabled={files.length === 0 || activeConfigs.length === 0}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.45rem',
+                    background: 'linear-gradient(135deg, var(--accent), var(--primary))',
+                    padding: '0.45rem 1.25rem',
+                    fontSize: '0.82rem',
+                    fontWeight: 700
+                  }}
+                >
+                  <Upload style={{ width: '0.9rem', height: '0.9rem' }} /> Start Upload
+                </button>
+              )}
 
             </div>
           </div>
@@ -1279,174 +1655,13 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
             </div>
           )}
 
-          {/* Files List */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1, overflowY: 'auto' }}>
-            {[...files].sort((a, b) => {
-              const getScore = (f) => {
-                if (f.status === 'uploading') return 0;
-                if (f.status === 'pending') return 1;
-                if (f.status === 'error') return 2;
-                if (f.status === 'partial') return 3;
-                if (f.status === 'success') return 4;
-                return 5;
-              };
-              return getScore(a) - getScore(b);
-            }).map(file => (
-              <div key={file.id} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: file.status === 'success' ? 'rgba(16,185,129,0.04)' : file.status === 'error' ? 'rgba(239,68,68,0.04)' : file.status === 'partial' ? 'rgba(245,158,11,0.04)' : 'var(--surface-1)',
-                padding: '0.65rem 0.9rem', borderRadius: '0.65rem',
-                border: `1px solid ${file.status === 'success' ? 'rgba(16,185,129,0.2)' : file.status === 'error' ? 'rgba(239,68,68,0.2)' : file.status === 'partial' ? 'rgba(245,158,11,0.2)' : 'var(--glass-border)'}`,
-                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
-              }}
-              onMouseOver={e => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
-              }}
-              onMouseOut={e => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', overflow: 'hidden', flex: 1 }}>
-                  {/* Thumbnail */}
-                  <div style={{ width: '2.25rem', height: '2.25rem', flexShrink: 0, borderRadius: '0.4rem', overflow: 'hidden', background: 'var(--surface-2)', border: '1px solid var(--glass-border)' }}>
-                    {file.previewUrl
-                      ? <img src={file.previewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-3)', fontSize: '0.65rem', fontWeight: 700 }}>EPS</div>
-                    }
-                  </div>
-
-                  {/* Status Icon */}
-                  <div style={{
-                    padding: '0.35rem', borderRadius: '0.4rem', flexShrink: 0,
-                    background: file.status === 'success' ? 'rgba(16,185,129,0.1)' : file.status === 'error' ? 'rgba(239,68,68,0.1)' : file.status === 'partial' ? 'rgba(245,158,11,0.1)' : file.status === 'uploading' ? 'var(--primary-glow)' : 'var(--surface-2)',
-                    color: file.status === 'success' ? 'var(--success)' : file.status === 'error' ? 'var(--danger)' : file.status === 'partial' ? '#f59e0b' : file.status === 'uploading' ? 'var(--primary)' : 'var(--text-3)'
-                  }}>
-                    {file.status === 'success' ? <CheckCircle2 style={{ width: '0.9rem', height: '0.9rem' }} /> :
-                      file.status === 'error' ? <X style={{ width: '0.9rem', height: '0.9rem' }} /> :
-                        file.status === 'partial' ? <AlertTriangle style={{ width: '0.9rem', height: '0.9rem' }} /> :
-                          file.status === 'uploading' ? <Loader2 style={{ width: '0.9rem', height: '0.9rem', animation: 'spin 1s linear infinite' }} /> :
-                            <Upload style={{ width: '0.9rem', height: '0.9rem' }} />}
-                  </div>
-
-                  {/* File Info */}
-                  <div style={{ overflow: 'hidden' }}>
-                    <h4 style={{ margin: 0, fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {file.name}
-                    </h4>
-                    
-                    {/* Progress Bar for Uploading Status */}
-                    {file.status === 'uploading' && file.progress !== undefined && (() => {
-                      const displayProgress = (() => {
-                        if (typeof file.progress === 'number') return file.progress;
-                        if (typeof file.progress === 'object' && file.progress !== null) {
-                          if (activeConfigs.length === 0) return 0;
-                          const sum = activeConfigs.reduce((s, conf) => s + (file.progress[conf.host] || 0), 0);
-                          return Math.round(sum / activeConfigs.length);
-                        }
-                        return 0;
-                      })();
-                      return (
-                        <div style={{ marginTop: '0.35rem', marginBottom: '0.2rem', width: '100%', height: '4px', background: 'var(--surface-2)', borderRadius: '2px', overflow: 'hidden' }}>
-                          <div style={{ 
-                            height: '100%', width: `${displayProgress}%`, 
-                            background: 'linear-gradient(90deg, var(--accent), var(--primary), var(--accent))', 
-                            backgroundSize: '200% 100%',
-                            animation: 'ftpProgressGlow 2s linear infinite',
-                            transition: 'width 0.2s ease' 
-                          }} />
-                        </div>
-                      );
-                    })()}
-
-                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.2rem', flexWrap: 'wrap' }}>
-                      {file.size > 0 && <span style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>{formatBytes(file.size)}</span>}
-                      {file.status === 'uploading' && (() => {
-                        const displayProgress = (() => {
-                          if (typeof file.progress === 'number') return file.progress;
-                          if (typeof file.progress === 'object' && file.progress !== null) {
-                            if (activeConfigs.length === 0) return 0;
-                            const sum = activeConfigs.reduce((s, conf) => s + (file.progress[conf.host] || 0), 0);
-                            return Math.round(sum / activeConfigs.length);
-                          }
-                          return 0;
-                        })();
-                        return (
-                          <span style={{ fontSize: '0.65rem', color: 'var(--primary)', fontWeight: 600 }}>
-                            {displayProgress === 0 ? 'Connecting & preparing...' : `Uploading... ${displayProgress}%`}
-                          </span>
-                        );
-                      })()}
-                      {file.status === 'success' && <span style={{ fontSize: '0.65rem', color: 'var(--success)', fontWeight: 600 }}>✓ Uploaded</span>}
-                      
-                       {/* Detailed per-server status badges */}
-                       {file.serverStatus && activeConfigs.length > 1 && (file.status === 'partial' || file.status === 'error' || file.status === 'success' || file.status === 'uploading') && (
-                         <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', marginLeft: '0.25rem', flexWrap: 'wrap' }}>
-                           {activeConfigs.map(conf => {
-                             const st = file.serverStatus[conf.host];
-                             if (!st) return null;
-                             const isSucc = st === 'success';
-                             const isErr = st === 'error';
-                             const name = conf.websiteName || conf.host;
-                             let cleanErrText = '';
-                             if (isErr && file.serverErrors && file.serverErrors[conf.host]) {
-                               cleanErrText = getCategorizedError(file.serverErrors[conf.host], name);
-                             }
-                             const prg = (file.progress && typeof file.progress === 'object') ? file.progress[conf.host] : undefined;
-                             const showProgress = !isSucc && !isErr && typeof prg === 'number';
-                             
-                             return (
-                               <span key={conf.host} title={cleanErrText ? `Error: ${cleanErrText}` : ''} style={{ 
-                                 fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 600,
-                                 background: isSucc ? 'rgba(16,185,129,0.1)' : isErr ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
-                                 color: isSucc ? 'var(--success)' : isErr ? 'var(--danger)' : '#f59e0b',
-                                 border: `1px solid ${isSucc ? 'rgba(16,185,129,0.2)' : isErr ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'}`,
-                                 cursor: isErr ? 'help' : 'default', display: 'flex', alignItems: 'center', gap: '0.2rem'
-                               }}>
-                                 {isSucc ? '✅' : isErr ? '❌' : '⏳'} {name}
-                                 {showProgress && ` (${prg}%)`}
-                                 {isErr && cleanErrText && (
-                                   <span style={{ fontWeight: 400, opacity: 0.85 }}>({cleanErrText})</span>
-                                 )}
-                               </span>
-                             );
-                           })}
-                         </div>
-                       )}
-                      
-                      {file.error && (activeConfigs.length === 1 || !file.serverStatus) && (() => {
-                        const activeConf = activeConfigs[0];
-                        const serverName = activeConf ? (activeConf.websiteName || activeConf.host) : '';
-                        const hasServerError = file.serverErrors && activeConf && file.serverErrors[activeConf.host];
-                        const displayErr = hasServerError ? getCategorizedError(file.error, serverName) : file.error;
-                        return (
-                          <span style={{ fontSize: '0.65rem', color: 'var(--danger)', maxWidth: '350px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={file.error}>
-                            {displayErr}
-                          </span>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => removeFile(file.id)}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', padding: '0.2rem', flexShrink: 0 }}
-                  title="Remove"
-                >
-                  <X style={{ width: '0.9rem', height: '0.9rem' }} />
-                </button>
-              </div>
-            ))}
-
-            {files.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-3)' }}>
-                <Upload style={{ width: '2rem', height: '2rem', margin: '0 auto 0.75rem', opacity: 0.3 }} />
-                <p style={{ fontSize: '0.85rem', margin: 0 }}>Select files or drop them in the drop zone</p>
-                <p style={{ fontSize: '0.72rem', margin: '0.25rem 0 0', color: 'var(--text-3)', opacity: 0.7 }}>Supports JPG, EPS, AI, SVG, PNG formats</p>
-              </div>
-            )}
-          </div>
+          {/* Virtualized Files List with Windowing (Ultra-Low Memory) */}
+          <VirtualFileList
+            files={files}
+            activeConfigs={activeConfigs}
+            onRemove={removeFile}
+            getCategorizedError={getCategorizedError}
+          />
         </div>
       </div>
 

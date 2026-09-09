@@ -5,7 +5,7 @@ import { StatusBadge, getScoreMeta } from "./workflowHelpers";
 import { MetaField } from "./MetaField";
 
 const MetadataCard = memo(({ 
-  img, hasDuplicateBadge, removeImage, onIgnorePolicy, handleMetaChange, activeProviderName, upscaleScale, ftpConfigs, enableKeywordRanking
+  img, hasDuplicateBadge, removeImage, onIgnorePolicy, handleMetaChange, activeProviderName, upscaleScale, ftpConfigs, enableKeywordRanking, onEmbedSingle, autoEmbed, onUploadSingleFtp
 }: any) => {
   return (
     <div className="glass card animate-fade-in file-row">
@@ -94,6 +94,9 @@ const MetadataCard = memo(({
               onChange={(val: any) => handleMetaChange(img.id, "keywords", val)}
               isTextArea isKeywords img={img}
               enableKeywordRanking={enableKeywordRanking}
+              onEmbedSingle={onEmbedSingle}
+              autoEmbed={autoEmbed}
+              onUploadSingleFtp={onUploadSingleFtp}
             />
             
 
@@ -163,10 +166,18 @@ const MetadataCard = memo(({
         )}
         
         {img.embeddingStatus && img.embeddingStatus !== 'none' && (
-          <div className={`mt-3 p-2 rounded text-xs flex items-center gap-2 ${img.embeddingStatus === 'pending' ? 'bg-slate-500/10 text-slate-400 font-medium' : img.embeddingStatus === 'embedding' ? 'bg-indigo-500/10 text-indigo-400' : img.embeddingStatus === 'uploading' ? 'bg-amber-500/10 text-amber-500 w-full' : img.embeddingStatus === 'success' ? 'bg-green-500/10 text-green-400 font-medium' : 'bg-red-500/10 text-red-400'}`} style={{ width: '100%' }}>
-            {img.embeddingStatus === 'pending' && <><Clock className="w-3.5 h-3.5 text-slate-400 animate-pulse" /><span>Queued (Waiting to embed)...</span></>}
-            {img.embeddingStatus === 'embedding' && <><Loader2 className="w-3 h-3 animate-spin text-indigo-500" /><span>Embedding metadata into file...</span></>}
-            {img.embeddingStatus === 'uploading' && (() => {
+          <div className={`mt-3 p-2 rounded text-xs flex items-center gap-2 ${
+            img.embeddingStatus === 'pending' ? 'bg-slate-500/10 text-slate-400 font-medium'
+            : img.embeddingStatus === 'embedding' ? 'bg-indigo-500/10 text-indigo-400'
+            : img.embeddingStatus === 'uploading' ? 'bg-amber-500/10 text-amber-500 w-full'
+            : img.embeddingStatus === 'success' ? 'bg-green-500/10 text-green-400 font-medium'
+            : 'bg-red-500/10 text-red-400'
+          }`} style={{ width: '100%' }}>
+            {img.embeddingStatus === 'pending' ? (
+              <><Clock className="w-3.5 h-3.5 text-slate-400 animate-pulse" /><span>Queued (Waiting to embed)...</span></>
+            ) : img.embeddingStatus === 'embedding' ? (
+              <><Loader2 className="w-3 h-3 animate-spin text-indigo-500" /><span>Embedding metadata into file...</span></>
+            ) : img.embeddingStatus === 'uploading' ? (() => {
               const singleProgress = (() => {
                 if (typeof img.uploadProgress === 'number') return img.uploadProgress;
                 if (typeof img.uploadProgress === 'object' && img.uploadProgress !== null) {
@@ -202,8 +213,7 @@ const MetadataCard = memo(({
                   </div>
                 </div>
               );
-            })()}
-            {img.embeddingStatus === 'success' && (
+            })() : img.embeddingStatus === 'success' ? (
               <>
                 <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
                 <span>
@@ -212,8 +222,9 @@ const MetadataCard = memo(({
                     : "Metadata embedded into file!"}
                 </span>
               </>
+            ) : (
+              <><X style={{ width: '0.8rem', height: '0.8rem', stroke: '#ef4444' }} /><span>Failed: {img.embeddingError}</span></>
             )}
-            {img.embeddingStatus === 'error' && <><X style={{ width: '0.8rem', height: '0.8rem', stroke: '#ef4444' }} /><span>Failed: {img.embeddingError}</span></>}
           </div>
         )}
       </div>
@@ -226,10 +237,13 @@ const MetadataCard = memo(({
          prevProps.upscaleScale === nextProps.upscaleScale &&
          prevProps.ftpConfigs === nextProps.ftpConfigs &&
          prevProps.enableKeywordRanking === nextProps.enableKeywordRanking &&
+         prevProps.onEmbedSingle === nextProps.onEmbedSingle &&
+         prevProps.autoEmbed === nextProps.autoEmbed &&
+         prevProps.onUploadSingleFtp === nextProps.onUploadSingleFtp &&
          prevProps.onIgnorePolicy === nextProps.onIgnorePolicy;
 });
 
-export function MetadataCardList({ images, duplicatePairs, removeImage, onIgnorePolicy, handleMetaChange, activeProviderName, upscaleScale, ftpConfigs, enableKeywordRanking }: any) {
+export function MetadataCardList({ images, duplicatePairs, removeImage, onIgnorePolicy, handleMetaChange, activeProviderName, upscaleScale, ftpConfigs, enableKeywordRanking, onEmbedSingle, autoEmbed, onUploadSingleFtp }: any) {
   return (
     <div className="grid grid-cols-1 gap-4">
       {images.map((img: any) => {
@@ -246,6 +260,9 @@ export function MetadataCardList({ images, duplicatePairs, removeImage, onIgnore
             upscaleScale={upscaleScale}
             ftpConfigs={ftpConfigs}
             enableKeywordRanking={enableKeywordRanking}
+            onEmbedSingle={onEmbedSingle}
+            autoEmbed={autoEmbed}
+            onUploadSingleFtp={onUploadSingleFtp}
           />
         );
       })}

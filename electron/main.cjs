@@ -1637,6 +1637,134 @@ function releaseMetadataLock(filePath) {
   globalMetadataLocks.delete(filePath);
 }
 
+function isNetworkError(err) {
+  if (!err) return false;
+  const msg = (err.message || '').toLowerCase();
+  const code = (err.code || '').toUpperCase();
+  return (
+    code === 'ENOTFOUND' ||
+    code === 'EAI_AGAIN' ||
+    code === 'ECONNRESET' ||
+    code === 'ETIMEDOUT' ||
+    code === 'ECONNREFUSED' ||
+    code === 'EHOSTUNREACH' ||
+    code === 'ENETUNREACH' ||
+    code === 'ENETDOWN' ||
+    code === 'ERR_INTERNET_DISCONNECTED' ||
+    code === 'ERR_NETWORK_CHANGED' ||
+    msg.includes('enotfound') ||
+    msg.includes('econnreset') ||
+    msg.includes('etimedout') ||
+    msg.includes('timed out') ||
+    msg.includes('timeout') ||
+    msg.includes('handshake') ||
+    msg.includes('closed') ||
+    msg.includes('network') ||
+    msg.includes('internet') ||
+    msg.includes('connection reset') ||
+    msg.includes('socket destroyed') ||
+    msg.includes('socket hang up') ||
+    msg.includes("couldn't resolve host") ||
+    msg.includes('getconnection') ||
+    msg.includes('econnrefused') ||
+    msg.includes('ehostunreach') ||
+    msg.includes('client is closed') ||
+    msg.includes('not connected') ||
+    msg.includes('offline') ||
+    msg.includes('dns')
+  );
+}
+
+async function checkHostOrInternet(host) {
+  const dns = require('dns').promises;
+  if (host && host.trim()) {
+    try {
+      await dns.lookup(host.trim());
+      return true;
+    } catch (_) {}
+  }
+  try {
+    await dns.lookup('google.com');
+    return true;
+  } catch (_) {}
+  try {
+    await dns.lookup('cloudflare.com');
+    return true;
+  } catch (_) {}
+  return false;
+}
+
+global.ftpJobFailureTrackers = global.ftpJobFailureTrackers || new Map();
+function getFailureTracker(trackerKey) {
+  if (!global.ftpJobFailureTrackers.has(trackerKey)) {
+    global.ftpJobFailureTrackers.set(trackerKey, {
+      consecutiveFailures: 0,
+      activeWaitPromise: null
+    });
+  }
+  return global.ftpJobFailureTrackers.get(trackerKey);
+}
+
+async function waitForNetworkRecovery(tracker, config, type, key, poolErr, jobId) {
+  if (tracker.activeWaitPromise) {
+    fileLog(`[upload-pool] ⏸️ Another upload is currently waiting for network recovery. Waiting alongside...`);
+    try {
+      await tracker.activeWaitPromise;
+    } catch (_) {}
+    const existing = ftpPool.get(key);
+    if (existing && !existing.slots.some(s => type === 'ftp' && s.client.closed)) {
+      return existing;
+    }
+  }
+
+  const budget = tracker.consecutiveFailures === 0 ? 60000 : (tracker.consecutiveFailures < 3 ? 30000 : 0);
+
+  if (budget === 0) {
+    tracker.consecutiveFailures++;
+    fileLog(`[upload-pool] ⚡ Rapid fail (4th+ failure): ${poolErr.message} (Failures: ${tracker.consecutiveFailures})`);
+    throw poolErr;
+  }
+
+  fileLog(`[upload-pool] ⏳ Network error: ${poolErr.message} (Failure #${tracker.consecutiveFailures + 1}). Waiting up to ${budget/1000}s for network...`);
+
+  let waitResolve;
+  tracker.activeWaitPromise = new Promise(res => { waitResolve = res; });
+
+  let entry = null;
+  const startWait = Date.now();
+  try {
+    while (Date.now() - startWait < budget) {
+      if (jobId && global.cancelledFtpJobs.has(jobId)) throw new Error('Cancelled by user');
+      await new Promise(r => setTimeout(r, 3000));
+      if (jobId && global.cancelledFtpJobs.has(jobId)) throw new Error('Cancelled by user');
+
+      const online = await checkHostOrInternet(config.host);
+      if (online) {
+        fileLog(`[upload-pool] 🌐 Connectivity detected! Re-attempting pool creation...`);
+        try {
+          entry = await getPool(config, type, key);
+          tracker.consecutiveFailures = 0;
+          fileLog(`[upload-pool] ✅ Pool restored successfully!`);
+          break;
+        } catch (retryErr) {
+          fileLog(`[upload-pool] Pool creation attempt failed: ${retryErr.message}. Still waiting...`);
+        }
+      }
+    }
+  } finally {
+    tracker.activeWaitPromise = null;
+    if (waitResolve) waitResolve();
+  }
+
+  if (!entry) {
+    tracker.consecutiveFailures++;
+    fileLog(`[upload-pool] ✗ Network recovery timed out after ${budget/1000}s. (Consecutive failures: ${tracker.consecutiveFailures})`);
+    throw poolErr;
+  }
+
+  return entry;
+}
+
 async function uploadFilesParallel(config, filePaths, type, jobId, event) {
   const validPaths = filePaths.filter(p => fs.existsSync(p));
   const fileErrors = {};
@@ -1644,8 +1772,20 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
   const successfulAdobeUploads = [];
   if (validPaths.length === 0) return { fileErrors, renamedFiles };
 
+  const trackerKey = jobId ? `${jobId}_${config.host}` : config.host;
+  const tracker = getFailureTracker(trackerKey);
+
   const key   = poolKey(config, type);
-  const entry = await getPool(config, type, key);
+  let entry;
+  try {
+    entry = await getPool(config, type, key);
+  } catch (poolErr) {
+    if (isNetworkError(poolErr)) {
+      entry = await waitForNetworkRecovery(tracker, config, type, key, poolErr, jobId);
+    } else {
+      throw poolErr;
+    }
+  }
 
   fileLog(`[upload-${type}] ${validPaths.length} file(s) queued into ${entry.slots.length}-slot pool`);
 
@@ -1913,7 +2053,7 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
                fileLog(`[upload-${type}] Non-Adobe overwrite error, renaming to ${fileName} for next attempt.`);
             }
             
-            if (attempt === MAX_RETRIES) throw uploadErr;
+            if (isNetworkError(uploadErr) || attempt === MAX_RETRIES) throw uploadErr;
           } finally {
             if (type === 'ftp') {
               slot.client.trackProgress();
@@ -1957,6 +2097,7 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
            });
         }
         
+        tracker.consecutiveFailures = 0;
         fileErrors[filePath] = null;
       } catch (err) {
         const isCancelled = jobId && global.cancelledFtpJobs.has(jobId);
@@ -1972,8 +2113,107 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
         } else if ((err.code === 'ECONNRESET' || err.message.includes('ECONNRESET')) && total_transferred >= fileSize && fileSize > 0) {
            // Server closed connection after receiving the whole file
            fileLog(`[upload-${type}] ⚠️ ${fileName}: Connection reset after transfer (ignoring). Treated as success.`);
+           tracker.consecutiveFailures = 0;
            if (event && !event.sender.isDestroyed()) event.sender.send('ftp-progress', { filePath, progress: 100, host: config.host });
            fileErrors[filePath] = null;
+        } else if (isNetworkError(err)) {
+           // ── SMART TIERED NETWORK RETRY CONTROLLER ──
+           if (tracker.activeWaitPromise) {
+             fileLog(`[upload-${type}] ⏸️ Another file is already waiting for network recovery. Waiting alongside...`);
+             try { await tracker.activeWaitPromise; } catch (_) {}
+           }
+
+           let budget = 0;
+           if (tracker.consecutiveFailures === 0) {
+             budget = 60000; // 1st failure: 60s (1 minute)
+           } else if (tracker.consecutiveFailures === 1 || tracker.consecutiveFailures === 2) {
+             budget = 30000; // 2nd & 3rd failure: 30s
+           } else {
+             budget = 0; // 4th onwards: rapid fail without waiting
+           }
+
+           let recovered = false;
+           if (budget > 0) {
+             fileLog(`[upload-${type}] ⏳ Network disconnected on ${fileName} (Failure #${tracker.consecutiveFailures + 1}). Waiting up to ${budget/1000}s for network recovery...`);
+             let waitResolve;
+             tracker.activeWaitPromise = new Promise(res => { waitResolve = res; });
+             const startWait = Date.now();
+
+             try {
+               while (Date.now() - startWait < budget) {
+                 if (jobId && global.cancelledFtpJobs.has(jobId)) break;
+                 await new Promise(r => setTimeout(r, 3000));
+                 if (jobId && global.cancelledFtpJobs.has(jobId)) break;
+
+                 const online = await checkHostOrInternet(config.host);
+                 if (online) {
+                   fileLog(`[upload-${type}] 🌐 Network connection restored! Reconnecting slot and resuming ${fileName}...`);
+                   try {
+                     slot.client = type === 'sftp' ? await createSftpClient(config) : await createFtpClient(config);
+                     slot.dead = false;
+
+                     fileLog(`[upload-${type}] 🚀 Resuming upload for ${fileName}...`);
+                     if (type === 'sftp') {
+                       await slot.client.fastPut(filePath, finalRemoteName, {
+                         concurrency: 64,
+                         chunkSize: 64 * 1024,
+                         step: (transferred, chunk, total) => {
+                           if (jobId && global.cancelledFtpJobs.has(jobId)) throw new Error('Cancelled by user');
+                           const p = Math.round((transferred / total) * 100);
+                           if (event && !event.sender.isDestroyed()) event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
+                         }
+                       });
+                     } else {
+                       slot.client.trackProgress(info => {
+                         if (jobId && global.cancelledFtpJobs.has(jobId)) { slot.client.trackProgress(); try { slot.client.close(); } catch(_){} return; }
+                         if (fileSize > 0) {
+                           const p = Math.min(Math.round((info.bytesOverall / fileSize) * 100), 99);
+                           if (event && !event.sender.isDestroyed()) event.sender.send('ftp-progress', { filePath, progress: p, host: config.host });
+                         }
+                       });
+                       await slot.client.uploadFrom(filePath, finalRemoteName);
+                       slot.client.trackProgress();
+                     }
+
+                     tracker.consecutiveFailures = 0;
+                     recovered = true;
+                     fileErrors[filePath] = null;
+                     if (event && !event.sender.isDestroyed()) event.sender.send('ftp-progress', { filePath, progress: 100, host: config.host });
+                     fileLog(`[upload-${type}] ✓ Recovered & Uploaded: ${fileName}`);
+                     if (isAdobe) {
+                       successfulAdobeUploads.push({
+                         filename: finalRemoteName,
+                         title: finalTitleToSave,
+                         keywords: finalKeywordsToSave,
+                         category: finalCategoryToSave
+                       });
+                     }
+                     break;
+                   } catch (retryErr) {
+                     fileLog(`[upload-${type}] Reconnection/upload attempt failed: ${retryErr.message}. Remaining wait: ${Math.max(0, Math.round((budget - (Date.now() - startWait))/1000))}s`);
+                   }
+                 }
+               }
+             } finally {
+               tracker.activeWaitPromise = null;
+               if (waitResolve) waitResolve();
+             }
+           }
+
+           if (!recovered) {
+             tracker.consecutiveFailures++;
+             const failMsg = budget > 0 
+               ? `Network error (waited ${budget/1000}s): ${err.message}`
+               : `Network error (rapid fail): ${err.message}`;
+             fileLog(`[upload-${type}] ✗ ${fileName}: ${failMsg} (Consecutive failures: ${tracker.consecutiveFailures})`);
+             slot.dead = true;
+             if (type === 'ftp') try { slot.client.close(); } catch(e){}
+             else try { slot.client.end(); } catch(e){}
+             fileErrors[filePath] = failMsg;
+             if (event && !event.sender.isDestroyed()) {
+               event.sender.send('ftp-progress', { filePath, progress: -1, host: config.host, error: failMsg });
+             }
+           }
         } else {
            fileLog(`[upload-${type}] ✗ ${fileName}: ${err.message}`);
            slot.dead = true;

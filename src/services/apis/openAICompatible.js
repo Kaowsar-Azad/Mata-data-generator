@@ -9,6 +9,7 @@ export async function fetchOpenAICompatible(provider, endpoint, models, apiKey, 
 
   // Build dynamic keyword count instruction from promptSettings (mirrors geminiService buildPrompt logic)
   const s = promptSettings || {};
+  const enableRanking = s.enableKeywordRanking !== false;
   const targetKwCount = Math.min(100, (s.keywordCount || 48) + 25);
   const kwCountInstruction = `KEYWORDS: You MUST generate EXACTLY ${targetKwCount} keywords. Not ${targetKwCount - 5}, not ${targetKwCount + 5}. EXACTLY ${targetKwCount}. Count them before outputting. If you have fewer, add high-value synonyms or commercial use-case terms. If you have more, remove the weakest ones.`;
 
@@ -30,9 +31,9 @@ export async function fetchOpenAICompatible(provider, endpoint, models, apiKey, 
     const policyWarningRule = skipPolicyScan ? "" : `\n- TRADEMARK & IP SAFETY: You must perform the detailed IP/Trademark Scan requested in the user prompt. If any brand name, trademark, company logo, or protected design is found, you MUST set "policyWarning" to a brief (max 2 sentences), specific, actionable message explaining it. If clean, set to null.`;
     const policyWarningRuleNum = skipPolicyScan ? "" : `\n2. TRADEMARK & IP SAFETY: You must perform the detailed IP/Trademark Scan requested in the user prompt. If any brand name, trademark, company logo, or protected design is found, you MUST set "policyWarning" to a brief (max 2 sentences), specific, actionable message explaining it. If clean, set to null.`;
     
-    const enableRanking = s.enableKeywordRanking !== false;
     const keywordScoresRule = enableRanking ? `\n4. KEYWORD SCORES: You must score every single keyword 1-100. The number of scores in the "keywordScores" object MUST EXACTLY MATCH the number of keywords in your "keywords" string.` : "";
     const keywordScoresJson = enableRanking ? `,\n  "keywordScores": {\n    "word1": 95,\n    "word2": 80,\n    "word3": 45\n  }` : "";
+    const scoreReasonJson = enableRanking ? `,\n  "scoreReason": "Brief explanation."` : "";
     
     const systemInstruction = forceJson
       ? (isSecurityScan
@@ -58,8 +59,7 @@ REQUIRED JSON FORMAT:
   "commercialConcept": "popular",
   "subjectClarity": "clear",
   "technicalQuality": "professional",
-  "marketDemand": "high",
-  "scoreReason": "Brief explanation.",
+  "marketDemand": "high"${scoreReasonJson},
   "policyWarning": null
 }`)
       : `You are a helpful AI assistant specializing in describing images in extreme detail and generating highly technical, descriptive AI image prompts. Respond with ONLY the raw prompt text. Do NOT wrap it in JSON.`;
@@ -415,7 +415,7 @@ function extractValidJson(text) {
     description: String(description || '').trim(),
     keywords: keywordsRaw,
     categories,
-    keywordScores: keywordScores !== undefined && keywordScores !== null ? keywordScores : {},
+    keywordScores: enableRanking && keywordScores !== undefined && keywordScores !== null ? keywordScores : undefined,
     policyWarning: policyWarning ? String(policyWarning) : null,
   };
 }

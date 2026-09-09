@@ -46,7 +46,7 @@ import downloadIcon from "../../assets/icons/download.png";
 import { processEpsFile, isEpsFile } from "../../services/epsService";
 
 import { computeHashForEntry, detectDuplicates } from "./duplicateDetector";
-import { downloadCSV, parseCSV } from "./csvHandlers";
+import { downloadCSV, parseCSV, syncActiveCsvFiles } from "./csvHandlers";
 import { StatusBadge } from "./workflowHelpers";
 import { ExportFormatModal } from "./ExportFormatModal";
 import { MetadataThumbnailGrid } from "./MetadataThumbnailGrid";
@@ -168,9 +168,7 @@ const filterMetadataKeywords = (metadata: any, removeYellow: boolean, removeRed:
     let isYellow = false;
     let isRed = false;
 
-    if (score === -1) {
-      isRed = true;
-    } else {
+    if (score !== -1) {
       if (metadata.provider === 'mistral') {
         isYellow = score >= 30 && score < 60;
         isRed = score < 30;
@@ -852,8 +850,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     if (lower.includes('failed to fetch') || lower.includes('econnrefused') || lower.includes('network error') || lower.includes('offline')) {
       return `Network Error: Please check your network connection.`;
     }
-    if (lower.includes('429') || lower.includes('rate limit') || lower.includes('quota') || lower.includes('too many requests') || lower.includes('overloaded')) {
-      return `API Limit Exceeded: Daily quota or rate limit reached.`;
+    if (lower.includes('429') || lower.includes('rate limit') || lower.includes('quota') || lower.includes('too many requests') || lower.includes('overloaded') || lower.includes('resource_exhausted')) {
+      return `Your API limit may be temporarily exhausted. Please try again in a few moments.`;
     }
     if (lower.includes('401') || lower.includes('unauthorized') || lower.includes('invalid api key')) {
       return `Invalid API Key: Please check your API settings.`;
@@ -1589,7 +1587,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               embeddingStatus: ((autoEmbedRef.current || forceUpload) && activeFtpConfigs.length > 0) ? "uploading" : "success",
               renamedPath: newPrimaryPath,
               renamedVisualPath: newVisualPath,
-              renamedName: newPrimaryName
+              renamedName: newPrimaryName,
+              lastEmbeddedKeywords: img.result?.keywords,
+              lastEmbeddedTitle: img.result?.title,
+              lastEmbeddedDescription: img.result?.description
             });
             setEmbedTracker(prev => prev ? {
               ...prev,
@@ -1968,6 +1969,303 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     );
   }, [selectedRows]);
 
+  const embedSingleImage = useCallback(async (id: any, customKeywords?: string) => {
+    if (!window.electronAPI?.writeMetadata) {
+      showToast("Embedding requires the desktop application", "error");
+      return;
+    }
+
+    const currentImg = imagesRef.current.find((img: any) => img.id === id);
+    if (!currentImg || !currentImg.result) {
+      showToast("Image metadata not available to embed", "warning");
+      return;
+    }
+
+    const kwToEmbed = customKeywords !== undefined ? customKeywords : (currentImg.result.keywords || "");
+    const titleToEmbed = currentImg.result.title || "";
+    const descToEmbed = currentImg.result.description || "";
+    const catsToEmbed = currentImg.result.categories || [];
+
+    // Mark status as embedding in state
+    setImages((prev: any) =>
+      prev.map((img: any) =>
+        img.id === id
+          ? {
+              ...img,
+              embeddingStatus: "embedding",
+              embeddingError: null,
+              result: { ...img.result, keywords: kwToEmbed }
+            }
+          : img
+      )
+    );
+
+    const pathsToEmbed: { type: 'primary' | 'visual'; path: string }[] = [];
+    const resolvedPrimaryPath = currentImg.renamedPath || currentImg.file?.path;
+    if (resolvedPrimaryPath) {
+      pathsToEmbed.push({ type: 'primary', path: resolvedPrimaryPath });
+    }
+
+    const resolvedVisualPath = currentImg.renamedVisualPath || currentImg.visualFile?.path;
+    if (currentImg.isEps && resolvedVisualPath && resolvedVisualPath !== resolvedPrimaryPath) {
+      pathsToEmbed.push({ type: 'visual', path: resolvedVisualPath });
+    }
+
+    if (pathsToEmbed.length === 0) {
+      setImages((prev: any) =>
+        prev.map((img: any) =>
+          img.id === id
+            ? { ...img, embeddingStatus: "error", embeddingError: "File path not found" }
+            : img
+        )
+      );
+      showToast("File path not found for embedding", "error");
+      return;
+    }
+
+    let success = true;
+    let errMsg = "";
+    let newPrimaryPath = currentImg.renamedPath;
+    let newVisualPath = currentImg.renamedVisualPath;
+    let newPrimaryName = currentImg.renamedName;
+
+    for (const target of pathsToEmbed) {
+      try {
+        const res = await window.electronAPI.writeMetadata(
+          target.path,
+          titleToEmbed,
+          descToEmbed,
+          kwToEmbed,
+          catsToEmbed
+        );
+        if (!res?.success) {
+          success = false;
+          errMsg = res?.error || "Failed to embed metadata";
+        } else {
+          if (target.type === 'primary') {
+            newPrimaryPath = res.newPath || target.path;
+            newPrimaryName = res.newFileName || newPrimaryName;
+          }
+          if (target.type === 'visual') {
+            newVisualPath = res.newPath || target.path;
+          }
+        }
+      } catch (err: any) {
+        success = false;
+        errMsg = err?.message || "Error writing metadata";
+      }
+    }
+
+    if (success) {
+      const updatedImages = imagesRef.current.map((img: any) => {
+        if (img.id === id) {
+          return {
+            ...img,
+            embeddingStatus: "success",
+            embeddingError: null,
+            renamedPath: newPrimaryPath,
+            renamedVisualPath: newVisualPath,
+            renamedName: newPrimaryName,
+            lastEmbeddedKeywords: kwToEmbed,
+            lastEmbeddedTitle: titleToEmbed,
+            lastEmbeddedDescription: descToEmbed,
+            result: {
+              ...img.result,
+              keywords: kwToEmbed
+            }
+          };
+        }
+        return img;
+      });
+
+      setImages(updatedImages);
+
+      // Sync active / exported CSV files in real-time
+      let csvMsg = "";
+      try {
+        const syncRes = await syncActiveCsvFiles(updatedImages, promptSettingsRef.current);
+        if (syncRes?.success && syncRes.updatedFiles.length > 0) {
+          csvMsg = ` & CSV updated (${syncRes.updatedFiles.join(", ")})`;
+        }
+      } catch (csvErr) {
+        console.warn("[Embed Single] CSV sync error:", csvErr);
+      }
+
+      showToast(`Metadata embedded into file${csvMsg}!`, "success");
+    } else {
+      setImages((prev: any) =>
+        prev.map((img: any) =>
+          img.id === id
+            ? { ...img, embeddingStatus: "error", embeddingError: errMsg }
+            : img
+        )
+      );
+      showToast(`Embedding failed: ${errMsg}`, "error");
+    }
+  }, [showToast]);
+
+  const uploadSingleImageToFtp = useCallback(async (id: any, customKeywords?: string) => {
+    if (!window.electronAPI?.uploadFtp) {
+      showToast("FTP upload requires the desktop application", "error");
+      return;
+    }
+
+    const activeConfigs = (ftpConfigs || []).filter((c: any) => c.enabled);
+    if (activeConfigs.length === 0) {
+      showToast("No active FTP servers connected or selected! Please configure and enable an FTP server in FTP Settings.", "warning");
+      return;
+    }
+
+    const currentImg = imagesRef.current.find((img: any) => img.id === id);
+    if (!currentImg || !currentImg.result) {
+      showToast("Image data not available for upload", "warning");
+      return;
+    }
+
+    const kwToEmbed = customKeywords !== undefined ? customKeywords : (currentImg.result.keywords || "");
+    const titleToEmbed = currentImg.result.title || "";
+    const descToEmbed = currentImg.result.description || "";
+    const catsToEmbed = currentImg.result.categories || [];
+
+    let resolvedPrimaryPath = currentImg.renamedPath || currentImg.file?.path;
+    let resolvedVisualPath = currentImg.renamedVisualPath || currentImg.visualFile?.path;
+    let newPrimaryName = currentImg.renamedName || currentImg.file?.name;
+
+    // Ensure metadata is written to the file before uploading
+    if (window.electronAPI?.writeMetadata) {
+      const pathsToEmbed: { type: 'primary' | 'visual'; path: string }[] = [];
+      if (resolvedPrimaryPath) pathsToEmbed.push({ type: 'primary', path: resolvedPrimaryPath });
+      if (currentImg.isEps && resolvedVisualPath && resolvedVisualPath !== resolvedPrimaryPath) {
+        pathsToEmbed.push({ type: 'visual', path: resolvedVisualPath });
+      }
+
+      for (const target of pathsToEmbed) {
+        try {
+          const res = await window.electronAPI.writeMetadata(
+            target.path,
+            titleToEmbed,
+            descToEmbed,
+            kwToEmbed,
+            catsToEmbed
+          );
+          if (res?.success) {
+            if (target.type === 'primary') {
+              resolvedPrimaryPath = res.newPath || target.path;
+              newPrimaryName = res.newFileName || newPrimaryName;
+            }
+            if (target.type === 'visual') {
+              resolvedVisualPath = res.newPath || target.path;
+            }
+          }
+        } catch (err) {
+          console.warn("[Upload Single FTP] Pre-embed metadata write error:", err);
+        }
+      }
+    }
+
+    const filesToUpload: string[] = [];
+    if (resolvedPrimaryPath) filesToUpload.push(resolvedPrimaryPath);
+    if (currentImg.isEps && resolvedVisualPath && resolvedVisualPath !== resolvedPrimaryPath) {
+      filesToUpload.push(resolvedVisualPath);
+    }
+
+    if (filesToUpload.length === 0) {
+      showToast("File path not found for FTP upload", "error");
+      return;
+    }
+
+    // Set uploading status on image
+    setImages((prev: any) =>
+      prev.map((img: any) =>
+        img.id === id
+          ? {
+              ...img,
+              embeddingStatus: "uploading",
+              uploadProgress: {},
+              embeddingError: null,
+              renamedPath: resolvedPrimaryPath,
+              renamedVisualPath: resolvedVisualPath,
+              renamedName: newPrimaryName,
+              lastEmbeddedKeywords: kwToEmbed,
+              lastEmbeddedTitle: titleToEmbed,
+              lastEmbeddedDescription: descToEmbed,
+              result: { ...img.result, keywords: kwToEmbed }
+            }
+          : img
+      )
+    );
+
+    const jobId = Math.random().toString(36).substr(2, 9);
+    setActiveJobId(jobId);
+
+    try {
+      const uploadPromises = activeConfigs.map(async (conf: any) => {
+        try {
+          const ftpRes = await window.electronAPI.uploadFtp(conf, filesToUpload, jobId);
+          if (!ftpRes.success) {
+            return { host: conf.websiteName || conf.host, globalError: ftpRes.error, fileErrors: {} };
+          }
+          return { host: conf.websiteName || conf.host, fileErrors: ftpRes.fileErrors || {}, globalError: null };
+        } catch (err: any) {
+          return { host: conf.websiteName || conf.host, globalError: err.message, fileErrors: {} };
+        }
+      });
+
+      const uploadResults = await Promise.all(uploadPromises);
+
+      const failedHosts: string[] = [];
+      uploadResults.forEach(res => {
+        if (res.globalError || (res.fileErrors && Object.values(res.fileErrors).some(Boolean))) {
+          failedHosts.push(res.host);
+        }
+      });
+
+      if (failedHosts.length === 0) {
+        setImages((prev: any) =>
+          prev.map((img: any) =>
+            img.id === id
+              ? {
+                  ...img,
+                  embeddingStatus: "success",
+                  embeddingError: null
+                }
+              : img
+          )
+        );
+        showToast(`"${newPrimaryName || currentImg.file?.name}" successfully uploaded to FTP server!`, "success");
+      } else {
+        const errMsg = `FTP upload failed for: ${failedHosts.join(', ')}`;
+        setImages((prev: any) =>
+          prev.map((img: any) =>
+            img.id === id
+              ? {
+                  ...img,
+                  embeddingStatus: "error",
+                  embeddingError: getUserFriendlyErrorMessage(errMsg, 'FTP Upload')
+                }
+              : img
+          )
+        );
+        showToast(errMsg, "error");
+      }
+    } catch (uploadErr: any) {
+      setImages((prev: any) =>
+        prev.map((img: any) =>
+          img.id === id
+            ? {
+                ...img,
+                embeddingStatus: "error",
+                embeddingError: getUserFriendlyErrorMessage(uploadErr.message, 'FTP Upload')
+              }
+            : img
+        )
+      );
+      showToast(`FTP upload failed: ${uploadErr.message}`, "error");
+    } finally {
+      setActiveJobId(null);
+    }
+  }, [ftpConfigs, showToast, getUserFriendlyErrorMessage]);
+
   const removeKeywordsByColor = (color: any) => {
     const getKeywordScore = (keyword: any, img: any) => {
       const kl = keyword.toLowerCase().trim();
@@ -2021,9 +2319,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         let isYellow = false;
         let isRed = false;
 
-        if (score === -1) {
-          isRed = true;
-        } else {
+        if (score !== -1) {
           if (img.result?.provider === 'mistral') {
             isYellow = score >= 30 && score < 60;
             isRed = score < 30;
@@ -2174,7 +2470,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               {errorCount} File{errorCount !== 1 ? 's' : ''} Failed to Generate Metadata
             </h3>
             <p className="text-muted" style={{ fontSize: '0.85rem', marginTop: '0.2rem' }}>
-              Metadata could not be generated due to API rate limits, daily quota limits, or internet connection issues.
+              Metadata could not be generated due to temporary API limits or connection issues. Please try again in a few moments.
             </p>
           </div>
           <button
@@ -3083,6 +3379,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   upscaleScale={upscaleScale}
                   ftpConfigs={ftpConfigs}
                   enableKeywordRanking={promptSettings?.enableKeywordRanking ?? true}
+                  onEmbedSingle={embedSingleImage}
+                  autoEmbed={autoEmbed}
+                  onUploadSingleFtp={uploadSingleImageToFtp}
                 />
               )}
             </div>
@@ -3098,6 +3397,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   selectedCount={selectedRows.size}
                   applyToSelected={applyToSelected}
                   enableKeywordRanking={promptSettings?.enableKeywordRanking ?? true}
+                  onEmbedSingle={embedSingleImage}
+                  autoEmbed={autoEmbed}
+                  onUploadSingleFtp={uploadSingleImageToFtp}
                 />
               </div>
             )}
@@ -3380,9 +3682,12 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       <ExportFormatModal 
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
-        onSelect={(formatId: any) => {
-          downloadCSV(formatId, images, promptSettings);
+        onSelect={async (formatId: any) => {
           setShowExportModal(false);
+          const res = await downloadCSV(formatId, images, promptSettings);
+          if (res?.fileName) {
+            showToast(`CSV exported: ${res.fileName}`, "success");
+          }
         }}
         activePlatform={promptSettings?.exportPlatform || 'General'}
       />

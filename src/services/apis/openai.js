@@ -422,5 +422,5 @@ Return only the prompt text and nothing else.`;
     }
   }
 
-  return fetchOpenAICompatible("mistral", endpoint, models, apiKey, processedPrompt, base64Data, mimeType, forceJson, promptSettings);
+  return fetchOpenAICompatible("openai", endpoint, models, apiKey, processedPrompt, base64Data, mimeType, forceJson, promptSettings);
 }

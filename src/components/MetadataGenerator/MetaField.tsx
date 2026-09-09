@@ -1,22 +1,86 @@
 // @ts-nocheck
 import React, { useState, useRef, useEffect } from "react";
-import { CheckCircle2, Copy } from "lucide-react";
+import { CheckCircle2, Copy, Loader2, FileCheck2, Plus, UploadCloud } from "lucide-react";
 
-export function MetaField({ label, value, onChange, isTextArea, isKeywords, img, onApplyToSelected, enableKeywordRanking }: any) {
+export function MetaField({ label, value, onChange, isTextArea, isKeywords, img, onApplyToSelected, enableKeywordRanking, onEmbedSingle, autoEmbed, onUploadSingleFtp }: any) {
   const [copied, setCopied] = useState(false);
   const [isTextMode, setIsTextMode] = useState(false);
   const [newKeyword, setNewKeyword] = useState("");
-  
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isEmbedding, setIsEmbedding] = useState(false);
+  const [justEmbedded, setJustEmbedded] = useState(false);
+  const [isUploadingFtp, setIsUploadingFtp] = useState(false);
+  const [justUploadedFtp, setJustUploadedFtp] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
 
-  const rankingEnabled = enableKeywordRanking ?? true;
-  const hasScores = Boolean(
-    img?.result?.hasKeywordRanking !== false &&
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const initialKeywordsRef = useRef(img?.lastEmbeddedKeywords || img?.initialKeywords || value);
+
+  useEffect(() => {
+    if (img?.lastEmbeddedKeywords) {
+      initialKeywordsRef.current = img.lastEmbeddedKeywords;
+    }
+  }, [img?.lastEmbeddedKeywords]);
+
+  // Per-file ranking status:
+  // If generated with ranking ON, the file permanently keeps its colors even if global button is toggled OFF.
+  // If generated with ranking OFF, the file never shows colors even if global button is toggled ON.
+  const hasRanking = img?.result?.hasKeywordRanking !== undefined
+    ? img.result.hasKeywordRanking === true
+    : Boolean(img?.result?.keywordScores && typeof img.result.keywordScores === 'object' && Object.keys(img.result.keywordScores).length > 0);
+
+  const showRanking = Boolean(
+    hasRanking &&
     img?.result?.keywordScores && 
     typeof img.result.keywordScores === 'object' &&
     Object.keys(img.result.keywordScores).length > 0
   );
-  const showRanking = rankingEnabled && hasScores;
+
+  const baselineKeywords = img?.lastEmbeddedKeywords || initialKeywordsRef.current || '';
+  const currentKeywordsStr = (value || '').trim();
+  const hasKeywordChanges = Boolean(
+    isKeywords &&
+    currentKeywordsStr !== baselineKeywords.trim()
+  );
+
+  const showEmbedButton = Boolean(
+    isKeywords &&
+    (hasKeywordChanges || justEmbedded || isEmbedding) &&
+    typeof onEmbedSingle === 'function'
+  );
+
+  const handleEmbedClick = async () => {
+    if (!onEmbedSingle || isEmbedding) return;
+    setIsEmbedding(true);
+    try {
+      await onEmbedSingle(img?.id, value);
+      initialKeywordsRef.current = value;
+      setJustEmbedded(true);
+      setTimeout(() => {
+        setJustEmbedded(false);
+      }, 3500);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsEmbedding(false);
+    }
+  };
+
+  const handleFtpUploadClick = async () => {
+    if (!onUploadSingleFtp || isUploadingFtp) return;
+    setIsUploadingFtp(true);
+    try {
+      await onUploadSingleFtp(img?.id, value);
+      initialKeywordsRef.current = value;
+      setJustUploadedFtp(true);
+      setTimeout(() => {
+        setJustUploadedFtp(false);
+      }, 3500);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsUploadingFtp(false);
+    }
+  };
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -91,18 +155,21 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
     onChange(newKws.join(', '));
   };
 
+  const addKeywordDirectly = (kwToAdd: string) => {
+    const trimmed = (kwToAdd || '').trim();
+    if (!trimmed) return;
+    const keywords = (value || '').split(',').map(k => k.trim()).filter(Boolean);
+    if (!keywords.includes(trimmed)) {
+      keywords.push(trimmed);
+      onChange(keywords.join(', '));
+    }
+    setNewKeyword("");
+  };
+
   const handleKeyDown = (e: any) => {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
-      const trimmed = newKeyword.trim();
-      if (trimmed) {
-        const keywords = (value || '').split(',').map(k => k.trim()).filter(Boolean);
-        if (!keywords.includes(trimmed)) {
-          keywords.push(trimmed);
-          onChange(keywords.join(', '));
-        }
-        setNewKeyword("");
-      }
+      addKeywordDirectly(newKeyword);
     }
   };
 
@@ -193,16 +260,17 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
             let colorStr = 'var(--text-2, #475569)';
             let bgStr = 'var(--surface-2, #f0f2f5)';
             let borderStr = '1px solid var(--surface-3, #e2e8f0)';
+            let hasRank = false;
 
             if (showRanking) {
               const score = getKeywordScore(cleanedKw, img);
-              let isGreen = false;
-              let isYellow = false;
-              let isRed = false;
 
-              if (score === -1) {
-                isRed = true;
-              } else {
+              if (score !== -1) {
+                hasRank = true;
+                let isGreen = false;
+                let isYellow = false;
+                let isRed = false;
+
                 if (img?.result?.provider === 'mistral') {
                   isGreen = score >= 60;
                   isYellow = score >= 30 && score < 60;
@@ -212,10 +280,10 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                   isYellow = score >= 30 && score < 70;
                   isRed = score < 30;
                 }
+                colorStr = isGreen ? '#10b981' : isYellow ? '#f59e0b' : '#ef4444';
+                bgStr = isGreen ? 'rgba(16, 185, 129, 0.1)' : isYellow ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+                borderStr = `1px solid ${colorStr}40`;
               }
-              colorStr = isGreen ? '#10b981' : isYellow ? '#f59e0b' : '#ef4444';
-              bgStr = isGreen ? 'rgba(16, 185, 129, 0.1)' : isYellow ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)';
-              borderStr = `1px solid ${colorStr}40`;
             }
             
             return (
@@ -239,7 +307,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                 }}
                 onMouseOver={(e: any) => {
                   e.currentTarget.style.transform = 'scale(1.03)';
-                  if (showRanking) {
+                  if (showRanking && hasRank) {
                     e.currentTarget.style.boxShadow = `0 4px 10px ${colorStr}30`;
                     e.currentTarget.style.borderColor = colorStr;
                   } else {
@@ -253,7 +321,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                   e.currentTarget.style.borderColor = borderStr;
                 }}
               >
-                {showRanking && (
+                {showRanking && hasRank && (
                   <span 
                     style={{ 
                       width: '6px', 
@@ -273,7 +341,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                   className="flex items-center justify-center rounded-full transition-all"
                   style={{ 
                     cursor: 'pointer',
-                    color: showRanking ? colorStr : 'var(--text-3)',
+                    color: (showRanking && hasRank) ? colorStr : 'var(--text-3)',
                     padding: '2px',
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -286,11 +354,11 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                   }}
                   onMouseOver={(e: any) => { 
                     e.currentTarget.style.color = '#fff';
-                    e.currentTarget.style.background = showRanking ? colorStr : '#ef4444';
+                    e.currentTarget.style.background = (showRanking && hasRank) ? colorStr : '#ef4444';
                     e.currentTarget.style.opacity = '1';
                   }}
                   onMouseOut={(e: any) => { 
-                    e.currentTarget.style.color = showRanking ? colorStr : 'var(--text-3)';
+                    e.currentTarget.style.color = (showRanking && hasRank) ? colorStr : 'var(--text-3)';
                     e.currentTarget.style.background = 'transparent';
                     e.currentTarget.style.opacity = '0.7';
                   }}
@@ -301,25 +369,187 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
             );
           })}
           
-          <input
-            type="text"
-            value={newKeyword}
-            onChange={(e: any) => setNewKeyword(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="+ Add keyword..."
-            style={{
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              color: 'var(--text-1)',
-              fontSize: '0.75rem',
-              fontWeight: 500,
-              minWidth: '100px',
-              flex: '1 1 auto',
-              padding: '2px 4px',
-              height: '24px'
+          {/* ── Slim Inline Action Row ── */}
+          <div 
+            className="w-full flex items-center mt-2.5 pt-2.5"
+            style={{ 
+              borderTop: '1px solid var(--glass-border, rgba(0, 0, 0, 0.06))',
+              boxSizing: 'border-box',
+              gap: '8px'
             }}
-          />
+          >
+            {/* Minimal underline-style input */}
+            <div 
+              className="flex items-center flex-1 transition-all"
+              style={{
+                background: 'transparent',
+                borderBottom: isInputFocused 
+                  ? '1.5px solid var(--accent, #3b82f6)' 
+                  : '1px solid var(--glass-border, rgba(148, 163, 184, 0.3))',
+                padding: '0 2px 4px 0',
+                gap: '6px',
+                minWidth: 0
+              }}
+            >
+              <Plus 
+                className="w-3.5 h-3.5 flex-shrink-0 transition-colors" 
+                style={{ 
+                  color: isInputFocused ? 'var(--accent, #3b82f6)' : 'var(--text-3, #94a3b8)',
+                  strokeWidth: 2.2 
+                }} 
+              />
+              <input
+                type="text"
+                value={newKeyword}
+                onChange={(e: any) => setNewKeyword(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onFocus={() => setIsInputFocused(true)}
+                onBlur={() => setIsInputFocused(false)}
+                placeholder="Add keyword..."
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: 'var(--text-1)',
+                  fontSize: '0.75rem',
+                  fontWeight: 500,
+                  width: '100%',
+                  padding: 0,
+                  height: '22px',
+                  lineHeight: '22px'
+                }}
+              />
+              {/* Sleek inline Add button — visible only when typing */}
+              {newKeyword.trim() && (
+                <button
+                  type="button"
+                  onClick={() => addKeywordDirectly(newKeyword)}
+                  className="flex items-center justify-center gap-1 rounded-full transition-all flex-shrink-0"
+                  style={{
+                    height: '22px',
+                    padding: '0 8px',
+                    background: 'var(--accent, #3b82f6)',
+                    color: '#fff',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '0.65rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.02em',
+                    boxShadow: '0 1px 4px rgba(59, 130, 246, 0.25)',
+                    marginLeft: '4px'
+                  }}
+                  onMouseEnter={(e: any) => {
+                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(59, 130, 246, 0.4)';
+                    e.currentTarget.style.transform = 'scale(1.04)';
+                  }}
+                  onMouseLeave={(e: any) => {
+                    e.currentTarget.style.boxShadow = '0 1px 4px rgba(59, 130, 246, 0.25)';
+                    e.currentTarget.style.transform = 'scale(1)';
+                  }}
+                >
+                  <Plus className="w-2.5 h-2.5" style={{ strokeWidth: 3 }} />
+                  <span>Add</span>
+                </button>
+              )}
+            </div>
+
+            {/* Compact action buttons — right-aligned */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {showEmbedButton && (
+                <button
+                  type="button"
+                  onClick={handleEmbedClick}
+                  disabled={isEmbedding || isUploadingFtp}
+                  title="Embed changes into file & sync CSV"
+                  className="flex items-center justify-center gap-1 rounded-full transition-all animate-fade-in"
+                  style={{
+                    height: '26px',
+                    padding: '0 10px',
+                    background: justEmbedded
+                      ? 'rgba(16, 185, 129, 0.12)'
+                      : isEmbedding
+                        ? 'rgba(16, 185, 129, 0.08)'
+                        : 'rgba(16, 185, 129, 0.1)',
+                    color: '#10b981',
+                    border: `1px solid ${justEmbedded ? '#10b981' : 'rgba(16, 185, 129, 0.3)'}`,
+                    cursor: isEmbedding ? 'wait' : 'pointer',
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.01em',
+                    flexShrink: 0
+                  }}
+                  onMouseEnter={(e: any) => {
+                    if (!isEmbedding && !justEmbedded) {
+                      e.currentTarget.style.background = 'rgba(16, 185, 129, 0.18)';
+                      e.currentTarget.style.borderColor = '#10b981';
+                    }
+                  }}
+                  onMouseLeave={(e: any) => {
+                    if (!justEmbedded) {
+                      e.currentTarget.style.background = 'rgba(16, 185, 129, 0.1)';
+                      e.currentTarget.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+                    }
+                  }}
+                >
+                  {isEmbedding ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : justEmbedded ? (
+                    <CheckCircle2 className="w-3 h-3" />
+                  ) : (
+                    <FileCheck2 className="w-3 h-3" style={{ strokeWidth: 2.2 }} />
+                  )}
+                  <span>{isEmbedding ? 'Saving...' : justEmbedded ? 'Done' : 'Embed'}</span>
+                </button>
+              )}
+
+              {showEmbedButton && autoEmbed && typeof onUploadSingleFtp === 'function' && (
+                <button
+                  type="button"
+                  onClick={handleFtpUploadClick}
+                  disabled={isUploadingFtp || isEmbedding}
+                  title="Embed & send only this file to FTP server"
+                  className="flex items-center justify-center gap-1 rounded-full transition-all animate-fade-in"
+                  style={{
+                    height: '26px',
+                    padding: '0 10px',
+                    background: justUploadedFtp
+                      ? 'rgba(139, 92, 246, 0.12)'
+                      : isUploadingFtp
+                        ? 'rgba(139, 92, 246, 0.08)'
+                        : 'rgba(139, 92, 246, 0.1)',
+                    color: '#8b5cf6',
+                    border: `1px solid ${justUploadedFtp ? '#8b5cf6' : 'rgba(139, 92, 246, 0.3)'}`,
+                    cursor: isUploadingFtp ? 'wait' : 'pointer',
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.01em',
+                    flexShrink: 0
+                  }}
+                  onMouseEnter={(e: any) => {
+                    if (!isUploadingFtp && !justUploadedFtp) {
+                      e.currentTarget.style.background = 'rgba(139, 92, 246, 0.18)';
+                      e.currentTarget.style.borderColor = '#8b5cf6';
+                    }
+                  }}
+                  onMouseLeave={(e: any) => {
+                    if (!justUploadedFtp) {
+                      e.currentTarget.style.background = 'rgba(139, 92, 246, 0.1)';
+                      e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.3)';
+                    }
+                  }}
+                >
+                  {isUploadingFtp ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : justUploadedFtp ? (
+                    <CheckCircle2 className="w-3 h-3" />
+                  ) : (
+                    <UploadCloud className="w-3 h-3" style={{ strokeWidth: 2.2 }} />
+                  )}
+                  <span>{isUploadingFtp ? 'Sending...' : justUploadedFtp ? 'Sent!' : 'Send File to Microstock site'}</span>
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       ) : (
         <textarea

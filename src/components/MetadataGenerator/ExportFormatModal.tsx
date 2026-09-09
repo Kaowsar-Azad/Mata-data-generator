@@ -12,12 +12,9 @@ export function ExportFormatModal({ isOpen, onClose, onSelect, activePlatform }:
     { id: 'Adobe Stock', icon: 'St', label: 'Adobe Stock', desc: 'Category codes mapping and official column order' },
     { id: 'Shutterstock', icon: '📷', label: 'Shutterstock', desc: 'Includes Categories mapping column' },
     { id: 'Freepik', icon: '🎨', label: 'Freepik', desc: 'Semicolon delimiter and exact required headers' },
-    { id: 'Vecteezy', icon: '🖌', label: 'Vecteezy', desc: 'Official Vecteezy formatting requirements' },
-    { id: 'Dreamstime', icon: '💭', label: 'Dreamstime', desc: 'Includes Category 1 setting' },
-    { id: 'Pond5', icon: '🎬', label: 'Pond5', desc: 'Includes city, region, country, and releases details' },
-    { id: 'Getty', icon: '🖼', label: 'Getty Images', desc: 'Brief codes, dates, and Getty specification' },
-    { id: 'Depositphotos', icon: '📸', label: 'Depositphotos', desc: 'Includes nudity and editorial settings' },
-    { id: 'Extended metadata', icon: '📋', label: 'Extended CSV', desc: 'Full categories list and releases' },
+    { id: 'Vecteezy', icon: '🖌', label: 'Vecteezy', desc: 'Filename (without ext), Title, Description, Keywords' },
+    { id: 'Dreamstime', icon: '💭', label: 'Dreamstime', desc: 'FileName (with ext), Title, Description, Keywords' },
+    { id: 'Depositphotos', icon: '📸', label: 'Depositphotos', desc: 'Filename, Description, and Keywords standard format' },
   ];
 
   const getAvailableExportFormats = () => {

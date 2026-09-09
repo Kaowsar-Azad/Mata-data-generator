@@ -3,6 +3,14 @@ export const parseCSV = (text: string): string[][] => {
   let lines: string[][] = [];
   let row: string[] = [""];
   let inQuotes = false;
+
+  // Auto-detect delimiter (, or ;) from the header line
+  let delimiter = ',';
+  const firstLine = text.split(/\r\n|\n|\r/)[0] || '';
+  if (!firstLine.includes(',') && firstLine.includes(';')) {
+    delimiter = ';';
+  }
+
   for (let i = 0; i < text.length; i++) {
     let c = text[i];
     let next = text[i+1];
@@ -13,7 +21,7 @@ export const parseCSV = (text: string): string[][] => {
       } else {
         inQuotes = !inQuotes;
       }
-    } else if (c === ',' && !inQuotes) {
+    } else if (c === delimiter && !inQuotes) {
       row.push('');
     } else if ((c === '\r' || c === '\n') && !inQuotes) {
       if (c === '\r' && next === '\n') i++;
@@ -76,9 +84,18 @@ const adobeCategoryMap: Record<string, number> = {
 
 const getCategoryCode = (categories: any, title?: string, keywords?: string) => {
   if (categories) {
-    const cats = Array.isArray(categories) ? categories : [categories];
-    for (const rawCat of cats) {
-      const cat = String(rawCat || '').trim();
+    const rawList = Array.isArray(categories) ? categories : [categories];
+    const cats: string[] = [];
+    rawList.forEach((c) => {
+      const str = String(c || '').trim();
+      if (str.includes(',')) {
+        str.split(',').forEach((sub) => cats.push(sub.trim()));
+      } else if (str) {
+        cats.push(str);
+      }
+    });
+
+    for (const cat of cats) {
       if (/^\d+$/.test(cat)) {
         const num = parseInt(cat, 10);
         if (num >= 1 && num <= 21) return String(num);
@@ -197,9 +214,19 @@ const getShutterstockCategories = (categories: any, textContext?: string, keywor
 
   // 1. Check raw categories from AI
   if (categories) {
-    const cats = Array.isArray(categories) ? categories : [categories];
+    const rawList = Array.isArray(categories) ? categories : [categories];
+    const cats: string[] = [];
+    rawList.forEach((c) => {
+      const str = String(c || '').trim();
+      if (str.includes(',')) {
+        str.split(',').forEach((sub) => cats.push(sub.trim()));
+      } else if (str) {
+        cats.push(str);
+      }
+    });
+
     for (const rawCat of cats) {
-      const lower = String(rawCat || '').trim().toLowerCase();
+      const lower = rawCat.toLowerCase();
       // Direct exact match
       for (const official of SHUTTERSTOCK_CATEGORIES) {
         if (lower === official.toLowerCase()) {
@@ -236,12 +263,110 @@ const getShutterstockCategories = (categories: any, textContext?: string, keywor
   return matched.slice(0, 2).join(', ');
 };
 
-export const downloadCSV = (targetPlatform: string, images: any[], promptSettings: any) => {
+const sessionDownloadCounts: Record<string, number> = {};
+
+export const getBasePlatformName = (platform: string): string => {
+  if (platform === 'Adobe Stock') return 'adobe_stock_metadata';
+  if (platform === 'Shutterstock') return 'shutterstock_metadata';
+  if (platform === 'FreePik' || platform === 'Freepik') return 'freepik_metadata';
+  if (platform === 'Vecteezy') return 'vecteezy_metadata';
+  if (platform === 'Dreamstime') return 'dreamstime_metadata';
+  if (platform === 'Depositphotos') return 'depositphotos_metadata';
+  return `${platform.replace(/\s+/g, '_').toLowerCase()}_metadata`;
+};
+
+export const getUniqueCSVFilename = async (baseName: string, images: any[]): Promise<{ fileName: string; dir: string }> => {
+  // Find directory of loaded images if in Electron
+  const firstWithPath = images.find((img) => img.file?.path || img.filePath);
+  const imgFilePath = firstWithPath ? (firstWithPath.file?.path || firstWithPath.filePath) : '';
+  const dir = imgFilePath ? imgFilePath.replace(/[\/\\][^\/\\]+$/, '') : '';
+  
+  const userMatch = imgFilePath ? imgFilePath.match(/^[a-zA-Z]:[\\\/]Users[\\\/][^\\\/]+/) : null;
+  const downloadsDir = userMatch ? `${userMatch[0]}\\Downloads` : '';
+
+  const dirsToCheck = [dir, downloadsDir].filter(Boolean);
+
+  if (typeof window !== 'undefined' && (window as any).electronAPI?.checkFileExists && dirsToCheck.length > 0) {
+    try {
+      let counter = 0;
+      while (counter < 1000) {
+        const testName = counter === 0 ? `${baseName}.csv` : `${baseName}_${counter}.csv`;
+        let exists = false;
+        for (const d of dirsToCheck) {
+          const fullPath = `${d}\\${testName}`;
+          const res = await (window as any).electronAPI.checkFileExists(fullPath);
+          if (res?.exists) {
+            exists = true;
+            break;
+          }
+          // On first check, also check if alternate shorter name exists (e.g. adobe_stock.csv)
+          if (counter === 0) {
+            const shortBase = baseName.replace(/_metadata$/, '');
+            if (shortBase !== baseName) {
+              const altPath = `${d}\\${shortBase}.csv`;
+              const altRes = await (window as any).electronAPI.checkFileExists(altPath);
+              if (altRes?.exists) {
+                exists = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if (!exists) {
+          return { fileName: testName, dir };
+        }
+        counter++;
+      }
+    } catch (e) {
+      console.warn('[CSV] Error checking file exists, falling back to session counter', e);
+    }
+  }
+
+  // Fallback: session counter
+  const prevCount = sessionDownloadCounts[baseName] || 0;
+  sessionDownloadCounts[baseName] = prevCount + 1;
+  const fileName = prevCount === 0 ? `${baseName}.csv` : `${baseName}_${prevCount}.csv`;
+  return { fileName, dir };
+};
+
+export interface ActiveCsvRecord {
+  filePath: string;
+  fileName: string;
+  dir: string;
+  platform: string;
+  timestamp: number;
+}
+
+const ACTIVE_CSV_KEY = 'active_csv_registry_v1';
+
+export const getActiveCsvRegistry = (): ActiveCsvRecord[] => {
+  try {
+    const raw = localStorage.getItem(ACTIVE_CSV_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const registerActiveCsv = (record: ActiveCsvRecord) => {
+  try {
+    const current = getActiveCsvRegistry().filter(r => r.filePath !== record.filePath);
+    current.push(record);
+    // Keep max 50 records
+    if (current.length > 50) current.shift();
+    localStorage.setItem(ACTIVE_CSV_KEY, JSON.stringify(current));
+  } catch (e) {
+    console.warn('[CSV Registry] Failed to store record', e);
+  }
+};
+
+export const generateCSVContent = (targetPlatform: string, images: any[], promptSettings: any): string | null => {
   const doneImages = images.filter((img) => img.status === "done");
-  if (doneImages.length === 0) return;
+  if (doneImages.length === 0) return null;
 
   const platform = targetPlatform || promptSettings?.exportPlatform || 'General';
-  const delimiter = platform === 'FreePik' ? ';' : ',';
+  const delimiter = (platform === 'FreePik' || platform === 'Freepik') ? ';' : ',';
   const safe = (s: any) => {
     const str = String(s ?? '');
     if (str.includes(delimiter) || str.includes('"') || str.includes('\n') || str.includes('\r')) {
@@ -251,11 +376,26 @@ export const downloadCSV = (targetPlatform: string, images: any[], promptSetting
   };
 
   let headers: string[] = [];
+  if (platform === 'Adobe Stock' || platform === 'General') {
+    headers = ["Filename", "Title", "Keywords", "Category"];
+  } else if (platform === 'Shutterstock') {
+    headers = ["Filename", "Description", "Keywords", "Categories", "Illustration"];
+  } else if (platform === 'FreePik' || platform === 'Freepik') {
+    headers = ["File name", "Title", "Keywords", "Prompt", "Model"];
+  } else if (platform === 'Vecteezy') {
+    headers = ["Filename", "Title", "Description", "Keywords"];
+  } else if (platform === 'Dreamstime') {
+    headers = ["FileName", "Title", "Description", "Keywords"];
+  } else if (platform === 'Depositphotos') {
+    headers = ["Filename", "Description", "Keywords"];
+  } else {
+    headers = ["Filename", "Title", "Keywords", "Category"];
+  }
+
   let rows: string[] = [];
 
   doneImages.forEach((img) => {
     const { title = "", description = "", keywords = "" } = img.result || {};
-    const categoriesStr = Array.isArray(img.result?.categories) ? img.result.categories.join(', ') : (img.result?.categories || "");
     const filename = img.renamedName || img.file?.name || "";
 
     // Detect if file is an Illustration/Vector vs Photo
@@ -263,48 +403,40 @@ export const downloadCSV = (targetPlatform: string, images: any[], promptSetting
       img.isEps || 
       img.isPlaceholder ||
       promptSettings?.mediaTypeHint === 'Illustration / Vector' ||
-      (img.result?.categories && Array.isArray(img.result.categories) && img.result.categories.some(c => /illustration|clip-art|graphic|abstract/i.test(c))) ||
+      (img.result?.categories && Array.isArray(img.result.categories) && img.result.categories.some((c: any) => /illustration|clip-art|graphic|abstract/i.test(c))) ||
       (filename && /vector|illustration|flat|clipart|draw|graphic|render|3d/i.test(filename)) ||
       (title && /illustration|vector|flat design|3d render|drawing|cartoon|clipart/i.test(title))
     );
 
     const illustrationYesNo = isIllustration ? "Yes" : "No";
-    const mediaTypeStr = isIllustration ? "Illustration" : "Photo";
 
     let row: string[] = [];
     if (platform === 'Adobe Stock' || platform === 'General') {
-      headers = ["Filename", "Title", "Keywords", "Category"];
       const categoryCode = getCategoryCode(img.result?.categories, title, keywords);
       row = [filename, title, keywords, categoryCode];
     } else if (platform === 'Shutterstock') {
-      headers = ["Filename", "Description", "Keywords", "Categories", "Illustration"];
       // Shutterstock strictly allows a maximum of 2 categories from the official 26 category list (exact text & spelling)
       const cleanCats = getShutterstockCategories(img.result?.categories, description || title, keywords);
       row = [filename, description, keywords, cleanCats, illustrationYesNo];
-    } else if (platform === 'FreePik') {
-      headers = ["File name", "Title", "Keywords"];
-      row = [filename, title, keywords];
+    } else if (platform === 'FreePik' || platform === 'Freepik') {
+      // Freepik Title must strictly be maximum 100 characters
+      let cleanTitle = String(title || '').trim();
+      if (cleanTitle.length > 100) {
+        cleanTitle = cleanTitle.substring(0, 100).replace(/\s+\S*$/, "");
+      }
+      const promptVal = img.result?.prompt || img.prompt || "";
+      const modelVal = img.result?.model || img.model || (promptVal ? (promptSettings?.targetModel || "Midjourney") : "");
+      row = [filename, cleanTitle, keywords, promptVal, modelVal];
     } else if (platform === 'Vecteezy') {
-      headers = ["Filename", "Title", "Description", "Keywords", "License"];
-      row = [filename, title, description, keywords, "Standard"];
+      // Vecteezy strictly requires Filename without extension for FTP compatibility (also works for web upload)
+      const baseFilename = filename.replace(/\.[^/.]+$/, "");
+      row = [baseFilename, title, description || title, keywords];
     } else if (platform === 'Dreamstime') {
-      headers = ["Filename", "Title", "Description", "Keywords", "Category 1"];
-      row = [filename, title, description, keywords, categoriesStr.split(',')[0] || ""];
-    } else if (platform === 'Pond5') {
-      headers = ["originalfilename", "title", "description", "keywords", "city", "region", "country", "location", "specifysource", "modelreleased", "propertyreleased", "release"];
-      row = [filename, title, description, keywords, "", "", "", "", "", "", "", ""];
-    } else if (platform === 'Getty') {
-      headers = ["file name", "created date", "description", "country", "brief code", "title", "keywords"];
-      row = [filename, new Date().toISOString().split('T')[0], description, "", "", title, keywords];
+      row = [filename, title, description || title, keywords];
     } else if (platform === 'Depositphotos') {
-      headers = ["Filename", "description", "Keywords", "Nudity", "Editorial"];
-      row = [filename, description, keywords, "No", "No"];
-    } else if (platform === 'Extended metadata') {
-      headers = ["Filename", "Title", "Description", "Keywords", "Categories", "MediaType", "Releases"];
-      row = [filename, title, description, keywords, categoriesStr, mediaTypeStr, ""];
+      row = [filename, description || title, keywords];
     } else {
       // General fallback - identical to Adobe Stock
-      headers = ["Filename", "Title", "Keywords", "Category"];
       const categoryCode = getCategoryCode(img.result?.categories, title, keywords);
       row = [filename, title, keywords, categoryCode];
     }
@@ -312,17 +444,133 @@ export const downloadCSV = (targetPlatform: string, images: any[], promptSetting
   });
 
   const bom = (platform === 'Adobe Stock' || platform === 'General') ? "" : "\uFEFF";
-  const content = bom + headers.map(safe).join(delimiter) + "\r\n" + rows.join("\r\n");
+  return bom + headers.map(safe).join(delimiter) + "\r\n" + rows.join("\r\n");
+};
+
+export const downloadCSV = async (targetPlatform: string, images: any[], promptSettings: any) => {
+  const content = generateCSVContent(targetPlatform, images, promptSettings);
+  if (!content) return null;
+
+  const platform = targetPlatform || promptSettings?.exportPlatform || 'General';
+  const basePlatformName = getBasePlatformName(platform);
+  const { fileName, dir } = await getUniqueCSVFilename(basePlatformName, images);
+
+  let savedFilePath: string | null = null;
+
+  // If in Electron and image directory is known, save directly into that folder too
+  if (dir && typeof window !== 'undefined' && (window as any).electronAPI?.saveFile) {
+    try {
+      const saveTarget = `${dir}\\${fileName}`;
+      const encoder = new TextEncoder();
+      const encoded = encoder.encode(content);
+      await (window as any).electronAPI.saveFile(saveTarget, encoded);
+      savedFilePath = saveTarget;
+      console.log(`[CSV] Auto-saved directly to: ${saveTarget}`);
+
+      // Register in active CSV registry so future embeds can update it automatically
+      registerActiveCsv({
+        filePath: saveTarget,
+        fileName,
+        dir,
+        platform,
+        timestamp: Date.now()
+      });
+    } catch (err) {
+      console.warn('[CSV] Direct file save to folder failed:', err);
+    }
+  }
+
+  // Trigger download via anchor element
   const blob = new Blob([content], { type: `text/csv;charset=utf-8;` });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  const fileName = platform === 'Adobe Stock'
-    ? 'adobe_stock_metadata.csv'
-    : `${platform.replace(/\s+/g, '_').toLowerCase()}_metadata.csv`;
   link.setAttribute("download", fileName);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+
+  // Prevent immediate revocation bug in Electron/Chromium
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 1000);
+
+  return { success: true, fileName, dir, filePath: savedFilePath };
+};
+
+export const syncActiveCsvFiles = async (images: any[], promptSettings?: any): Promise<{ success: boolean; updatedFiles: string[] }> => {
+  if (typeof window === 'undefined' || !(window as any).electronAPI?.saveFile) {
+    return { success: false, updatedFiles: [] };
+  }
+
+  const updatedFiles: string[] = [];
+  const registry = getActiveCsvRegistry();
+  const knownPaths = new Set(registry.map(r => r.filePath.toLowerCase()));
+
+  // Auto-discover any existing platform CSV files in the images folder
+  const firstWithPath = images.find((img: any) => img.file?.path || img.filePath);
+  const imgFilePath = firstWithPath ? (firstWithPath.file?.path || firstWithPath.filePath) : '';
+  const currentDir = imgFilePath ? imgFilePath.replace(/[\/\\][^\/\\]+$/, '') : '';
+
+  if (currentDir && (window as any).electronAPI?.checkFileExists) {
+    const platformCandidates: { platform: string; fileNames: string[] }[] = [
+      { platform: 'Adobe Stock', fileNames: ['adobe_stock_metadata.csv', 'adobe_stock.csv'] },
+      { platform: 'Shutterstock', fileNames: ['shutterstock_metadata.csv', 'shutterstock.csv'] },
+      { platform: 'FreePik', fileNames: ['freepik_metadata.csv', 'freepik.csv'] },
+      { platform: 'Vecteezy', fileNames: ['vecteezy_metadata.csv', 'vecteezy.csv'] },
+      { platform: 'Dreamstime', fileNames: ['dreamstime_metadata.csv', 'dreamstime.csv'] },
+      { platform: 'Depositphotos', fileNames: ['depositphotos_metadata.csv', 'depositphotos.csv'] },
+      { platform: 'General', fileNames: ['general_metadata.csv'] }
+    ];
+
+    for (const cand of platformCandidates) {
+      for (const fn of cand.fileNames) {
+        const fullPath = `${currentDir}\\${fn}`;
+        if (!knownPaths.has(fullPath.toLowerCase())) {
+          try {
+            const check = await (window as any).electronAPI.checkFileExists(fullPath);
+            if (check?.exists) {
+              const record: ActiveCsvRecord = {
+                filePath: fullPath,
+                fileName: fn,
+                dir: currentDir,
+                platform: cand.platform,
+                timestamp: Date.now()
+              };
+              registry.push(record);
+              knownPaths.add(fullPath.toLowerCase());
+              registerActiveCsv(record);
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+      }
+    }
+  }
+
+  // Update each CSV file on disk with the fresh metadata
+  const encoder = new TextEncoder();
+  for (const record of registry) {
+    try {
+      if ((window as any).electronAPI?.checkFileExists) {
+        const check = await (window as any).electronAPI.checkFileExists(record.filePath);
+        if (!check?.exists) continue;
+      }
+
+      const newContent = generateCSVContent(record.platform, images, promptSettings);
+      if (!newContent) continue;
+
+      const encoded = encoder.encode(newContent);
+      await (window as any).electronAPI.saveFile(record.filePath, encoded);
+      if (!updatedFiles.includes(record.fileName)) {
+        updatedFiles.push(record.fileName);
+      }
+      console.log(`[CSV Sync] Updated CSV on disk: ${record.filePath}`);
+    } catch (err) {
+      console.warn(`[CSV Sync] Failed to update ${record.filePath}:`, err);
+    }
+  }
+
+  return { success: updatedFiles.length > 0, updatedFiles };
 };

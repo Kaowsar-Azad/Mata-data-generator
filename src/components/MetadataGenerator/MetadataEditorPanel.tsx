@@ -11,6 +11,9 @@ export function MetadataEditorPanel({
   selectedCount = 0,
   applyToSelected,
   enableKeywordRanking,
+  onEmbedSingle,
+  autoEmbed,
+  onUploadSingleFtp,
 }: any) {
   if (!img) {
     return (
@@ -23,68 +26,64 @@ export function MetadataEditorPanel({
         alignItems: 'center',
         justifyContent: 'center',
         height: '100%',
-        background: 'var(--surface-1)',
-        borderLeft: '1px solid var(--glass-border)',
-        borderRadius: '0.75rem',
+        gap: '0.75rem'
       }}>
-        <ImageIcon className="w-10 h-10 mb-2 opacity-40" />
-        <p style={{ fontSize: '0.85rem' }}>Select a file to edit.</p>
+        <div style={{
+          width: '48px',
+          height: '48px',
+          borderRadius: '50%',
+          background: 'var(--surface-2)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          border: '1px dashed var(--glass-border)'
+        }}>
+          <Sparkles className="w-5 h-5 text-muted" />
+        </div>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-2)' }}>No Item Selected</div>
+          <div style={{ fontSize: '0.72rem', marginTop: '0.2rem' }}>Click any row in the table to inspect and edit details</div>
+        </div>
       </div>
     );
   }
 
-  const { title = "", description = "", keywords = "" } = img.result || {};
-  const score = img.result?.sellingScore !== undefined && img.result?.sellingScore !== null
-    ? Math.max(0, Math.min(100, Number(img.result.sellingScore)))
-    : null;
-  const meta = score !== null ? getScoreMeta(score) : null;
-
   return (
-    <div className="metadata-editor-panel glass" style={{
+    <div className="metadata-editor-panel glass animate-fade-in" style={{
+      border: '1px solid var(--glass-border)',
+      borderRadius: 'var(--radius-lg)',
       padding: '1.25rem',
       background: 'var(--surface-1)',
-      borderLeft: '1px solid var(--glass-border)',
-      borderRadius: '0.75rem',
       display: 'flex',
       flexDirection: 'column',
-      gap: '1.25rem',
+      gap: '1rem',
       height: '100%',
-      overflowY: 'auto',
-      boxSizing: 'border-box'
+      overflowY: 'auto'
     }}>
       {/* Header with image preview */}
       <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-        <div className="thumb-wrap" style={{ width: '64px', height: '64px', flexShrink: 0, position: 'relative' }}>
+        <div style={{ width: '48px', height: '48px', borderRadius: 'var(--radius-md)', overflow: 'hidden', flexShrink: 0, position: 'relative', background: 'var(--surface-2)' }}>
           {img.preview ? (
-            <img src={img.preview} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '0.4rem' }} alt={img.file?.name || "Uploaded media preview"} />
+            <img src={img.preview} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : img.isVideo ? (
-            <div className="thumb-loading" style={{ width: '100%', height: '100%', borderRadius: '0.4rem', background: 'linear-gradient(135deg, rgba(124,58,237,0.15), rgba(168,85,247,0.08))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Video className="w-6 h-6 text-purple-500" />
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Video className="w-5 h-5 text-muted" />
             </div>
           ) : (
-            <div className="thumb-loading" style={{ width: '100%', height: '100%', borderRadius: '0.4rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Loader2 className="w-5 h-5 text-primary animate-spin" />
+            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
             </div>
           )}
         </div>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <h4 className="font-sans font-medium text-sm text-muted truncate" style={{ margin: 0 }} title={img.file?.name || img.renamedName}>
-            {img.file?.name || img.renamedName}
-          </h4>
-          <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.25rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <StatusBadge status={img.status} progress={img.upscaleProgress} />
-            {img.isEps && <span className="eps-badge" style={{ fontSize: '0.55rem', padding: '1px 4px' }}>EPS</span>}
-            {selectedCount > 1 && (
-              <span style={{
-                fontSize: '0.55rem',
-                fontWeight: 700,
-                color: '#22c55e',
-                background: 'rgba(34, 197, 94, 0.12)',
-                border: '1px solid rgba(34, 197, 94, 0.3)',
-                padding: '1.5px 5px',
-                borderRadius: '99px'
-              }}>
-                Editing 1 of {selectedCount}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-1)' }} className="truncate">
+            {img.file?.name}
+          </div>
+          <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.25rem', alignItems: 'center' }}>
+            <StatusBadge status={img.status} progress={img.upscaleProgress} upscaleModel={img.upscaleModel} />
+            {img.embeddingStatus && img.embeddingStatus !== 'none' && (
+              <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '1px 6px', borderRadius: '4px', background: img.embeddingStatus === 'success' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', color: img.embeddingStatus === 'success' ? '#22c55e' : '#ef4444' }}>
+                {img.embeddingStatus === 'success' ? 'Embedded' : img.embeddingStatus}
               </span>
             )}
           </div>
@@ -114,6 +113,9 @@ export function MetadataEditorPanel({
             isKeywords
             img={img}
             enableKeywordRanking={enableKeywordRanking}
+            onEmbedSingle={onEmbedSingle}
+            autoEmbed={autoEmbed}
+            onUploadSingleFtp={onUploadSingleFtp}
             onApplyToSelected={selectedCount > 1 && typeof applyToSelected === 'function' ? () => applyToSelected(img.id, "keywords", img.result.keywords) : null}
           />
 

@@ -6,13 +6,10 @@ const PLATFORMS = [
   { id: 'General',          icon: '✦',  label: 'General' },
   { id: 'Adobe Stock',      icon: 'St', label: 'Adobe Stock' },
   { id: 'Shutterstock',     icon: '📷', label: 'Shutterstock' },
-  { id: 'Getty',            icon: '🖼', label: 'Getty' },
   { id: 'Depositphotos',    icon: '📸', label: 'Depositphotos' },
   { id: 'FreePik',          icon: '🎨', label: 'FreePik' },
   { id: 'Vecteezy',         icon: '🖌', label: 'Vecteezy' },
   { id: 'Dreamstime',       icon: '💭', label: 'Dreamstime' },
-  { id: 'Pond5',            icon: '🎬', label: 'Pond5' },
-  { id: 'Extended metadata', icon: '📋', label: 'Extended' },
 ];
 
 /* ── Range Slider Component ── */
@@ -248,7 +245,26 @@ export function PromptSettings({ settings, setSettings, activeTab, ftpConfigs = 
                 />
 
                 <ToggleSwitch
-                  label="Keyword Ranking & Color"
+                  label={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      Show Keyword Ranking
+                      <span style={{ 
+                        fontSize: '0.65rem', 
+                        background: 'linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%)', 
+                        color: '#ffffff', 
+                        padding: '2px 7px', 
+                        borderRadius: '6px', 
+                        fontWeight: '800', 
+                        letterSpacing: '0.5px', 
+                        boxShadow: '0 2px 6px rgba(99, 102, 241, 0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px'
+                      }}>
+                        PRO <Crown size={12} strokeWidth={3} />
+                      </span>
+                    </div>
+                  }
                   checked={settings.enableKeywordRanking ?? true}
                   onChange={(v) => update("enableKeywordRanking", v)}
                 />

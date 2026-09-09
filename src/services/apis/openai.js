@@ -85,16 +85,16 @@ Generate metadata as if you are looking at a vector illustration about "${cleanN
     customInstStr = `\n\nUSER INSTRUCTION (follow strictly):\n"${s.customInstruction.trim()}"`;
   }
 
-  // ── Category list ──────────────────────────────────────────────────────────
+  // ── Category list & instructions ───────────────────────────────────────────
   let categoryList = "";
-  if (targetPlatform === "Adobe Stock") {
-    categoryList = `["Animals", "Buildings and Architecture", "Business", "Drinks", "The Environment", "States of Mind", "Food", "Graphic Resources", "Hobbies and Leisure", "Industry", "Landscapes", "Lifestyle", "People", "Plants and Flowers", "Culture and Religion", "Science", "Social Issues", "Sports", "Technology", "Transport", "Travel"]`;
-  } else if (targetPlatform === "Shutterstock") {
-    categoryList = `["Abstract", "Animals/Wildlife", "Backgrounds/Textures", "Beauty/Fashion", "Buildings/Landmarks", "Business/Finance", "Education", "Food and Drink", "Healthcare/Medical", "Holidays", "Illustrations/Clip-Art", "Industrial", "Interiors", "Miscellaneous", "Nature", "Objects", "Parks/Outdoor", "People", "Religion", "Science", "Signs/Symbols", "Sports/Recreation", "Technology", "Transportation", "Vintage"]`;
-  } else if (targetPlatform === "General") {
-    categoryList = `["Abstract & Textures", "Animals & Wildlife", "Architecture & Buildings", "Business & Finance", "Education & Science", "Food & Drink", "Healthcare & Medical", "Holidays & Celebrations", "Illustrations & Clipart", "Industry & Technology", "Landscapes & Nature", "Lifestyle & People", "Objects & Concepts", "Sports & Recreation", "Transportation & Travel"]`;
+  let categoryInstruction = "";
+  if (targetPlatform === "Shutterstock") {
+    categoryList = `["Abstract", "Animals/Wildlife", "Arts", "Backgrounds/Textures", "Beauty/Fashion", "Buildings/Landmarks", "Business/Finance", "Celebrities", "Education", "Food and Drink", "Healthcare/Medical", "Holidays", "Industrial", "Interiors", "Miscellaneous", "Nature", "Objects", "Parks/Outdoor", "People", "Religion", "Science", "Signs/Symbols", "Sports/Recreation", "Technology", "Transportation", "Vintage"]`;
+    categoryInstruction = `== CATEGORY SELECTION (SHUTTERSTOCK) ==\nYou MUST select 1 or maximum 2 most relevant categories strictly from the following allowed list:\n${categoryList}\nOutput them in the "categories" array using the exact names, spellings, and slashes.`;
   } else {
-    categoryList = `["Abstract", "Animals/Wildlife", "Backgrounds/Textures", "Beauty/Fashion", "Buildings/Landmarks", "Business/Finance", "Education", "Food and Drink", "Healthcare/Medical", "Holidays", "Illustrations/Clip-Art", "Industrial", "Interiors", "Miscellaneous", "Nature", "Objects", "Parks/Outdoor", "People", "Religion", "Science", "Signs/Symbols", "Sports/Recreation", "Technology", "Transportation", "Vintage"]`;
+    // Adobe Stock, General, and others strictly use Adobe Stock's 21 official categories
+    categoryList = `["Animals", "Buildings and Architecture", "Business", "Drinks", "The Environment", "States of Mind", "Food", "Graphic Resources", "Hobbies and Leisure", "Industry", "Landscapes", "Lifestyle", "People", "Plants and Flowers", "Culture and Religion", "Science", "Social Issues", "Sports", "Technology", "Transport", "Travel"]`;
+    categoryInstruction = `== CATEGORY SELECTION ==\nYou MUST select EXACTLY ONE most relevant category strictly from the following allowed list:\n${categoryList}\nOutput it in the "categories" array as a single item using the exact name (e.g. ["Technology"] or ["Business"]).`;
   }
 
    const policyRule = skipPolicyScan ? "" : `
@@ -134,9 +134,10 @@ Within each tier, spread scores across the FULL band in the same descending orde
     ? `\n"keywordScores" must include an entry for every single keyword in "keywords" — all ${typeof s !== 'undefined' && s.smartMode ? '15 to 30' : promptKeywordsCount} of them, not a sample. The 3-key example below is illustrative of the format only, not the required length.\n`
     : `\nThe 3-key example below is illustrative of the format only, not the required length. "keywords" must include all ${typeof s !== 'undefined' && s.smartMode ? '15 to 30' : promptKeywordsCount} keywords, not a sample.\n`;
 
+  const sampleCat = targetPlatform === "Shutterstock" ? `["Technology", "Abstract"]` : `["Technology"]`;
   const jsonSample = enableRanking
-    ? `{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${typeof s !== 'undefined' && s.smartMode ? '15 to 30' : promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":65},"categories":${categoryList}${policyWarningField}}`
-    : `{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${typeof s !== 'undefined' && s.smartMode ? '15 to 30' : promptKeywordsCount} total)","categories":${categoryList}${policyWarningField}}`;
+    ? `{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${typeof s !== 'undefined' && s.smartMode ? '15 to 30' : promptKeywordsCount} total)","keywordScores":{"apple":95,"technology":80,"screen":65},"categories":${sampleCat}${policyWarningField}}`
+    : `{"title":"...","description":"...","keywords":"apple, technology, screen, ... (${typeof s !== 'undefined' && s.smartMode ? '15 to 30' : promptKeywordsCount} total)","categories":${sampleCat}${policyWarningField}}`;
 
   return `${fileContext}
 ${policyRule}
@@ -146,6 +147,8 @@ You are a stock media SEO expert (15 yrs, 100k+ assets optimized on Adobe Stock,
 LANGUAGE: All input may be in any language. ALL output MUST be in English only.
 
 ${platformContext}${mediaHintStr}${customInstStr}
+
+${categoryInstruction}
 
 == TITLE (SEO Optimized Headline) ==
 Formula: [Primary Subject] + [Specific Action/Attribute] + [Setting/Context]

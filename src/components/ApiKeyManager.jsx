@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Trash2, Key, CheckCircle, X, Shield, ExternalLink, Sparkles, Wind, Zap, Cpu, Cloud } from "lucide-react";
+import { Plus, Trash2, Key, CheckCircle, X, Shield, ExternalLink, Sparkles, Wind, Zap, Cpu, Cloud, Eye, EyeOff, AlertCircle, Info } from "lucide-react";
 
 const PROVIDERS = [
   { id: "gemini",     label: "Google Gemini", icon: Sparkles, iconColor: "#6366f1", desc: "Google's most capable multimodal AI models", url: "https://aistudio.google.com/app/apikey", recommended: true },
@@ -25,6 +25,8 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
   const [newKey, setNewKey] = useState("");
   const [cfAccountId, setCfAccountId] = useState("");
   const [cfToken, setCfToken] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [keyFeedback, setKeyFeedback] = useState(null);
 
   const activeKeys = allKeys[viewedProvider] || [];
 
@@ -44,22 +46,51 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
   if (!isOpen) return null;
 
   const addKey = () => {
-    let finalKey = newKey.trim();
+    setKeyFeedback(null);
+
     if (viewedProvider === "cloudflare") {
-      if (!cfAccountId.trim() || !cfToken.trim()) return;
-      finalKey = `${cfAccountId.trim()}:${cfToken.trim()}`;
-    }
-    
-    if (finalKey && !activeKeys.includes(finalKey)) {
-      setAllKeys(prev => ({ ...prev, [viewedProvider]: [...(prev[viewedProvider] || []), finalKey] }));
-      setNewKey("");
+      const accId = cfAccountId.trim();
+      const tok = cfToken.trim();
+      if (!accId || !tok) {
+        setKeyFeedback({ type: 'error', message: 'Please enter both Account ID and API Token.' });
+        return;
+      }
+      const finalKey = `${accId}:${tok}`;
+      setAllKeys(prev => ({ ...prev, cloudflare: [...(prev.cloudflare || []), finalKey] }));
       setCfAccountId("");
       setCfToken("");
+      setKeyFeedback({ type: 'success', message: 'Cloudflare API key added successfully!' });
+      return;
     }
+
+    const rawInput = newKey.trim();
+    if (!rawInput) return;
+
+    // Split by comma, semicolon, or newlines for single or bulk paste
+    const candidates = rawInput
+      .split(/[\n,;]+/)
+      .map(k => k.replace(/^["']|["']$/g, '').trim())
+      .filter(k => k.length > 0);
+
+    if (candidates.length === 0) return;
+
+    setAllKeys(prev => ({
+      ...prev,
+      [viewedProvider]: [...(prev[viewedProvider] || []), ...candidates]
+    }));
+    setNewKey("");
+    setKeyFeedback({
+      type: 'success',
+      message: candidates.length === 1 
+        ? '✓ API key added successfully!' 
+        : `✓ ${candidates.length} API keys added successfully!`
+    });
   };
 
-  const removeKey = (index) =>
+  const removeKey = (index) => {
+    setKeyFeedback({ type: 'info', message: 'API key removed from stored list.' });
     setAllKeys(prev => ({ ...prev, [viewedProvider]: prev[viewedProvider].filter((_, i) => i !== index) }));
+  };
 
   const currentProvider = PROVIDERS.find(p => p.id === viewedProvider);
 
@@ -158,7 +189,7 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
                     transition: 'all 0.15s',
                     opacity: isActive ? 1 : 0.45
                   }}
-                  onClick={() => setViewedProvider(p.id)}
+                  onClick={() => { setViewedProvider(p.id); setKeyFeedback(null); }}
                   onMouseOver={(e) => {
                     if (!isViewed) e.currentTarget.style.background = 'var(--surface-3)';
                     if (!isActive) e.currentTarget.style.opacity = '0.75';
@@ -358,49 +389,96 @@ export function ApiKeyManager({ isOpen, onClose, onKeysChange, provider, onProvi
                   </div>
                 </div>
               ) : (
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <input
-                    type="password"
-                    placeholder={`Enter ${currentProvider?.label} API key...`}
-                    value={newKey}
-                    onChange={(e) => setNewKey(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && addKey()}
-                    style={{
-                      flex: 1,
-                      padding: '0.75rem 1rem',
-                      fontSize: '0.9rem',
-                      background: 'var(--surface-2)',
-                      border: '1px solid var(--glass-border)',
-                      borderRadius: '0.5rem',
-                      color: 'var(--text-1)',
-                      outline: 'none',
-                      transition: 'all 0.2s',
-                      boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.02)'
-                    }}
-                    onFocus={(e) => e.target.style.borderColor = 'var(--primary)'}
-                    onBlur={(e) => e.target.style.borderColor = 'var(--glass-border)'}
-                  />
-                  <button
-                    onClick={addKey}
-                    disabled={!newKey.trim()}
-                    style={{
-                      padding: '0 1.25rem',
-                      borderRadius: '0.5rem',
-                      background: newKey.trim() ? 'var(--primary)' : 'var(--surface-3)',
-                      border: 'none',
-                      color: newKey.trim() ? '#fff' : 'var(--text-3)',
-                      cursor: newKey.trim() ? 'pointer' : 'not-allowed',
+                <div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        placeholder={`Enter ${currentProvider?.label} API key...`}
+                        value={newKey}
+                        onChange={(e) => {
+                          setNewKey(e.target.value);
+                          if (keyFeedback) setKeyFeedback(null);
+                        }}
+                        onKeyDown={(e) => e.key === "Enter" && addKey()}
+                        style={{
+                          width: '100%',
+                          padding: '0.75rem 2.75rem 0.75rem 1rem',
+                          fontSize: '0.9rem',
+                          background: 'var(--surface-2)',
+                          border: keyFeedback?.type === 'error' ? '1.5px solid var(--danger, #ef4444)' : '1px solid var(--glass-border)',
+                          borderRadius: '0.5rem',
+                          color: 'var(--text-1)',
+                          outline: 'none',
+                          transition: 'all 0.2s',
+                          boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.02)'
+                        }}
+                        onFocus={(e) => e.target.style.borderColor = 'var(--primary)'}
+                        onBlur={(e) => e.target.style.borderColor = keyFeedback?.type === 'error' ? 'var(--danger, #ef4444)' : 'var(--glass-border)'}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(prev => !prev)}
+                        style={{
+                          position: 'absolute',
+                          right: '0.75rem',
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: 'var(--text-3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '2px',
+                          borderRadius: '4px'
+                        }}
+                        title={showPassword ? "Hide API key" : "Show API key"}
+                      >
+                        {showPassword ? <EyeOff style={{ width: '1.05rem', height: '1.05rem' }} /> : <Eye style={{ width: '1.05rem', height: '1.05rem' }} />}
+                      </button>
+                    </div>
+                    <button
+                      onClick={addKey}
+                      disabled={!newKey.trim()}
+                      style={{
+                        padding: '0 1.25rem',
+                        borderRadius: '0.5rem',
+                        background: newKey.trim() ? 'var(--primary)' : 'var(--surface-3)',
+                        border: 'none',
+                        color: newKey.trim() ? '#fff' : 'var(--text-3)',
+                        cursor: newKey.trim() ? 'pointer' : 'not-allowed',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        transition: 'all 0.2s',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      <Plus style={{ width: '1rem', height: '1rem' }} /> Add Key
+                    </button>
+                  </div>
+                  {keyFeedback && (
+                    <div style={{
+                      marginTop: '0.6rem',
+                      fontSize: '0.8rem',
                       display: 'flex',
                       alignItems: 'center',
-                    gap: '0.4rem',
-                    fontSize: '0.85rem',
-                    fontWeight: 600,
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <Plus style={{ width: '1rem', height: '1rem' }} /> Add Key
-                </button>
-              </div>
+                      gap: '0.45rem',
+                      fontWeight: 600,
+                      color: keyFeedback.type === 'error' ? '#ef4444' : keyFeedback.type === 'success' ? '#10b981' : 'var(--text-2)',
+                      padding: '0.4rem 0.75rem',
+                      borderRadius: '0.4rem',
+                      background: keyFeedback.type === 'error' ? 'rgba(239, 68, 68, 0.08)' : keyFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(100, 116, 139, 0.08)',
+                      border: keyFeedback.type === 'error' ? '1px solid rgba(239, 68, 68, 0.2)' : keyFeedback.type === 'success' ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(100, 116, 139, 0.2)'
+                    }}>
+                      {keyFeedback.type === 'error' && <AlertCircle style={{ width: '0.95rem', height: '0.95rem', flexShrink: 0 }} />}
+                      {keyFeedback.type === 'success' && <CheckCircle style={{ width: '0.95rem', height: '0.95rem', flexShrink: 0 }} />}
+                      {keyFeedback.type === 'info' && <Info style={{ width: '0.95rem', height: '0.95rem', flexShrink: 0 }} />}
+                      <span>{keyFeedback.message}</span>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 

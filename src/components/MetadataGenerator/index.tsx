@@ -752,8 +752,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   }, []);
 
   const handleApprovePolicy = useCallback((id: any) => {
-    setImages((prev: any) =>
-      prev.map((img: any) => {
+    setImages((prev: any) => {
+      const updated = prev.map((img: any) => {
         if (img.id === id) {
           const newResult = img.result ? { ...img.result } : null;
           if (newResult) {
@@ -769,13 +769,14 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           };
         }
         return img;
-      })
-    );
+      });
+      imagesRef.current = updated;
+      return updated;
+    });
     
-    // Automatically trigger reprocessing
+    // Automatically trigger reprocessing ONLY for this specific approved file
     setTimeout(() => {
-      // By using imagesRef.current inside processBatch, it will pick up the updated state
-      processBatch();
+      processBatch(false, id);
     }, 50);
   }, []);
 
@@ -860,7 +861,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     return `${phase} Failed: ${msg || 'Unknown error occurred.'}`;
   };
 
-  const processBatch = async (onlyErrors = false) => {
+  const processBatch = async (onlyErrors = false, targetId: any = null) => {
     if (apiKeys.length === 0) {
       const pName = Array.isArray(apiProvider) ? apiProvider.join(", ") : apiProvider;
       showToast(`Please add at least one API key for ${pName} first.`, "error");
@@ -870,15 +871,26 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     setIsProcessing(true);
     setProgress(0);
     cancelRef.current = false;
+    setEmbedTracker(null);
 
     try {
     const currentImages = imagesRef.current;
 
     const toProcess = currentImages.filter((img: any) => {
+      if (targetId) {
+        return img.id === targetId;
+      }
       if (img.status === "done" || img.status === "upscaling" || img.status === "upscale_queued") return false;
+      // Skip files with un-ignored policy warnings
+      if ((img.status === "policy_warning" || img.result?.policyWarning) && !img.ignorePolicy) return false;
       if (onlyErrors && img.status !== "error") return false;
       return true;
     });
+
+    if (toProcess.length === 0) {
+      setIsProcessing(false);
+      return;
+    }
 
     let totalItems = currentImages.length;
     let successCount = 0;
@@ -966,6 +978,9 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       // Stagger Groq batch requests by 2.5s per item to stay within 30 RPM limits
       if (isGroqBatch && imgIndex > 0) {
         await new Promise(r => setTimeout(r, 2500));
+      } else if (imgIndex > 0) {
+        // Safe spacing for Gemini / other providers to prevent 15 RPM free tier rate limit spikes
+        await new Promise(r => setTimeout(r, 1200));
       }
       if (cancelRef.current) break;
 
@@ -1292,7 +1307,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               );
             }
 
-            if (autoEmbedRef.current && window.electronAPI) {
+            if (autoEmbedRef.current && window.electronAPI && !onlyErrors) {
               const doneImg = {
                 ...img,
                 status: "done",
@@ -1429,7 +1444,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     }
   };
   
-  const embedMetadataToFiles = async (imagesToProcess, forceUpload = false, skipAdobeUpload = false) => {
+  const embedMetadataToFiles = async (imagesToProcess?: any[], forceUpload = false, skipAdobeUpload = false, isManualAction = false) => {
     setShowPermissionModal(false);
     if (!window.electronAPI) return;
     
@@ -1441,7 +1456,12 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       const currentImages = (Array.isArray(imagesToProcess) 
         ? imagesToProcess 
         : imagesRef.current.filter(img => img.status === "done" && img.result))
-        .filter(img => img.embeddingStatus === "none" || img.embeddingStatus === "error");
+        .filter(img => img.embeddingStatus === "none" || img.embeddingStatus === "error")
+        .filter(img => {
+          // Never embed or upload files with un-ignored policy violations
+          if ((img.status === "policy_warning" || img.result?.policyWarning) && !img.ignorePolicy) return false;
+          return true;
+        });
       
       if (currentImages.length === 0) {
         return;
@@ -1453,14 +1473,19 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         setUploadBatchIds([]);
       }
       
-      setEmbedTracker({
-        active: true,
-        total: currentImages.length,
-        completed: 0,
-        activeCount: 0,
-        failed: 0,
-        isComplete: false
-      });
+      // Dedicated embedTracker is ONLY initialized for manual embed actions when auto-embed is off
+      const isManual = isManualAction || (!autoEmbedRef.current && !Array.isArray(imagesToProcess));
+
+      if (isManual && !autoEmbedRef.current) {
+        setEmbedTracker({
+          active: true,
+          total: currentImages.length,
+          completed: 0,
+          activeCount: 0,
+          failed: 0,
+          isComplete: false
+        });
+      }
       
       setImages(prev => prev.map(img => {
         const shouldEmbed = currentImages.some(ci => ci.id === img.id);
@@ -1755,7 +1780,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const retryEmbedAndUpload = () => {
     const failedImages = images.filter(img => img.embeddingStatus === "error");
     if (failedImages.length > 0) {
-      embedMetadataToFiles(failedImages, true);
+      embedMetadataToFiles(failedImages, true, false, true);
     }
   };
 
@@ -1763,9 +1788,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     const checked = e.target.checked;
     
     if (checked) {
+      setEmbedTracker(null);
       const pendingEmbedImages = images.filter((img: any) => 
         img.status === "done" && 
-        (!img.embeddingStatus || img.embeddingStatus === "none" || img.embeddingStatus === "error")
+        (!img.embeddingStatus || img.embeddingStatus === "none" || img.embeddingStatus === "error") &&
+        (!img.result?.policyWarning || img.ignorePolicy)
       );
 
       if (pendingEmbedImages.length > 0) {
@@ -2037,8 +2064,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       );
     }
     list.sort((a, b) => {
-      const aHasError = a.status === 'error' || a.embeddingStatus === 'error' || !!a.result?.policyWarning;
-      const bHasError = b.status === 'error' || b.embeddingStatus === 'error' || !!b.result?.policyWarning;
+      const aHasError = a.status === 'error' || a.embeddingStatus === 'error' || (!a.ignorePolicy && !!a.result?.policyWarning);
+      const bHasError = b.status === 'error' || b.embeddingStatus === 'error' || (!b.ignorePolicy && !!b.result?.policyWarning);
       
       if (aHasError && !bHasError) return -1;
       if (!aHasError && bHasError) return 1;
@@ -2088,7 +2115,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const embeddingErrorCount = images.filter((i) => i.embeddingStatus === "error").length;
   const ftpErrorCount = images.filter((i) => i.embeddingStatus === "error" && i.embeddingError && i.embeddingError.includes('FTP Upload')).length;
   const localEmbedErrorCount = embeddingErrorCount - ftpErrorCount;
-  const policyViolationCount = images.filter((i) => i.result?.policyWarning || (i.result?.policyReason && i.result.policyReason.trim().length > 0)).length;
+  const policyViolationCount = images.filter((i) => !i.ignorePolicy && (i.result?.policyWarning || (i.result?.policyReason && i.result.policyReason.trim().length > 0) || i.status === "policy_warning")).length;
 
   return (
     <div className="space-y-6">
@@ -2313,8 +2340,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         </div>
       )}
 
-      {/* Dedicated Embedding Progress Tracker */}
-      {embedTracker && (
+      {/* Dedicated Embedding Progress Tracker - only show for manual embed actions when Auto Embed is OFF */}
+      {embedTracker && !autoEmbed && (
         <div style={{
           width: '100%',
           margin: '10px 0',
@@ -2426,7 +2453,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 )}
                 {autoEmbed && (
                   <span style={{ color: '#8b5cf6', background: 'transparent', border: '1px solid rgba(139, 92, 246, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
-                    <Server style={{ width: '0.85rem', height: '0.85rem' }} /> {embeddingSuccessCount} Server Synced
+                    <Server style={{ width: '0.85rem', height: '0.85rem' }} /> {embeddingSuccessCount} FTP Synced
                   </span>
                 )}
                 {(autoEmbed || autoUpscale) && allDoneCount > 0 && (
@@ -2906,19 +2933,19 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         </div>
       )}
       {/* Policy Violation Summary Banner */}
-      {images.some(img => img.result?.policyWarning) && (
+      {images.some(img => !img.ignorePolicy && (img.result?.policyWarning || img.status === "policy_warning")) && (
         <div className="glass card animate-fade-in p-4" style={{ background: 'rgba(239, 68, 68, 0.05)', borderLeft: '4px solid #ef4444', marginBottom: '1.25rem' }}>
           <div className="flex items-center gap-3">
             <span style={{ fontSize: '1.5rem' }}>🛑</span>
             <div style={{ flex: 1 }}>
               <h4 style={{ margin: 0, fontSize: '0.95rem', color: '#ef4444', fontWeight: 800 }}>STOCK SITE POLICY VIOLATION DETECTED</h4>
               <p className="text-muted" style={{ fontSize: '0.8rem', margin: '2px 0 0 0', color: 'var(--text-2)' }}>
-                Policy violations detected in {images.filter(img => img.result?.policyWarning).length} file{images.filter(img => img.result?.policyWarning).length !== 1 ? 's' : ''}. You can delete them directly from here.
+                Policy violations detected in {images.filter(img => !img.ignorePolicy && (img.result?.policyWarning || img.status === "policy_warning")).length} file{images.filter(img => !img.ignorePolicy && (img.result?.policyWarning || img.status === "policy_warning")).length !== 1 ? 's' : ''}. You can delete them directly from here.
               </p>
             </div>
           </div>
           <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {images.filter(img => img.result?.policyWarning).map(img => (
+            {images.filter(img => !img.ignorePolicy && (img.result?.policyWarning || img.status === "policy_warning")).map(img => (
               <div key={img.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', padding: '0.3rem 0.5rem 0.3rem 0.3rem', borderRadius: '0.4rem', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
                 <div style={{ position: 'relative', width: '28px', height: '28px', flexShrink: 0 }}>
                   <PolicyViolationThumbnail img={img} />
@@ -3240,7 +3267,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   position: 'relative',
                   overflow: 'hidden'
                 }}
-                onClick={() => embedMetadataToFiles()}
+                onClick={() => embedMetadataToFiles(undefined, false, false, true)}
                 onMouseEnter={(e: any) => { e.currentTarget.style.opacity = '0.9'; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(6, 182, 212, 0.4), inset 0 1px 0 rgba(255,255,255,0.2)'; }}
                 onMouseLeave={(e: any) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(6, 182, 212, 0.3), inset 0 1px 0 rgba(255,255,255,0.2)'; }}
               >
@@ -3294,31 +3321,33 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 You have <strong>{retroactivePendingImages.length}</strong> previously processed files that haven't been embedded yet. Do you want to auto-embed and upload them now?
               </p>
 
-              <div style={{ 
-                background: 'var(--surface-2)', border: '1px solid var(--glass-border)', 
-                borderRadius: '0.75rem', padding: '1rem', marginBottom: '1.5rem',
-                display: 'flex', flexDirection: 'column', gap: '0.75rem'
-              }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none' }}>
-                  <input 
-                    type="checkbox" 
-                    className="ios-toggle ios-toggle-amber-custom"
-                    checked={retroactiveOptions.cleanYellow} 
-                    onChange={e => setRetroactiveOptions(prev => ({ ...prev, cleanYellow: e.target.checked }))}
-                  />
-                  <span style={{ fontSize: '0.9rem', color: 'var(--text-2)', fontWeight: 500 }}>Auto Clean Yellow KW</span>
-                </label>
-                
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none' }}>
-                  <input 
-                    type="checkbox" 
-                    className="ios-toggle ios-toggle-red-custom"
-                    checked={retroactiveOptions.cleanRed} 
-                    onChange={e => setRetroactiveOptions(prev => ({ ...prev, cleanRed: e.target.checked }))}
-                  />
-                  <span style={{ fontSize: '0.9rem', color: 'var(--text-2)', fontWeight: 500 }}>Auto Clean Red KW</span>
-                </label>
-              </div>
+              {promptSettings?.enableKeywordRanking !== false && (
+                <div style={{ 
+                  background: 'var(--surface-2)', border: '1px solid var(--glass-border)', 
+                  borderRadius: '0.75rem', padding: '1rem', marginBottom: '1.5rem',
+                  display: 'flex', flexDirection: 'column', gap: '0.75rem'
+                }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none' }}>
+                    <input 
+                      type="checkbox" 
+                      className="ios-toggle ios-toggle-amber-custom"
+                      checked={retroactiveOptions.cleanYellow} 
+                      onChange={e => setRetroactiveOptions(prev => ({ ...prev, cleanYellow: e.target.checked }))}
+                    />
+                    <span style={{ fontSize: '0.9rem', color: 'var(--text-2)', fontWeight: 500 }}>Auto Clean Yellow KW</span>
+                  </label>
+                  
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', userSelect: 'none' }}>
+                    <input 
+                      type="checkbox" 
+                      className="ios-toggle ios-toggle-red-custom"
+                      checked={retroactiveOptions.cleanRed} 
+                      onChange={e => setRetroactiveOptions(prev => ({ ...prev, cleanRed: e.target.checked }))}
+                    />
+                    <span style={{ fontSize: '0.9rem', color: 'var(--text-2)', fontWeight: 500 }}>Auto Clean Red KW</span>
+                  </label>
+                </div>
+              )}
 
               <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
                 <button 

@@ -70,3 +70,9 @@ The app must be protected against reverse engineering and common vulnerabilities
 ## STRICT POLICY: Anti-Fake AI & No Fake Data
 - **Rule:** The AI MUST NEVER use fake data, generate fake information, or use fake/simulated logic (e.g., using basic filters like blur or median to simulate Neural Network upscaling) and present it to the user as real.
 - **Rule:** Do NOT write code that simulates a feature deceptively. If a genuine solution is impossible due to hardware/software limits, explicitly inform the user instead of creating a "fake" workaround.
+
+## STRICT POLICY: Commercial Quality & Logical Rigor
+- **Rule:** Do NOT write code blindly. You MUST think logically about the consequences, edge cases, and error handling for every code change.
+- **Rule:** Treat this app as a **commercially deployed application**. Every piece of code you write MUST consider the pros and cons, potential app crashes, bugs, and overall stability.
+- **Rule:** You MUST proactively detect and fix potential bugs, crashes, and unhandled errors. Do not ignore them.
+- **Action:** ALWAYS review your proposed code for commercial-grade stability and logic before finalizing the changes.

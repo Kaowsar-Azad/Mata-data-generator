@@ -618,6 +618,37 @@ function postProcessMetadata(metadata, promptSettings, fileInfo = {}) {
 let globalKeyIndex = 0;
 const modelsToTry = ["gemini-1.5-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"];
 
+const keyStatusMap = new Map();
+
+export function markKeyExhausted(apiKey, reason = 'quota') {
+  if (!apiKey) return;
+  const ttl = reason === 'invalid' ? 3600000 : 300000; // 1 hour for invalid, 5 min for quota
+  keyStatusMap.set(apiKey, { reason, expiresAt: Date.now() + ttl });
+}
+
+export function isKeyExhausted(apiKey) {
+  if (!apiKey) return false;
+  const entry = keyStatusMap.get(apiKey);
+  if (!entry) return false;
+  if (Date.now() > entry.expiresAt) {
+    keyStatusMap.delete(apiKey);
+    return false;
+  }
+  return true;
+}
+
+function sortByHealth(keys) {
+  if (!keys || keys.length <= 1) return keys || [];
+  const healthy = [];
+  const exhausted = [];
+  for (const k of keys) {
+    const rawKey = typeof k === 'object' ? k.key : k;
+    if (isKeyExhausted(rawKey)) exhausted.push(k);
+    else healthy.push(k);
+  }
+  return healthy.length > 0 ? [...healthy, ...exhausted] : exhausted;
+}
+
 /**
  * Helper to run content generation with a strict timeout (default 45 seconds).
  */
@@ -679,17 +710,16 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
   }
 
   
-  // Atomically claim the current key index and immediately advance globalKeyIndex
-  // so concurrent calls receive distinct API keys!
+  const orderedKeys = sortByHealth(apiKeys);
   const startKeyIndex = globalKeyIndex;
-  if (apiKeys && apiKeys.length > 0) {
-    globalKeyIndex = (globalKeyIndex + 1) % apiKeys.length;
+  if (orderedKeys && orderedKeys.length > 0) {
+    globalKeyIndex = (globalKeyIndex + 1) % orderedKeys.length;
   }
 
   // Try each API key precisely once for this specific file request if needed
-  for (let k = 0; k < apiKeys.length; k++) {
-    const currentKeyIndex = (startKeyIndex + k) % apiKeys.length;
-    const keyItem = apiKeys[currentKeyIndex];
+  for (let k = 0; k < orderedKeys.length; k++) {
+    const currentKeyIndex = (startKeyIndex + k) % orderedKeys.length;
+    const keyItem = orderedKeys[currentKeyIndex];
     
     // Support both new {provider, key} object format and legacy string format
     let currentProvider = typeof keyItem === 'object' ? keyItem.provider : apiProvider;
@@ -749,6 +779,24 @@ export async function generateMetadata(imageBuffer, mimeType, apiKeys, apiProvid
 
       if (isRateLimit) {
         globalKeyHitRateLimit = true;
+        markKeyExhausted(apiKey, 'quota');
+      }
+      
+      const errMsg = error.message.toLowerCase();
+      if (
+        error.message.includes("API_KEY_INVALID") ||
+        errMsg.includes("key not valid") ||
+        errMsg.includes("invalid key") ||
+        error.message.includes("401") ||
+        error.message.includes("403")
+      ) {
+        markKeyExhausted(apiKey, 'invalid');
+      } else if (
+        errMsg.includes("generaterequestsperday") ||
+        errMsg.includes("free_tier_requests") ||
+        errMsg.includes("daily quota")
+      ) {
+        markKeyExhausted(apiKey, 'quota');
       }
       continue; // Seamlessly rotate to next key
     }
@@ -1179,18 +1227,26 @@ Return ONLY a valid JSON object matching this schema:
     throw new Error("No Gemini API keys found. Please add at least one Gemini key in Settings for Policy & Copyright Scan.");
   }
 
+  const orderedGeminiKeys = sortByHealth(geminiKeys);
   const startKeyIndex = globalKeyIndex;
-  if (geminiKeys.length > 0) {
-    globalKeyIndex = (globalKeyIndex + 1) % geminiKeys.length;
+  if (orderedGeminiKeys.length > 0) {
+    globalKeyIndex = (globalKeyIndex + 1) % orderedGeminiKeys.length;
   }
 
-  for (let k = 0; k < geminiKeys.length; k++) {
-    const currentKeyIndex = (startKeyIndex + k) % geminiKeys.length;
-    const keyItem = geminiKeys[currentKeyIndex];
+  for (let k = 0; k < orderedGeminiKeys.length; k++) {
+    const currentKeyIndex = (startKeyIndex + k) % orderedGeminiKeys.length;
+    const keyItem = orderedGeminiKeys[currentKeyIndex];
     const apiKey = typeof keyItem === 'object' ? keyItem.key : keyItem;
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    let modelsToAttempt = ["gemini-2.5-flash"];
+    let modelsToAttempt = [
+      "gemini-2.5-flash",
+      "gemini-2.0-flash",
+      "gemini-1.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-2.0-flash-lite",
+      "gemini-3-flash-preview"
+    ];
 
     for (let i = 0; i < modelsToAttempt.length; i++) {
       const modelName = modelsToAttempt[i];
@@ -1233,16 +1289,18 @@ Return ONLY a valid JSON object matching this schema:
       } catch (error) {
         console.warn(`[Fail] ${modelName} on key ${currentKeyIndex} (SecurityScan): ${error.message}`);
         lastError = error;
+        const errMsg = error.message.toLowerCase();
         const isQuotaExceeded =
-          (error.message.toLowerCase().includes("quota") ||
-           error.message.toLowerCase().includes("exceeded") ||
-           error.message.toLowerCase().includes("billing")) &&
-          !error.message.toLowerCase().includes("perminute") &&
-          !error.message.toLowerCase().includes("rate limit");
+          errMsg.includes("generaterequestsperday") ||
+          errMsg.includes("free_tier_requests") ||
+          errMsg.includes("daily quota") ||
+          (errMsg.includes("quota") && errMsg.includes("exceeded")) ||
+          (errMsg.includes("quota") && errMsg.includes("limit: 20"));
 
         if (isQuotaExceeded) {
-          console.warn(`[Quota Exceeded] Key index ${currentKeyIndex}: Model ${modelName} has no daily quota left for security scan. Falling back to next model...`);
-          continue; 
+          console.warn(`[Quota Exceeded] Key index ${currentKeyIndex} has no daily quota left for security scan. Proceeding to next key...`);
+          markKeyExhausted(apiKey, 'quota');
+          break; 
         }
 
         const isRateLimit =
@@ -1296,11 +1354,12 @@ Return ONLY a valid JSON object matching this schema:
 
         if (
           error.message.includes("API_KEY_INVALID") ||
-          error.message.toLowerCase().includes("key not valid") ||
-          error.message.toLowerCase().includes("invalid key") ||
+          errMsg.includes("key not valid") ||
+          errMsg.includes("invalid key") ||
           error.message.includes("403")
         ) {
           console.warn(`[Key Exhausted] Key index ${currentKeyIndex} is invalid or exhausted. Proceeding to next key.`);
+          markKeyExhausted(apiKey, 'invalid');
           break; // Break inner loop, go to next key
         }
         if (error.message.includes("400")) {

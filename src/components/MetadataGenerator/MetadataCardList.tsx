@@ -203,7 +203,16 @@ const MetadataCard = memo(({
                 </div>
               );
             })()}
-            {img.embeddingStatus === 'success' && <><CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" /><span>Metadata embedded & processed!</span></>}
+            {img.embeddingStatus === 'success' && (
+              <>
+                <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                <span>
+                  {ftpConfigs && ftpConfigs.some((c: any) => c.enabled)
+                    ? "Metadata embedded & uploaded to FTP!"
+                    : "Metadata embedded into file!"}
+                </span>
+              </>
+            )}
             {img.embeddingStatus === 'error' && <><X style={{ width: '0.8rem', height: '0.8rem', stroke: '#ef4444' }} /><span>Failed: {img.embeddingError}</span></>}
           </div>
         )}

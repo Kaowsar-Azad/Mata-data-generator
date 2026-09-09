@@ -148,7 +148,7 @@ const MetadataGridRow = memo(({
               {img.embeddingStatus === 'pending' && 'Queued'}
               {img.embeddingStatus === 'embedding' && 'Embedding'}
               {img.embeddingStatus === 'uploading' && 'FTP'}
-              {img.embeddingStatus === 'success' && 'Embedded'}
+              {img.embeddingStatus === 'success' && 'FTP Synced'}
               {img.embeddingStatus === 'error' && 'Failed'}
             </div>
           )}

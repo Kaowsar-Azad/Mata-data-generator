@@ -1095,7 +1095,7 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
         // Use fastPut instead of put. fastPut uses parallel writes which drastically 
         // improves upload speed on high-latency connections (e.g., Asia -> US).
         await slot.client.fastPut(filePath, `/${fileName}`, {
-          concurrency: 64,       // 64 parallel chunk uploads
+          concurrency: 8,       // 8 parallel chunk uploads (safe and optimal)
           chunkSize: 64 * 1024,  // 64KB chunks (helps with high latency)
           step: function(total_transferred, chunk, total) {
             if (jobId && global.cancelledFtpJobs.has(jobId)) {

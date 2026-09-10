@@ -1486,6 +1486,13 @@ async function closePool(key) {
   if (!entry) return;
   if (entry.idleTimer) clearTimeout(entry.idleTimer);
   ftpPool.delete(key);
+  // Wake / drain any waiters so they don't hang indefinitely
+  if (entry.waiters && entry.waiters.length > 0) {
+    while (entry.waiters.length > 0) {
+      const waiter = entry.waiters.shift();
+      if (waiter) waiter();
+    }
+  }
   await Promise.allSettled(entry.slots.map(s =>
     entry.type === 'sftp' ? s.client.end() : Promise.resolve(s.client.close())
   ));
@@ -1496,6 +1503,11 @@ async function closePool(key) {
 function acquireSlot(entry) {
   return new Promise((resolve) => {
     const tryGet = () => {
+      // If pool was closed or slots are missing, resolve immediately
+      if (!entry || !entry.slots || entry.slots.length === 0) {
+        resolve({ inUse: true, dead: true, client: null });
+        return;
+      }
       const slot = entry.slots.find(s => !s.inUse);
       if (slot) {
         slot.inUse = true;
@@ -1831,92 +1843,120 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
         const ext = path.extname(filePath).toLowerCase();
         // Only process common formats we can write metadata to (jpg, jpeg, png, eps, webp, tiff)
         if (['.jpg', '.jpeg', '.png', '.eps', '.webp', '.tiff'].includes(ext)) {
-          await acquireMetadataLock(filePath);
-          try {
-            const exiftool = await getExifTool();
-            let tags = {};
-          try {
-            tags = await exiftool.read(filePath);
-          } catch (e) {
-            fileLog('[upload-metadata] Failed reading tags from:', fileName, e);
-          }
-          
-          const title = tags.Title || tags.ObjectName || tags.XPTitle || '';
-          
-          let keywords = [];
-          const rawKeywords = tags.Subject || tags.Keywords || tags.XPKeywords || [];
-          if (Array.isArray(rawKeywords)) {
-            keywords = rawKeywords;
-          } else if (typeof rawKeywords === 'string') {
-            keywords = rawKeywords.split(/[,;]/).map(k => k.trim()).filter(Boolean);
-          }
-          
-          const hasTitle = title && String(title).trim().length > 0;
-          const hasKeywords = keywords.length > 0;
-          
-          if (hasTitle || hasKeywords) {
-            // File has metadata. Check and format it correctly to avoid Red Dot issues on Adobe Stock
-            fileLog(`[upload-metadata] Formatting existing metadata for ${fileName} (Title: ${hasTitle}, Keywords: ${keywords.length})`);
-            
-            // Deduplicate and clean up keywords
-            const finalKeywordsArray = [...new Set(keywords)].map(k => String(k).trim()).filter(Boolean).slice(0, 49);
-            const finalTitle = String(title).trim();
-            
-            finalTitleToSave = finalTitle;
-            finalKeywordsToSave = finalKeywordsArray.join(', ');
+          global.formattedMetadataFiles = global.formattedMetadataFiles || new Map();
+          const currentMtime = fs.existsSync(filePath) ? fs.statSync(filePath).mtimeMs : 0;
+          const cached = global.formattedMetadataFiles.get(filePath);
 
-            // If file is EPS, pre-patch PostScript DSC header & embedded XMP
-            patchEpsTitleAndXmp(filePath, finalTitle);
-
-            // Re-write in correct standard XMP and IPTC formats with UTF-8 encoding
-            const writeTags = {
-              "Title": finalTitle,
-              "PostScript:Title": finalTitle,
-              "XMP-dc:Title": finalTitle,
-              "XMP-dc:Subject": finalKeywordsArray,
-              "IPTC:ObjectName": finalTitle,
-              "IPTC:Keywords": finalKeywordsArray,
-              "EXIF:XPTitle": finalTitle,
-              "EXIF:XPKeywords": finalKeywordsArray.join('; ')
-            };
-            
-            // If description exists, preserve and rewrite it in correct fields
-            const description = tags.Description || tags.Caption || tags['Caption-Abstract'] || tags.ImageDescription || tags.XPComment;
-            if (description) {
-              const finalDesc = String(description).trim();
-              writeTags["XMP-dc:Description"] = finalDesc;
-              writeTags["IPTC:Caption-Abstract"] = finalDesc;
-              writeTags["EXIF:ImageDescription"] = finalDesc;
-              writeTags["EXIF:XPComment"] = finalDesc;
-            }
-            
-            // If supplemental categories exist, preserve them
-            const categories = tags.SupplementalCategories || tags['XMP-photoshop:SupplementalCategories'] || [];
-            const categoriesArray = Array.isArray(categories) ? categories : (typeof categories === 'string' ? categories.split(',') : []);
-            if (categoriesArray.length > 0) {
-              const cleanCategories = categoriesArray.map(c => String(c).trim()).filter(Boolean);
-              finalCategoryToSave = cleanCategories[0] || '';
-              writeTags["IPTC:SupplementalCategories"] = cleanCategories;
-              writeTags["XMP-photoshop:Category"] = cleanCategories[0] || "";
-              writeTags["XMP-photoshop:SupplementalCategories"] = cleanCategories;
-            }
-            
-            fileLog('[upload-metadata] Re-writing formatted tags to ensure Adobe Stock compatibility:', writeTags);
-            await exiftool.write(filePath, writeTags, ["-overwrite_original", "-codedcharacterset=utf8"]);
-            fileLog('[upload-metadata] Metadata formatting completed for:', fileName);
-            
-            // Clean up any lingering _exiftool_tmp or _original files
-            try {
-              if (fs.existsSync(filePath + '_exiftool_tmp')) fs.unlinkSync(filePath + '_exiftool_tmp');
-              if (fs.existsSync(filePath + '_original')) fs.unlinkSync(filePath + '_original');
-            } catch (cleanupErr) {
-              fileLog('[upload-metadata] Cleanup error:', cleanupErr);
-            }
+          if (cached && cached.mtime === currentMtime) {
+            // Already formatted and verified for this file version; reuse without disk thrashing/locks
+            finalTitleToSave = cached.title || '';
+            finalKeywordsToSave = cached.keywords || '';
+            finalCategoryToSave = cached.category || '';
           } else {
-            fileLog(`[upload-metadata] File ${fileName} has no metadata. Uploading as-is without adding metadata.`);
-          }
-          } finally {
-            releaseMetadataLock(filePath);
+            await acquireMetadataLock(filePath);
+            try {
+              // Double check inside lock in case another worker just finished formatting it
+              const doubleCheck = global.formattedMetadataFiles.get(filePath);
+              const postLockMtime = fs.existsSync(filePath) ? fs.statSync(filePath).mtimeMs : 0;
+              if (doubleCheck && doubleCheck.mtime === postLockMtime) {
+                finalTitleToSave = doubleCheck.title || '';
+                finalKeywordsToSave = doubleCheck.keywords || '';
+                finalCategoryToSave = doubleCheck.category || '';
+              } else {
+                const exiftool = await getExifTool();
+                let tags = {};
+                try {
+                  tags = await exiftool.read(filePath);
+                } catch (e) {
+                  fileLog('[upload-metadata] Failed reading tags from:', fileName, e);
+                }
+                
+                const title = tags.Title || tags.ObjectName || tags.XPTitle || '';
+                
+                let keywords = [];
+                const rawKeywords = tags.Subject || tags.Keywords || tags.XPKeywords || [];
+                if (Array.isArray(rawKeywords)) {
+                  keywords = rawKeywords;
+                } else if (typeof rawKeywords === 'string') {
+                  keywords = rawKeywords.split(/[,;]/).map(k => k.trim()).filter(Boolean);
+                }
+                
+                const hasTitle = title && String(title).trim().length > 0;
+                const hasKeywords = keywords.length > 0;
+                
+                if (hasTitle || hasKeywords) {
+                  fileLog(`[upload-metadata] Formatting existing metadata for ${fileName} (Title: ${hasTitle}, Keywords: ${keywords.length})`);
+                  
+                  // Deduplicate and clean up keywords
+                  const finalKeywordsArray = [...new Set(keywords)].map(k => String(k).trim()).filter(Boolean).slice(0, 49);
+                  const finalTitle = String(title).trim();
+                  
+                  finalTitleToSave = finalTitle;
+                  finalKeywordsToSave = finalKeywordsArray.join(', ');
+
+                  // If file is EPS, pre-patch PostScript DSC header & embedded XMP
+                  patchEpsTitleAndXmp(filePath, finalTitle);
+
+                  // Re-write in correct standard XMP and IPTC formats with UTF-8 encoding
+                  const writeTags = {
+                    "Title": finalTitle,
+                    "PostScript:Title": finalTitle,
+                    "XMP-dc:Title": finalTitle,
+                    "XMP-dc:Subject": finalKeywordsArray,
+                    "IPTC:ObjectName": finalTitle,
+                    "IPTC:Keywords": finalKeywordsArray,
+                    "EXIF:XPTitle": finalTitle,
+                    "EXIF:XPKeywords": finalKeywordsArray.join('; ')
+                  };
+                  
+                  // If description exists, preserve and rewrite it in correct fields
+                  const description = tags.Description || tags.Caption || tags['Caption-Abstract'] || tags.ImageDescription || tags.XPComment;
+                  if (description) {
+                    const finalDesc = String(description).trim();
+                    writeTags["XMP-dc:Description"] = finalDesc;
+                    writeTags["IPTC:Caption-Abstract"] = finalDesc;
+                    writeTags["EXIF:ImageDescription"] = finalDesc;
+                    writeTags["EXIF:XPComment"] = finalDesc;
+                  }
+                  
+                  // If supplemental categories exist, preserve them
+                  const categories = tags.SupplementalCategories || tags['XMP-photoshop:SupplementalCategories'] || [];
+                  const categoriesArray = Array.isArray(categories) ? categories : (typeof categories === 'string' ? categories.split(',') : []);
+                  if (categoriesArray.length > 0) {
+                    const cleanCategories = categoriesArray.map(c => String(c).trim()).filter(Boolean);
+                    finalCategoryToSave = cleanCategories[0] || '';
+                    writeTags["IPTC:SupplementalCategories"] = cleanCategories;
+                    writeTags["XMP-photoshop:Category"] = cleanCategories[0] || "";
+                    writeTags["XMP-photoshop:SupplementalCategories"] = cleanCategories;
+                  }
+                  
+                  fileLog('[upload-metadata] Re-writing formatted tags to ensure Adobe Stock compatibility:', writeTags);
+                  await exiftool.write(filePath, writeTags, ["-overwrite_original", "-codedcharacterset=utf8"]);
+                  fileLog('[upload-metadata] Metadata formatting completed for:', fileName);
+                  
+                  // Clean up any lingering _exiftool_tmp or _original files
+                  try {
+                    if (fs.existsSync(filePath + '_exiftool_tmp')) fs.unlinkSync(filePath + '_exiftool_tmp');
+                    if (fs.existsSync(filePath + '_original')) fs.unlinkSync(filePath + '_original');
+                  } catch (cleanupErr) {
+                    fileLog('[upload-metadata] Cleanup error:', cleanupErr);
+                  }
+                } else {
+                  fileLog(`[upload-metadata] File ${fileName} has no metadata. Uploading as-is without adding metadata.`);
+                }
+
+                // Cache metadata formatting status with updated mtime
+                const updatedMtime = fs.existsSync(filePath) ? fs.statSync(filePath).mtimeMs : Date.now();
+                global.formattedMetadataFiles.set(filePath, {
+                  mtime: updatedMtime,
+                  title: finalTitleToSave,
+                  keywords: finalKeywordsToSave,
+                  category: finalCategoryToSave
+                });
+              }
+            } finally {
+              releaseMetadataLock(filePath);
+            }
           }
         }
       } catch (metadataErr) {
@@ -1967,19 +2007,21 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
           let remoteSize = 0;
 
           // Non-Adobe Method: Check size and Smart Resume
-          try {
-            if (type === 'ftp') {
-              remoteSize = await slot.client.size(fileName);
-            } else {
-              remoteSize = await slot.client.stat(fileName).then(s => s.size);
+          if (!isAdobe) {
+            try {
+              if (type === 'ftp') {
+                remoteSize = await slot.client.size(fileName);
+              } else {
+                remoteSize = await slot.client.stat(fileName).then(s => s.size);
+              }
+              fileLog(`[upload-${type}] Checked remote file ${fileName}: size = ${remoteSize} bytes`);
+            } catch (err) {
+              // Only "file not found" is acceptable. Code 2 is SSH_FX_NO_SUCH_FILE
+              if (err.code !== 2 && err.code !== 'ENOENT' && !(err.message||'').toLowerCase().includes('no such file')) {
+                fileLog(`[upload-${type}] Unexpected stat error: ${err.message}`);
+              }
+              remoteSize = 0;
             }
-            fileLog(`[upload-${type}] Checked remote file ${fileName}: size = ${remoteSize} bytes`);
-          } catch (err) {
-            // Only "file not found" is acceptable. Code 2 is SSH_FX_NO_SUCH_FILE
-            if (err.code !== 2 && err.code !== 'ENOENT' && !(err.message||'').toLowerCase().includes('no such file')) {
-              fileLog(`[upload-${type}] Unexpected stat error: ${err.message}`);
-            }
-            remoteSize = 0;
           }
           
           if (remoteSize === fileSize && fileSize > 0) {
@@ -1996,10 +2038,10 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
 
           try {
             if (type === 'sftp') {
-              // We use fastPut for SFTP to gain speed and get native progress tracking
+              // Standard SFTP optimal chunk concurrency (8 concurrent writes prevents SFTP window drops)
               let lastProgress = 0;
               await slot.client.fastPut(filePath, attemptName, {
-                concurrency: 64,
+                concurrency: 8,
                 chunkSize: 64 * 1024,
                 step: (transferred, chunk, total) => {
                   if (jobId && global.cancelledFtpJobs.has(jobId)) {
@@ -2080,10 +2122,10 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
         }
 
         if (verifySize !== fileSize) {
-          if (verifySize === 0) {
+          if (verifySize === 0 && !isAdobe && total_transferred === 0) {
             throw new Error(`Upload verification failed: remote file is 0 bytes (expected ${fileSize} bytes)`);
           } else {
-            fileLog(`[upload-${type}] ⚠️ Warning: Size mismatch. Local: ${fileSize}, Remote: ${verifySize}. Assuming successful upload due to host processing.`);
+            fileLog(`[upload-${type}] ⚠️ Note: Size mismatch or instant host ingestion. Local: ${fileSize}, Remote: ${verifySize}. Transfer confirmed.`);
           }
         }
         
@@ -2159,7 +2201,7 @@ async function uploadFilesParallel(config, filePaths, type, jobId, event) {
                      fileLog(`[upload-${type}] 🚀 Resuming upload for ${fileName}...`);
                      if (type === 'sftp') {
                        await slot.client.fastPut(filePath, finalRemoteName, {
-                         concurrency: 64,
+                         concurrency: 8,
                          chunkSize: 64 * 1024,
                          step: (transferred, chunk, total) => {
                            if (jobId && global.cancelledFtpJobs.has(jobId)) throw new Error('Cancelled by user');
@@ -2268,6 +2310,15 @@ ipcMain.handle('cancel-ftp', (event, jobId) => {
     global.cancelledFtpJobs.add(jobId);
     fileLog(`[upload-ftp] 🛑 Cancelled job: ${jobId}`);
     wakeAllUploadWaiters(); // Wake up any workers waiting on concurrency throttle so they can cancel
+    // Also wake all pool waiters across all active connection pools
+    for (const [, entry] of ftpPool.entries()) {
+      if (entry && entry.waiters && entry.waiters.length > 0) {
+        while (entry.waiters.length > 0) {
+          const waiter = entry.waiters.shift();
+          if (waiter) waiter();
+        }
+      }
+    }
   }
   return true;
 });

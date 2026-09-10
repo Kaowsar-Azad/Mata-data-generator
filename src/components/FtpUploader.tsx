@@ -82,6 +82,103 @@ function formatBytes(bytes) {
 
 
 
+export function categorizeFtpError(rawErr: any, serverName?: string): string {
+  if (!rawErr) return '';
+  const errLower = String(rawErr).toLowerCase();
+
+  // 1. Authentication / Invalid Credentials
+  if (
+    errLower.includes('530') ||
+    errLower.includes('authentication failed') ||
+    errLower.includes('login incorrect') ||
+    errLower.includes('user cannot log in') ||
+    errLower.includes('all configured authentication methods failed') ||
+    errLower.includes('permission denied (password') ||
+    errLower.includes('permission denied (publickey') ||
+    errLower.includes('invalid password') ||
+    errLower.includes('wrong password') ||
+    errLower.includes('bad password')
+  ) {
+    return 'Invalid username or password';
+  }
+
+  // 2. Network / Connection Timeout
+  if (
+    errLower.includes('etimedout') ||
+    errLower.includes('econnrefused') ||
+    errLower.includes('enotfound') ||
+    errLower.includes('eai_again') ||
+    errLower.includes('timeout') ||
+    errLower.includes('connect') ||
+    errLower.includes('socket') ||
+    errLower.includes('connection reset') ||
+    errLower.includes('econnreset') ||
+    errLower.includes('network') ||
+    errLower.includes('offline') ||
+    errLower.includes("couldn't resolve host") ||
+    errLower.includes('dns') ||
+    errLower.includes('handshake') ||
+    errLower.includes('negotiation') ||
+    errLower.includes('unreachable')
+  ) {
+    return 'Connection timeout / Network issue';
+  }
+
+  // 3. File Already Exists / Overwrite Denied
+  if (
+    errLower.includes('already exists') ||
+    errLower.includes('file exists') ||
+    errLower.includes('cannot overwrite') ||
+    errLower.includes('overwrite not allowed')
+  ) {
+    return 'File already exists on server';
+  }
+
+  // 4. Server Busy / Connection Limit
+  if (
+    errLower.includes('421') ||
+    errLower.includes('too many connections') ||
+    errLower.includes('service not available') ||
+    errLower.includes('max connections') ||
+    errLower.includes('connection limit')
+  ) {
+    return 'Server busy (too many connections)';
+  }
+
+  // 5. Storage Quota Exceeded
+  if (
+    errLower.includes('552') ||
+    errLower.includes('quota exceeded') ||
+    errLower.includes('storage allocation exceeded') ||
+    errLower.includes('disk full') ||
+    errLower.includes('storage limit')
+  ) {
+    return 'Storage quota exceeded';
+  }
+
+  // 6. User Cancelled
+  if (
+    errLower.includes('cancelled by user') ||
+    errLower.includes('aborted') ||
+    errLower.includes('cancelled')
+  ) {
+    return 'Cancelled';
+  }
+
+  // 7. Client Validations (Resolution, Size, Codec)
+  if (
+    errLower.includes('resolution too low') ||
+    errLower.includes('resolution too high') ||
+    errLower.includes('size cannot exceed') ||
+    errLower.includes('unsupported video codec')
+  ) {
+    return rawErr;
+  }
+
+  // 8. General / Fallback
+  return serverName ? `Upload failed to ${serverName}` : 'Upload failed';
+}
+
 const FtpFileRowItem = memo(({ file, activeConfigs, onRemove, getCategorizedError }: any) => {
   return (
     <div style={{
@@ -188,7 +285,7 @@ const FtpFileRowItem = memo(({ file, activeConfigs, onRemove, getCategorizedErro
                   const showProgress = !isSucc && !isErr && typeof prg === 'number';
                   
                   return (
-                    <span key={conf.host} title={cleanErrText ? `Error: ${cleanErrText}` : ''} style={{ 
+                    <span key={conf.host} title={cleanErrText ? `${name}: ${cleanErrText}` : ''} style={{ 
                       fontSize: '0.6rem', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 600,
                       background: isSucc ? 'rgba(16,185,129,0.1)' : isErr ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
                       color: isSucc ? 'var(--success)' : isErr ? 'var(--danger)' : '#f59e0b',
@@ -209,10 +306,9 @@ const FtpFileRowItem = memo(({ file, activeConfigs, onRemove, getCategorizedErro
             {file.error && (activeConfigs.length === 1 || !file.serverStatus) && (() => {
               const activeConf = activeConfigs[0];
               const serverName = activeConf ? (activeConf.websiteName || activeConf.host) : '';
-              const hasServerError = file.serverErrors && activeConf && file.serverErrors[activeConf.host];
-              const displayErr = hasServerError ? getCategorizedError(file.error, serverName) : file.error;
+              const displayErr = getCategorizedError(file.error, serverName);
               return (
-                <span style={{ fontSize: '0.65rem', color: 'var(--danger)', maxWidth: '350px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={file.error}>
+                <span style={{ fontSize: '0.65rem', color: 'var(--danger)', maxWidth: '350px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={displayErr}>
                   {displayErr}
                 </span>
               );
@@ -604,11 +700,13 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
         if (res.success) {
           setTestingStatus(prev => ({ ...prev, [config.id]: { isTesting: false, result: { success: true, msg: "✅ Connected successfully!" } } }));
         } else {
-          setTestingStatus(prev => ({ ...prev, [config.id]: { isTesting: false, result: { success: false, msg: res.error || "Connection failed" } } }));
+          const cleanMsg = categorizeFtpError(res.error, config.websiteName || config.host);
+          setTestingStatus(prev => ({ ...prev, [config.id]: { isTesting: false, result: { success: false, msg: cleanMsg || "Connection failed" } } }));
         }
       }
     } catch (err) {
-      setTestingStatus(prev => ({ ...prev, [config.id]: { isTesting: false, result: { success: false, msg: err.message } } }));
+      const cleanMsg = categorizeFtpError(err.message, config.websiteName || config.host);
+      setTestingStatus(prev => ({ ...prev, [config.id]: { isTesting: false, result: { success: false, msg: cleanMsg || "Connection failed" } } }));
     }
   };
 
@@ -624,11 +722,13 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
         if (res.success) {
           setTestResult({ success: true, msg: "✅ Connection successful!" });
         } else {
-          setTestResult({ success: false, msg: res.error || "Connection failed" });
+          const cleanMsg = categorizeFtpError(res.error, editingConfig.websiteName || editingConfig.host);
+          setTestResult({ success: false, msg: cleanMsg || "Connection failed" });
         }
       }
     } catch (err) {
-      setTestResult({ success: false, msg: err.message });
+      const cleanMsg = categorizeFtpError(err.message, editingConfig.websiteName || editingConfig.host);
+      setTestResult({ success: false, msg: cleanMsg || "Connection failed" });
     } finally {
       setIsTesting(false);
     }
@@ -900,12 +1000,13 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
               if (item.id === file.id) {
                 const newServerStatus = { ...(item.serverStatus || {}) };
                 const newServerErrors = { ...(item.serverErrors || {}) };
-                if (res.success) {
+                const hostErr = res.error || (res.fileErrors && res.fileErrors[file.path]);
+                if (res.success && !hostErr) {
                   newServerStatus[conf.host] = 'success';
                   delete newServerErrors[conf.host];
                 } else {
                   newServerStatus[conf.host] = 'error';
-                  newServerErrors[conf.host] = res.error || (res.fileErrors && res.fileErrors[file.path]) || 'Failed';
+                  newServerErrors[conf.host] = hostErr || 'Failed';
                 }
                 return { ...item, serverStatus: newServerStatus, serverErrors: newServerErrors };
               }
@@ -1106,27 +1207,8 @@ export function FtpUploader({ ftpConfigs = [], setFtpConfigs, editingConfig = nu
     }
   };
 
-  const getCategorizedError = useCallback((rawErr, serverName) => {
-    if (!rawErr) return '';
-    const errLower = rawErr.toLowerCase();
-    
-    // Check for network issues
-    const isNetworkError = 
-      errLower.includes('etimedout') ||
-      errLower.includes('econnrefused') ||
-      errLower.includes('enotfound') ||
-      errLower.includes('eai_again') ||
-      errLower.includes('timeout') ||
-      errLower.includes('connect') ||
-      errLower.includes('socket') ||
-      errLower.includes('offline') ||
-      errLower.includes('network');
-      
-    if (isNetworkError) {
-      return `Failed due to network issue`;
-    } else {
-      return `File not eligible for upload to ${serverName || 'server'}`;
-    }
+  const getCategorizedError = useCallback((rawErr: any, serverName?: string) => {
+    return categorizeFtpError(rawErr, serverName);
   }, []);
 
   const successCount = files.filter(f => f.status === 'success').length;

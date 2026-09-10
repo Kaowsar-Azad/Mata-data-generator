@@ -864,6 +864,87 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
   const getUserFriendlyErrorMessage = (msg: string, phase: string) => {
     const lower = (msg || '').toLowerCase();
+
+    if (phase === 'FTP Upload') {
+      if (
+        lower.includes('530') ||
+        lower.includes('authentication failed') ||
+        lower.includes('login incorrect') ||
+        lower.includes('user cannot log in') ||
+        lower.includes('all configured authentication methods failed') ||
+        lower.includes('permission denied (password') ||
+        lower.includes('permission denied (publickey') ||
+        lower.includes('invalid password') ||
+        lower.includes('wrong password') ||
+        lower.includes('bad password')
+      ) {
+        return `FTP Upload: Invalid username or password`;
+      }
+      if (
+        lower.includes('etimedout') ||
+        lower.includes('econnrefused') ||
+        lower.includes('enotfound') ||
+        lower.includes('eai_again') ||
+        lower.includes('timeout') ||
+        lower.includes('connect') ||
+        lower.includes('socket') ||
+        lower.includes('connection reset') ||
+        lower.includes('econnreset') ||
+        lower.includes('network') ||
+        lower.includes('offline') ||
+        lower.includes("couldn't resolve host") ||
+        lower.includes('dns') ||
+        lower.includes('handshake') ||
+        lower.includes('negotiation') ||
+        lower.includes('unreachable')
+      ) {
+        return `FTP Upload: Connection timeout / Network issue`;
+      }
+      if (
+        lower.includes('already exists') ||
+        lower.includes('file exists') ||
+        lower.includes('cannot overwrite') ||
+        lower.includes('overwrite not allowed')
+      ) {
+        return `FTP Upload: File already exists on server`;
+      }
+      if (
+        lower.includes('421') ||
+        lower.includes('too many connections') ||
+        lower.includes('service not available') ||
+        lower.includes('max connections') ||
+        lower.includes('connection limit')
+      ) {
+        return `FTP Upload: Server busy (too many connections)`;
+      }
+      if (
+        lower.includes('552') ||
+        lower.includes('quota exceeded') ||
+        lower.includes('storage allocation exceeded') ||
+        lower.includes('disk full') ||
+        lower.includes('storage limit')
+      ) {
+        return `FTP Upload: Storage quota exceeded`;
+      }
+      if (lower.includes('cancelled by user') || lower.includes('aborted') || lower.includes('cancelled')) {
+        return `FTP Upload: Cancelled`;
+      }
+      return `FTP Upload: Upload failed`;
+    }
+
+    if (phase === 'Embedding') {
+      if (lower.includes('busy') || lower.includes('ebusy') || lower.includes('locked')) {
+        return `Embedding: File is locked by another process`;
+      }
+      if (lower.includes('enoent') || lower.includes('not found')) {
+        return `Embedding: File not found`;
+      }
+      if (lower.includes('permission') || lower.includes('eacces')) {
+        return `Embedding: Permission denied`;
+      }
+      return `Embedding: Failed to write metadata`;
+    }
+
     if (lower.includes('failed to fetch') || lower.includes('econnrefused') || lower.includes('network error') || lower.includes('offline')) {
       return `Network Error: Please check your network connection.`;
     }
@@ -1734,8 +1815,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             const mergedErrors = { ...(primaryErrors || {}), ...(visualErrors || {}) };
 
             if (Object.keys(mergedErrors).length > 0) {
-              const errMsg = Object.entries(mergedErrors).map(([h, err]) => `${h}: ${err}`).join(', ');
-              return { ...item, embeddingStatus: "error", embeddingError: getUserFriendlyErrorMessage(errMsg, 'FTP Upload') };
+              const formattedList = Object.entries(mergedErrors).map(([h, err]) => {
+                const friendly = getUserFriendlyErrorMessage(String(err || ''), 'FTP Upload').replace(/^FTP Upload:\s*/, '');
+                return `${h} (${friendly})`;
+              }).join(', ');
+              return { ...item, embeddingStatus: "error", embeddingError: `FTP Upload: ${formattedList}` };
             } else {
               return { ...item, embeddingStatus: "success", embeddingError: null };
             }
@@ -1762,14 +1846,15 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           }
 
         } catch (uploadErr) {
+          const friendlyErr = getUserFriendlyErrorMessage(uploadErr.message, 'FTP Upload');
           setImages(prev => prev.map(item => {
             const isEmbedded = embeddedImages.some(ei => ei.id === (item as any).id);
             if (isEmbedded) {
-              return { ...item, embeddingStatus: "error", embeddingError: getUserFriendlyErrorMessage(uploadErr.message, 'FTP Upload') };
+              return { ...item, embeddingStatus: "error", embeddingError: friendlyErr };
             }
             return item;
           }));
-          showToast(`FTP upload failed: ${uploadErr.message}`, "error");
+          showToast(friendlyErr, "error");
         } finally {
           setActiveJobId(null);
         }
@@ -2281,16 +2366,17 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
       showToast(`Metadata embedded into file${csvMsg}!`, "success");
     } else {
+      const friendlyErr = getUserFriendlyErrorMessage(errMsg, 'Embedding');
       setImages((prev: any) =>
         prev.map((img: any) =>
           img.id === id
-            ? { ...img, embeddingStatus: "error", embeddingError: errMsg }
+            ? { ...img, embeddingStatus: "error", embeddingError: friendlyErr }
             : img
         )
       );
-      showToast(`Embedding failed: ${errMsg}`, "error");
+      showToast(friendlyErr, "error");
     }
-  }, [showToast]);
+  }, [showToast, getUserFriendlyErrorMessage]);
 
   const uploadSingleImageToFtp = useCallback(async (id: any, customKeywords?: string) => {
     if (!window.electronAPI?.uploadFtp) {
@@ -2391,7 +2477,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         try {
           const ftpRes = await window.electronAPI.uploadFtp(conf, filesToUpload, jobId);
           if (!ftpRes.success) {
-            return { host: conf.websiteName || conf.host, globalError: ftpRes.error, fileErrors: {} };
+            return { host: conf.websiteName || conf.host, globalError: ftpRes.error, fileErrors: ftpRes.fileErrors || {} };
           }
           return { host: conf.websiteName || conf.host, fileErrors: ftpRes.fileErrors || {}, globalError: null };
         } catch (err: any) {
@@ -2401,14 +2487,16 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
       const uploadResults = await Promise.all(uploadPromises);
 
-      const failedHosts: string[] = [];
+      const failedHostEntries: string[] = [];
       uploadResults.forEach(res => {
-        if (res.globalError || (res.fileErrors && Object.values(res.fileErrors).some(Boolean))) {
-          failedHosts.push(res.host);
+        const rawErr = res.globalError || (res.fileErrors && Object.values(res.fileErrors).find(Boolean));
+        if (rawErr) {
+          const friendly = getUserFriendlyErrorMessage(String(rawErr || ''), 'FTP Upload').replace(/^FTP Upload:\s*/, '');
+          failedHostEntries.push(`${res.host} (${friendly})`);
         }
       });
 
-      if (failedHosts.length === 0) {
+      if (failedHostEntries.length === 0) {
         setImages((prev: any) =>
           prev.map((img: any) =>
             img.id === id
@@ -2422,33 +2510,34 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         );
         showToast(`"${newPrimaryName || currentImg.file?.name}" successfully uploaded to FTP server!`, "success");
       } else {
-        const errMsg = `FTP upload failed for: ${failedHosts.join(', ')}`;
+        const fullErr = `FTP Upload: ${failedHostEntries.join(', ')}`;
         setImages((prev: any) =>
           prev.map((img: any) =>
             img.id === id
               ? {
                   ...img,
                   embeddingStatus: "error",
-                  embeddingError: getUserFriendlyErrorMessage(errMsg, 'FTP Upload')
+                  embeddingError: fullErr
                 }
               : img
           )
         );
-        showToast(errMsg, "error");
+        showToast(fullErr, "error");
       }
     } catch (uploadErr: any) {
+      const friendlyErr = getUserFriendlyErrorMessage(uploadErr.message, 'FTP Upload');
       setImages((prev: any) =>
         prev.map((img: any) =>
           img.id === id
             ? {
                 ...img,
                 embeddingStatus: "error",
-                embeddingError: getUserFriendlyErrorMessage(uploadErr.message, 'FTP Upload')
+                embeddingError: friendlyErr
               }
             : img
         )
       );
-      showToast(`FTP upload failed: ${uploadErr.message}`, "error");
+      showToast(friendlyErr, "error");
     } finally {
       setActiveJobId(null);
     }

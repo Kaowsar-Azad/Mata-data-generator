@@ -10,6 +10,8 @@ export function MetadataEditorPanel({
   setActiveCell,
   selectedCount = 0,
   applyToSelected,
+  onAddKeywordToSelected,
+  onEmbedSelected,
   enableKeywordRanking,
   onEmbedSingle,
   autoEmbed,
@@ -112,6 +114,9 @@ export function MetadataEditorPanel({
             isTextArea
             isKeywords
             img={img}
+            selectedCount={selectedCount}
+            onAddKeywordToSelected={onAddKeywordToSelected}
+            onEmbedSelected={onEmbedSelected}
             enableKeywordRanking={enableKeywordRanking}
             onEmbedSingle={onEmbedSingle}
             autoEmbed={autoEmbed}
@@ -119,18 +124,6 @@ export function MetadataEditorPanel({
             onApplyToSelected={selectedCount > 1 && typeof applyToSelected === 'function' ? () => applyToSelected(img.id, "keywords", img.result.keywords) : null}
           />
 
-          {img.result.categories && img.result.categories.length > 0 && (
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Categories:</span>
-              <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                {img.result.categories.map((cat: any, idx: any) => (
-                  <span key={idx} className="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[10px] font-semibold border border-primary/20">
-                    {cat}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
 
 
         </div>

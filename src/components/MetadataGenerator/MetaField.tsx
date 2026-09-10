@@ -2,7 +2,22 @@
 import React, { useState, useRef, useEffect } from "react";
 import { CheckCircle2, Copy, Loader2, FileCheck2, Plus, UploadCloud } from "lucide-react";
 
-export function MetaField({ label, value, onChange, isTextArea, isKeywords, img, onApplyToSelected, enableKeywordRanking, onEmbedSingle, autoEmbed, onUploadSingleFtp }: any) {
+export function MetaField({ 
+  label, 
+  value, 
+  onChange, 
+  isTextArea, 
+  isKeywords, 
+  img, 
+  onApplyToSelected, 
+  enableKeywordRanking, 
+  onEmbedSingle, 
+  autoEmbed, 
+  onUploadSingleFtp,
+  selectedCount = 0,
+  onAddKeywordToSelected,
+  onEmbedSelected
+}: any) {
   const [copied, setCopied] = useState(false);
   const [isTextMode, setIsTextMode] = useState(false);
   const [newKeyword, setNewKeyword] = useState("");
@@ -16,10 +31,8 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
   const initialKeywordsRef = useRef(img?.lastEmbeddedKeywords || img?.initialKeywords || value);
 
   useEffect(() => {
-    if (img?.lastEmbeddedKeywords) {
-      initialKeywordsRef.current = img.lastEmbeddedKeywords;
-    }
-  }, [img?.lastEmbeddedKeywords]);
+    initialKeywordsRef.current = img?.lastEmbeddedKeywords || img?.initialKeywords || value;
+  }, [img?.id, img?.lastEmbeddedKeywords]);
 
   // Per-file ranking status:
   // If generated with ranking ON, the file permanently keeps its colors even if global button is toggled OFF.
@@ -45,14 +58,18 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
   const showEmbedButton = Boolean(
     isKeywords &&
     (hasKeywordChanges || justEmbedded || isEmbedding) &&
-    typeof onEmbedSingle === 'function'
+    (typeof onEmbedSingle === 'function' || typeof onEmbedSelected === 'function')
   );
 
   const handleEmbedClick = async () => {
-    if (!onEmbedSingle || isEmbedding) return;
+    if ((!onEmbedSingle && !onEmbedSelected) || isEmbedding) return;
     setIsEmbedding(true);
     try {
-      await onEmbedSingle(img?.id, value);
+      if (selectedCount > 1 && typeof onEmbedSelected === 'function') {
+        await onEmbedSelected();
+      } else if (typeof onEmbedSingle === 'function') {
+        await onEmbedSingle(img?.id, value);
+      }
       initialKeywordsRef.current = value;
       setJustEmbedded(true);
       setTimeout(() => {
@@ -158,10 +175,16 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
   const addKeywordDirectly = (kwToAdd: string) => {
     const trimmed = (kwToAdd || '').trim();
     if (!trimmed) return;
-    const keywords = (value || '').split(',').map(k => k.trim()).filter(Boolean);
-    if (!keywords.includes(trimmed)) {
-      keywords.push(trimmed);
-      onChange(keywords.join(', '));
+
+    if (selectedCount > 1 && typeof onAddKeywordToSelected === 'function') {
+      onAddKeywordToSelected(trimmed);
+    } else {
+      const keywords = (value || '').split(',').map(k => k.trim()).filter(Boolean);
+      const alreadyHas = keywords.some(k => k.toLowerCase() === trimmed.toLowerCase());
+      if (!alreadyHas) {
+        keywords.push(trimmed);
+        onChange(keywords.join(', '));
+      }
     }
     setNewKeyword("");
   };
@@ -318,7 +341,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                 onMouseOut={(e: any) => {
                   e.currentTarget.style.transform = 'scale(1)';
                   e.currentTarget.style.boxShadow = '0 2px 5px rgba(0,0,0,0.05)';
-                  e.currentTarget.style.borderColor = borderStr;
+                  e.currentTarget.style.border = borderStr;
                 }}
               >
                 {showRanking && hasRank && (
@@ -460,7 +483,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                   type="button"
                   onClick={handleEmbedClick}
                   disabled={isEmbedding || isUploadingFtp}
-                  title="Embed changes into file & sync CSV"
+                  title={selectedCount > 1 ? `Embed metadata into all ${selectedCount} selected files & sync CSV` : "Embed changes into file & sync CSV"}
                   className="flex items-center justify-center gap-1 rounded-full transition-all animate-fade-in"
                   style={{
                     height: '26px',
@@ -498,7 +521,7 @@ export function MetaField({ label, value, onChange, isTextArea, isKeywords, img,
                   ) : (
                     <FileCheck2 className="w-3 h-3" style={{ strokeWidth: 2.2 }} />
                   )}
-                  <span>{isEmbedding ? 'Saving...' : justEmbedded ? 'Done' : 'Embed'}</span>
+                  <span>{isEmbedding ? 'Saving...' : justEmbedded ? 'Done' : (selectedCount > 1 ? `Embed (${selectedCount})` : 'Embed')}</span>
                 </button>
               )}
 

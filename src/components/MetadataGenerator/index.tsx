@@ -36,7 +36,8 @@ import {
   Zap,
   ChevronDown,
   Check,
-  Layers
+  Layers,
+  Crown
 } from "lucide-react";
 
 import { generateMetadata, analyzeImageSecurity } from "../../services/geminiService";
@@ -288,6 +289,22 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const [retroactiveOptions, setRetroactiveOptions] = useState({ cleanYellow: false, cleanRed: false });
   const [retroactivePendingImages, setRetroactivePendingImages] = useState<any[]>([]);
   const [selectedRows, setSelectedRows] = useState<any>(new Set()); // row IDs selected in grid
+
+  const activeEditImage = useMemo(() => {
+    if (activeCell?.id && selectedRows.has(activeCell.id)) {
+      return images.find(img => img.id === activeCell.id);
+    }
+    if (selectedRows.size > 0) {
+      const checkedIds = Array.from(selectedRows);
+      const lastCheckedId = checkedIds[checkedIds.length - 1];
+      return images.find(img => img.id === lastCheckedId);
+    }
+    return null;
+  }, [activeCell, selectedRows, images]);
+
+  const policyViolationImages = useMemo(() => {
+    return images.filter(img => !img.ignorePolicy && (img.result?.policyWarning || img.status === "policy_warning"));
+  }, [images]);
   const [gridSort, setGridSort] = useState({ field: null, dir: 'asc' }); // column sort
   const [gridFilter, setGridFilter] = useState(''); // quick filter text
   const [isFilterFocused, setIsFilterFocused] = useState(false);
@@ -1969,6 +1986,177 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     );
   }, [selectedRows]);
 
+  const addKeywordToSelected = useCallback((keyword: string) => {
+    const trimmed = (keyword || '').trim();
+    if (!trimmed) return;
+
+    const targetIds = selectedRows.size > 1
+      ? Array.from(selectedRows)
+      : (activeEditImage ? [activeEditImage.id] : []);
+
+    if (targetIds.length === 0) return;
+
+    setImages((prev: any) => {
+      const next = prev.map((img: any) => {
+        if (targetIds.includes(img.id) && img.result) {
+          const currentKws = (img.result.keywords || '').split(',').map((k: string) => k.trim()).filter(Boolean);
+          const alreadyHas = currentKws.some((k: string) => k.toLowerCase() === trimmed.toLowerCase());
+          if (!alreadyHas) {
+            const updatedKws = [...currentKws, trimmed].join(', ');
+            return {
+              ...img,
+              result: {
+                ...img.result,
+                keywords: updatedKws
+              }
+            };
+          }
+        }
+        return img;
+      });
+      imagesRef.current = next;
+      return next;
+    });
+  }, [selectedRows, activeEditImage]);
+
+  const embedSelectedImages = useCallback(async (customIds?: any[]) => {
+    if (!window.electronAPI?.writeMetadata) {
+      showToast("Embedding requires the desktop application", "error");
+      return;
+    }
+
+    const targetIds = (customIds && customIds.length > 0)
+      ? customIds
+      : (selectedRows.size > 0 ? Array.from(selectedRows) : (activeEditImage ? [activeEditImage.id] : []));
+
+    if (targetIds.length === 0) {
+      showToast("No files selected to embed", "warning");
+      return;
+    }
+
+    const targetImages = imagesRef.current.filter((img: any) => targetIds.includes(img.id) && img.result);
+    if (targetImages.length === 0) {
+      showToast("Selected files do not have metadata to embed", "warning");
+      return;
+    }
+
+    // Mark target images as embedding
+    setImages((prev: any) =>
+      prev.map((img: any) =>
+        targetIds.includes(img.id)
+          ? { ...img, embeddingStatus: "embedding", embeddingError: null }
+          : img
+      )
+    );
+
+    let successCount = 0;
+    const embeddedResults: any[] = [];
+
+    for (const currentImg of targetImages) {
+      const kwToEmbed = currentImg.result.keywords || "";
+      const titleToEmbed = currentImg.result.title || "";
+      const descToEmbed = currentImg.result.description || "";
+      const catsToEmbed = currentImg.result.categories || [];
+
+      const pathsToEmbed: { type: 'primary' | 'visual'; path: string }[] = [];
+      const resolvedPrimaryPath = currentImg.renamedPath || currentImg.file?.path;
+      if (resolvedPrimaryPath) pathsToEmbed.push({ type: 'primary', path: resolvedPrimaryPath });
+
+      const resolvedVisualPath = currentImg.renamedVisualPath || currentImg.visualFile?.path;
+      if (currentImg.isEps && resolvedVisualPath && resolvedVisualPath !== resolvedPrimaryPath) {
+        pathsToEmbed.push({ type: 'visual', path: resolvedVisualPath });
+      }
+
+      if (pathsToEmbed.length === 0) continue;
+
+      let fileSuccess = true;
+      let errMsg = "";
+      let newPrimaryPath = currentImg.renamedPath;
+      let newVisualPath = currentImg.renamedVisualPath;
+      let newPrimaryName = currentImg.renamedName;
+
+      for (const target of pathsToEmbed) {
+        try {
+          const res = await window.electronAPI.writeMetadata(
+            target.path,
+            titleToEmbed,
+            descToEmbed,
+            kwToEmbed,
+            catsToEmbed
+          );
+          if (!res?.success) {
+            fileSuccess = false;
+            errMsg = res?.error || "Failed to embed metadata";
+          } else {
+            if (target.type === 'primary') {
+              newPrimaryPath = res.newPath || target.path;
+              newPrimaryName = res.newFileName || newPrimaryName;
+            }
+            if (target.type === 'visual') {
+              newVisualPath = res.newPath || target.path;
+            }
+          }
+        } catch (err: any) {
+          fileSuccess = false;
+          errMsg = err?.message || "Error writing metadata";
+        }
+      }
+
+      if (fileSuccess) {
+        successCount++;
+        embeddedResults.push({
+          id: currentImg.id,
+          renamedPath: newPrimaryPath,
+          renamedVisualPath: newVisualPath,
+          renamedName: newPrimaryName,
+          lastEmbeddedKeywords: kwToEmbed,
+          lastEmbeddedTitle: titleToEmbed,
+          lastEmbeddedDescription: descToEmbed
+        });
+      }
+    }
+
+    const updatedImages = imagesRef.current.map((img: any) => {
+      const match = embeddedResults.find((er: any) => er.id === img.id);
+      if (match) {
+        return {
+          ...img,
+          embeddingStatus: "success",
+          embeddingError: null,
+          renamedPath: match.renamedPath,
+          renamedVisualPath: match.renamedVisualPath,
+          renamedName: match.renamedName,
+          lastEmbeddedKeywords: match.lastEmbeddedKeywords,
+          lastEmbeddedTitle: match.lastEmbeddedTitle,
+          lastEmbeddedDescription: match.lastEmbeddedDescription
+        };
+      }
+      if (targetIds.includes(img.id) && !embeddedResults.some((er: any) => er.id === img.id)) {
+        return { ...img, embeddingStatus: "error", embeddingError: "Failed to embed" };
+      }
+      return img;
+    });
+
+    setImages(updatedImages);
+
+    // Sync active / exported CSV files in real-time
+    let csvMsg = "";
+    try {
+      const syncRes = await syncActiveCsvFiles(updatedImages, promptSettingsRef.current);
+      if (syncRes?.success && syncRes.updatedFiles.length > 0) {
+        csvMsg = ` & CSV updated (${syncRes.updatedFiles.join(", ")})`;
+      }
+    } catch (csvErr) {
+      console.warn("[Embed Selected] CSV sync error:", csvErr);
+    }
+
+    if (successCount > 0) {
+      showToast(`Metadata embedded into ${successCount} file(s)${csvMsg}!`, "success");
+    } else {
+      showToast("Embedding failed for selected file(s)", "error");
+    }
+  }, [selectedRows, activeEditImage, showToast]);
+
   const embedSingleImage = useCallback(async (id: any, customKeywords?: string) => {
     if (!window.electronAPI?.writeMetadata) {
       showToast("Embedding requires the desktop application", "error");
@@ -2909,7 +3097,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 <button
                   className="btn-glass-blue"
                   style={{ padding: '0.38rem 0.8rem' }}
-                  onClick={() => alert("To embed metadata directly into files, run the app as a desktop application (npm run app:dev).")}
+                  title="To embed metadata directly into files, run the app as a desktop application (npm run app:dev)."
                   disabled
                 >
                   <Tag style={{ width: '0.9rem', height: '0.9rem', strokeWidth: 2.2 }} /> Embed to files
@@ -3038,6 +3226,22 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                       onChange={handleAutoEmbedChange}
                     />
                     <span style={{ fontWeight: 500 }}>Auto embed and upload</span>
+                    <span style={{ 
+                      fontSize: '0.62rem', 
+                      background: 'linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%)', 
+                      color: '#ffffff', 
+                      padding: '1px 6px', 
+                      borderRadius: '4px', 
+                      fontWeight: 800, 
+                      letterSpacing: '0.5px', 
+                      boxShadow: '0 1px 4px rgba(99, 102, 241, 0.3)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      lineHeight: '1.2'
+                    }}>
+                      PRO <Crown size={10} strokeWidth={3} />
+                    </span>
                   </label>
                 </div>
 
@@ -3097,6 +3301,22 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                       onChange={handleAutoUpscaleToggle}
                     />
                     <span style={{ fontWeight: 500 }}>Auto upscale</span>
+                    <span style={{ 
+                      fontSize: '0.62rem', 
+                      background: 'linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%)', 
+                      color: '#ffffff', 
+                      padding: '1px 6px', 
+                      borderRadius: '4px', 
+                      fontWeight: 800, 
+                      letterSpacing: '0.5px', 
+                      boxShadow: '0 1px 4px rgba(99, 102, 241, 0.3)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      lineHeight: '1.2'
+                    }}>
+                      PRO <Crown size={10} strokeWidth={3} />
+                    </span>
                   </label>
                   
                   {autoUpscale && (
@@ -3229,19 +3449,19 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         </div>
       )}
       {/* Policy Violation Summary Banner */}
-      {images.some(img => !img.ignorePolicy && (img.result?.policyWarning || img.status === "policy_warning")) && (
+      {policyViolationImages.length > 0 && (
         <div className="glass card animate-fade-in p-4" style={{ background: 'rgba(239, 68, 68, 0.05)', borderLeft: '4px solid #ef4444', marginBottom: '1.25rem' }}>
           <div className="flex items-center gap-3">
             <span style={{ fontSize: '1.5rem' }}>🛑</span>
             <div style={{ flex: 1 }}>
               <h4 style={{ margin: 0, fontSize: '0.95rem', color: '#ef4444', fontWeight: 800 }}>STOCK SITE POLICY VIOLATION DETECTED</h4>
               <p className="text-muted" style={{ fontSize: '0.8rem', margin: '2px 0 0 0', color: 'var(--text-2)' }}>
-                Policy violations detected in {images.filter(img => !img.ignorePolicy && (img.result?.policyWarning || img.status === "policy_warning")).length} file{images.filter(img => !img.ignorePolicy && (img.result?.policyWarning || img.status === "policy_warning")).length !== 1 ? 's' : ''}. You can delete them directly from here.
+                Policy violations detected in {policyViolationImages.length} file{policyViolationImages.length !== 1 ? 's' : ''}. You can delete them directly from here.
               </p>
             </div>
           </div>
           <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {images.filter(img => !img.ignorePolicy && (img.result?.policyWarning || img.status === "policy_warning")).map(img => (
+            {policyViolationImages.map(img => (
               <div key={img.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', padding: '0.3rem 0.5rem 0.3rem 0.3rem', borderRadius: '0.4rem', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
                 <div style={{ position: 'relative', width: '28px', height: '28px', flexShrink: 0 }}>
                   <PolicyViolationThumbnail img={img} />
@@ -3343,18 +3563,6 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
       {/* View Container */}
       {images.length > 0 && (() => {
-        const activeEditImage = (() => {
-          if (activeCell?.id && selectedRows.has(activeCell.id)) {
-            return images.find(img => img.id === activeCell.id);
-          }
-          if (selectedRows.size > 0) {
-            const checkedIds = Array.from(selectedRows);
-            const lastCheckedId = checkedIds[checkedIds.length - 1];
-            return images.find(img => img.id === lastCheckedId);
-          }
-          return null;
-        })();
-
         return (
           <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'stretch' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -3396,6 +3604,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   setActiveCell={setActiveCell}
                   selectedCount={selectedRows.size}
                   applyToSelected={applyToSelected}
+                  onAddKeywordToSelected={addKeywordToSelected}
+                  onEmbedSelected={embedSelectedImages}
                   enableKeywordRanking={promptSettings?.enableKeywordRanking ?? true}
                   onEmbedSingle={embedSingleImage}
                   autoEmbed={autoEmbed}

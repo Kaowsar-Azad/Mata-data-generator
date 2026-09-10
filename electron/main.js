@@ -609,7 +609,11 @@ ipcMain.handle('write-metadata', async (event, filePath, title, description, key
       "EXIF:XPKeywords": finalKeywordsArray.join('; '),
       "IPTC:SupplementalCategories": categoriesArray,
       "XMP-photoshop:Category": categoriesArray.length > 0 ? categoriesArray[0] : "",
-      "XMP-photoshop:SupplementalCategories": categoriesArray
+      "XMP-photoshop:SupplementalCategories": categoriesArray,
+      "Rating": 5,
+      "RatingPercent": 99,
+      "XMP-xmp:Rating": 5,
+      "XMP-microsoft:RatingPercent": 99
     };
 
     fileLog('[write-metadata] Writing tags to file:', tags);

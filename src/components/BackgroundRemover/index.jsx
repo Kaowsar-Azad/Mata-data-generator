@@ -15,7 +15,8 @@ export const BackgroundRemover = () => {
   const [originalUrl, setOriginalUrl] = useState(null);
   const [processedUrl, setProcessedUrl] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [processingStage, setProcessingStage] = useState('');
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const fileInputRef = useRef(null);
 
   // Cleanup blob URLs on unmount
@@ -45,25 +46,35 @@ export const BackgroundRemover = () => {
     setOriginalUrl(URL.createObjectURL(file));
     if (processedUrl) URL.revokeObjectURL(processedUrl);
     setProcessedUrl(null);
-    setProgress(0);
+    setElapsedSeconds(0);
+    setProcessingStage('');
   };
 
   const handleRemoveBackground = async () => {
     if (!originalFile) return;
     setIsProcessing(true);
-    setProgress(0);
-    setProcessedUrl(null); // Clear old result to show loading spinner
-    
-    // Fake progress interval
+    setElapsedSeconds(0);
+    setProcessingStage('Initializing AI Neural Network...');
+    setProcessedUrl(null);
+
+    const startTime = Date.now();
     const interval = setInterval(() => {
-      setProgress((prev) => (prev < 0.9 ? prev + 0.1 : prev));
-    }, 800);
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      setElapsedSeconds(elapsed);
+      if (elapsed >= 10) {
+        setProcessingStage('Finalizing transparent PNG...');
+      } else if (elapsed >= 5) {
+        setProcessingStage('Refining edges & eliminating background halos...');
+      } else if (elapsed >= 2) {
+        setProcessingStage('Computing high-precision boundary segmentation...');
+      }
+    }, 1000);
 
     try {
-      const resultBlob = await removeBackgroundViaLocalServer(originalFile);
+      const resultBlob = await removeBackgroundViaLocalServer(originalFile, 'birefnet');
       
       clearInterval(interval);
-      setProgress(1.0);
+      setProcessingStage('Complete!');
       if (processedUrl) URL.revokeObjectURL(processedUrl);
       setProcessedUrl(URL.createObjectURL(resultBlob));
     } catch (err) {
@@ -103,67 +114,79 @@ export const BackgroundRemover = () => {
           MetadataPro AI Background Remover
         </h2>
 
-        {/* Mode Selector Row */}
+        {/* Engine Header Row */}
         <div style={{
           display: 'flex', gap: '16px', alignItems: 'center',
           background: GLASS_BG, border: `1px solid ${GLASS_BORDER}`,
-          borderRadius: '12px', padding: '12px 24px', flexWrap: 'wrap',
+          borderRadius: '12px', padding: '10px 20px', flexWrap: 'wrap',
           backdropFilter: 'blur(20px)',
         }}>
-          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-1)' }}>Mode:</span>
-          
-          <button
-            style={{
-              padding: '6px 14px', borderRadius: '8px',
-              border: '1px solid var(--primary)',
-              background: 'var(--primary)',
-              color: 'white',
-              fontWeight: 600, cursor: 'default', fontSize: '0.8rem',
-              display: 'flex', alignItems: 'center', gap: '6px',
-            }}
-          >
-            <Sparkles size={14} /> Local Engine (Offline)
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-1)' }}>Engine:</span>
+            <div
+              style={{
+                padding: '4px 12px', borderRadius: '8px',
+                background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.15), rgba(139, 92, 246, 0.15))',
+                color: 'var(--primary)',
+                fontWeight: 700, fontSize: '0.8rem',
+                display: 'flex', alignItems: 'center', gap: '6px',
+                border: '1px solid rgba(37, 99, 235, 0.25)'
+              }}
+            >
+              <Sparkles size={14} /> BiRefNet Ultra HD (Offline AI)
+            </div>
+          </div>
+
+          <div style={{ height: '18px', width: '1px', background: 'var(--glass-border)' }} />
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-3)' }}>
+              High-precision deep neural segmentation with automatic anti-halo defringing
+            </span>
+          </div>
         </div>
 
-        <div style={{
-          flex: 1, display: 'flex', gap: '12px', minHeight: 0,
-          background: GLASS_BG,
-          backdropFilter: 'blur(20px)',
-          border: `1px solid ${GLASS_BORDER}`,
-          borderRadius: '16px',
-          padding: '24px',
-        }}>
-          {/* Main workspace */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            {!originalUrl ? (
-              <div 
-                onClick={() => fileInputRef.current?.click()}
-                style={{
-                  width: '100%', maxWidth: '500px', height: '300px',
-                  border: `2px dashed ${FIELD_BORDER}`,
-                  borderRadius: '16px',
-                  display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', justifyContent: 'center',
-                  cursor: 'pointer', background: FIELD_BG,
-                  gap: '16px', transition: 'all 0.2s'
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--primary)';
-                  e.currentTarget.style.background = 'rgba(37,99,235,0.05)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.borderColor = FIELD_BORDER;
-                  e.currentTarget.style.background = FIELD_BG;
-                }}
-              >
-                <Upload size={48} color="var(--primary)" />
-                <div style={{ textAlign: 'center' }}>
-                  <p style={{ margin: 0, fontWeight: 600, color: 'var(--text-1)' }}>Click or Drag to Upload</p>
-                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--text-2)' }}>JPEG, PNG, WebP supported</p>
-                </div>
+        {!originalUrl ? (
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (isProcessing) return;
+              const file = e.dataTransfer.files[0];
+              if (file) {
+                setOriginalFile(file);
+                if (originalUrl) URL.revokeObjectURL(originalUrl);
+                setOriginalUrl(URL.createObjectURL(file));
+                if (processedUrl) URL.revokeObjectURL(processedUrl);
+                setProcessedUrl(null);
+                setProgress(0);
+              }
+            }}
+            className="upload-zone"
+            onClick={() => !isProcessing && fileInputRef.current?.click()}
+            style={{ cursor: isProcessing ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.7 : 1 }}
+          >
+            <div className="flex flex-col items-center">
+              <div className="upload-icon-wrap" style={{ background: 'rgba(37,99,235,0.1)' }}>
+                <Upload style={{ width: "2rem", height: "2rem", color: "var(--primary)" }} />
               </div>
-            ) : (
+              <h3 style={{ margin: "0.4rem 0", fontSize: "1.05rem", fontWeight: 700, color: "var(--text-1)" }}>Drop Image here</h3>
+              <p className="text-muted" style={{ fontSize: "0.85rem" }}>
+                Or click to browse. Supported formats: JPG, PNG, WebP
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            flex: 1, display: 'flex', gap: '12px', minHeight: 0,
+            background: GLASS_BG,
+            backdropFilter: 'blur(20px)',
+            border: `1px solid ${GLASS_BORDER}`,
+            borderRadius: '16px',
+            padding: '24px',
+          }}>
+            {/* Main workspace */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', width: '100%', gap: '20px', height: '100%', minHeight: 0 }}>
                 {/* Original */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', minHeight: 0 }}>
@@ -188,16 +211,38 @@ export const BackgroundRemover = () => {
                     position: 'relative', minHeight: 0
                   }}>
                     {isProcessing ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '0 20px', textAlign: 'center' }}>
                         <motion.div
                           animate={{ rotate: 360 }}
-                          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                          transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
                         >
-                          <Loader2 size={32} color="var(--primary)" />
+                          <Loader2 size={36} color="var(--primary)" />
                         </motion.div>
-                        <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600 }}>
-                          {progress > 0 ? `Processing AI Model... ${Math.round(progress * 100)}%` : 'Initializing AI...'}
-                        </p>
+                        <div>
+                          <p style={{ margin: '0 0 4px 0', fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-1)' }}>
+                            BiRefNet Ultra HD Segmentation
+                          </p>
+                          <p style={{ margin: '0 0 8px 0', fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 600 }}>
+                            {processingStage || 'Processing AI model...'} ({elapsedSeconds}s)
+                          </p>
+                          <div style={{
+                            width: '200px', height: '4px', background: 'rgba(37, 99, 235, 0.15)',
+                            borderRadius: '4px', overflow: 'hidden', margin: '0 auto', position: 'relative'
+                          }}>
+                            <motion.div
+                              animate={{ x: ['-100%', '100%'] }}
+                              transition={{ repeat: Infinity, duration: 1.4, ease: "easeInOut" }}
+                              style={{
+                                width: '50%', height: '100%',
+                                background: 'linear-gradient(90deg, transparent, var(--primary), transparent)',
+                                borderRadius: '4px'
+                              }}
+                            />
+                          </div>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', display: 'block', marginTop: '6px' }}>
+                            BiRefNet Ultra HD deep neural network running... (~25-45s on CPU)
+                          </span>
+                        </div>
                       </div>
                     ) : processedUrl ? (
                       <img src={processedUrl} alt="Background removed result" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
@@ -210,18 +255,8 @@ export const BackgroundRemover = () => {
                   </div>
                 </div>
               </div>
-            )}
 
-            <input 
-              type="file" 
-              accept="image/png, image/jpeg, image/webp" 
-              ref={fileInputRef} 
-              style={{ display: 'none' }} 
-              onChange={handleFileSelect} 
-            />
-
-            {/* Actions */}
-            {originalUrl && (
+              {/* Actions */}
               <div style={{ display: 'flex', gap: '16px', marginTop: '24px' }}>
                 <button
                   aria-label="Clear image"
@@ -284,9 +319,17 @@ export const BackgroundRemover = () => {
                   </>
                 )}
               </div>
-            )}
+            </div>
           </div>
-        </div>
+        )}
+
+        <input 
+          type="file" 
+          accept="image/png, image/jpeg, image/webp" 
+          ref={fileInputRef} 
+          style={{ display: 'none' }} 
+          onChange={handleFileSelect} 
+        />
       </div>
     </HelmetProvider>
   );

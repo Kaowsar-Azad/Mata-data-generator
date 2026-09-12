@@ -16,13 +16,14 @@ function getRemoveBgProxyBase() {
  * @param {File} file
  * @returns {Promise<Blob>}
  */
-export async function removeBackgroundViaLocalServer(file) {
+export async function removeBackgroundViaLocalServer(file, model = 'isnet-general-use') {
   // Bypass Electron IPC for local removal because ONNX runtime crashes Electron Main Process.
   // We will let it fallback to the external Node.js Express server running on port 3001.
   
   const base = getRemoveBgProxyBase();
   const fd = new FormData();
   fd.append('file', file, file.name || 'upload.png');
+  fd.append('model', model || 'isnet-general-use');
 
   let res;
   try {

@@ -24,6 +24,42 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ Connected to MongoDB Atlas!'))
   .catch((err) => console.error('❌ Failed to connect to MongoDB:', err));
 
+// Helper to dynamically resolve the best Python executable on Windows / Linux / macOS
+function resolvePythonExecutable() {
+  if (process.platform !== 'win32') return 'python3';
+  const localApp = process.env.LOCALAPPDATA || (process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'AppData', 'Local') : '');
+  if (localApp) {
+    const candidates = [
+      path.join(localApp, 'Programs', 'Python', 'Python310', 'python.exe'),
+      path.join(localApp, 'Programs', 'Python', 'Python311', 'python.exe'),
+      path.join(localApp, 'Programs', 'Python', 'Python312', 'python.exe'),
+      path.join(localApp, 'Programs', 'Python', 'Python39', 'python.exe'),
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) return c;
+    }
+  }
+  const progFiles = [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], 'C:\\Program Files'].filter(Boolean);
+  for (const pf of progFiles) {
+    for (const ver of ['Python310', 'Python311', 'Python312', 'Python39']) {
+      const c = path.join(pf, ver, 'python.exe');
+      if (fs.existsSync(c)) return c;
+    }
+  }
+  return 'py';
+}
+
+function getPythonSpawnEnv(pythonExe) {
+  const pythonDir = path.isAbsolute(pythonExe) ? path.dirname(pythonExe) : '';
+  const extraPaths = pythonDir ? `${pythonDir};${path.join(pythonDir, 'Scripts')};${path.join(pythonDir, 'DLLs')};` : '';
+  return {
+    ...process.env,
+    PATH: `${extraPaths}${process.env.PATH || ''}`,
+    PYTHONIOENCODING: 'utf-8',
+    KMP_DUPLICATE_LIB_OK: 'TRUE',
+  };
+}
+
 app.get('/api/prompt-categories', async (req, res) => {
   try {
     const categories = await Category.find({});
@@ -262,17 +298,25 @@ app.post('/api/removebg', upload.single('file'), async (req, res) => {
     fs.writeFileSync(maskPath, removeBgBuffer);
     
     const pyScriptPath = path.join(process.cwd(), 'server', 'python_edge_cleaner.py');
-    const pythonExecutable = process.platform === 'win32' ? 'py' : 'python3';
+    const pythonExecutable = resolvePythonExecutable();
+    const pythonEnv = getPythonSpawnEnv(pythonExecutable);
     
     await new Promise((resolve, reject) => {
-      const child = spawn(pythonExecutable, [pyScriptPath, req.file.path, maskPath, outPath]);
-      let errOutput = '';
-      child.stderr.on('data', (data) => errOutput += data.toString());
-      child.stdout.on('data', (data) => console.log(data.toString().trim()));
+      const child = spawn(pythonExecutable, [pyScriptPath, req.file.path, maskPath, outPath], {
+        windowsHide: true,
+        env: pythonEnv,
+      });
+      let combinedOutput = '';
+      child.stderr.on('data', (data) => combinedOutput += data.toString());
+      child.stdout.on('data', (data) => {
+        const text = data.toString();
+        combinedOutput += text;
+        console.log(text.trim());
+      });
       
       child.on('close', (code) => {
         if (code === 0 && fs.existsSync(outPath)) resolve();
-        else reject(new Error(errOutput || `Python process exited with code ${code}`));
+        else reject(new Error(combinedOutput.trim() || `Python process exited with code ${code}`));
       });
     });
     
@@ -398,30 +442,39 @@ app.post('/api/remove-bg-local', upload.single('file'), async (req, res) => {
 
   const tmpPath = req.file.path;
   const outPath = tmpPath + '_cutout.png';
+  const model = req.body?.model || 'isnet-general-use';
 
   try {
-    console.log('[remove-bg-python] Spawning native python process...');
+    console.log(`[remove-bg-python] Spawning native python process with model: ${model}...`);
     
     const pyScriptPath = path.join(process.cwd(), 'server', 'python_bg_remover.py');
-    const pythonExecutable = process.platform === 'win32' ? 'py' : 'python3'; // 'py' is safest on Windows
+    const pythonExecutable = resolvePythonExecutable();
+    const pythonEnv = getPythonSpawnEnv(pythonExecutable);
 
     const runPythonScript = () => {
       return new Promise((resolve, reject) => {
-        const child = spawn(pythonExecutable, [pyScriptPath, tmpPath, outPath]);
+        const child = spawn(pythonExecutable, [pyScriptPath, tmpPath, outPath, '--model', model], {
+          windowsHide: true,
+          env: pythonEnv,
+        });
         
-        let errOutput = '';
+        let combinedOutput = '';
         child.stderr.on('data', (data) => {
-          errOutput += data.toString();
+          const text = data.toString();
+          combinedOutput += text;
+          console.error(text.trim());
         });
         child.stdout.on('data', (data) => {
-          console.log(data.toString().trim());
+          const text = data.toString();
+          combinedOutput += text;
+          console.log(text.trim());
         });
         
         child.on('close', (code) => {
           if (code === 0 && fs.existsSync(outPath)) {
             resolve();
           } else {
-            reject(new Error(errOutput || `Python process exited with code ${code}`));
+            reject(new Error(combinedOutput.trim() || `Python process exited with code ${code}`));
           }
         });
       });
@@ -435,8 +488,11 @@ app.post('/api/remove-bg-local', upload.single('file'), async (req, res) => {
       if (errMsg.includes("No module named 'rembg'") || errMsg.includes("ModuleNotFoundError")) {
         console.log('[remove-bg-python] Missing dependencies detected. Installing via pip...');
         await new Promise((resolve, reject) => {
-          const pipArgs = ['-m', 'pip', 'install', 'rembg', 'pillow', 'onnxruntime'];
-          const pipChild = spawn(pythonExecutable, pipArgs);
+          const pipArgs = ['-m', 'pip', 'install', 'rembg', 'pillow', 'onnxruntime', 'opencv-python', 'numpy'];
+          const pipChild = spawn(pythonExecutable, pipArgs, {
+            windowsHide: true,
+            env: pythonEnv,
+          });
           
           pipChild.stdout.on('data', (data) => console.log(data.toString().trim()));
           pipChild.stderr.on('data', (data) => console.log(data.toString().trim()));

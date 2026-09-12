@@ -1,18 +1,28 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Image as ImageIcon, Upload, Loader2, CheckCircle, AlertCircle, Play, Trash2, Folder, RotateCcw, Square, ChevronDown } from "lucide-react";
 import { processEpsFile, isEpsFile } from "../services/epsService";
 
-export function EpsPreviewGenerator() {
-  const [files, setFiles] = useState([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [addWhiteBg, setAddWhiteBg] = useState(true);
-  const [outputExt, setOutputExt] = useState('.jpg');
-  const [outputFolder, setOutputFolder] = useState(null);
-  const [isFormatOpen, setIsFormatOpen] = useState(false);
-  const fileInputRef = useRef(null);
-  const isCancelledRef = useRef(false);
+interface EpsFileState {
+  name: string;
+  path: string;
+  file: File;
+  previewUrl: string | null;
+  isProcessingPreview: boolean;
+  status: 'idle' | 'processing' | 'success' | 'error';
+  errorMsg: string | null;
+}
 
-  const handleDrop = (e) => {
+export function EpsPreviewGenerator() {
+  const [files, setFiles] = useState<EpsFileState[]>([]);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [addWhiteBg, setAddWhiteBg] = useState<boolean>(true);
+  const [outputExt, setOutputExt] = useState<string>('.jpg');
+  const [outputFolder, setOutputFolder] = useState<string | null>(null);
+  const [isFormatOpen, setIsFormatOpen] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const isCancelledRef = useRef<boolean>(false);
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     const dropped = Array.from(e.dataTransfer.files).filter(f => {
       const ext = f.name.toLowerCase();
@@ -23,7 +33,8 @@ export function EpsPreviewGenerator() {
     }
   };
 
-  const onFileChange = (e) => {
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
     const selected = Array.from(e.target.files).filter(f => {
       const ext = f.name.toLowerCase();
       return ext.endsWith('.eps') || ext.endsWith('.png') || ext.endsWith('.heic') || ext.endsWith('.heif');
@@ -33,27 +44,27 @@ export function EpsPreviewGenerator() {
     }
   };
 
-  const addFiles = (newFiles) => {
+  const addFiles = (newFiles: File[]) => {
     setFiles(prev => {
       const existingPaths = new Set(prev.map(f => f.path));
-      const uniqueFiles = newFiles.filter(f => !existingPaths.has(f.path));
-      const fileObjects = uniqueFiles.map(f => {
+      const uniqueFiles = newFiles.filter(f => !existingPaths.has((f as any).path));
+      const fileObjects: EpsFileState[] = uniqueFiles.map(f => {
         const isPng = f.name.toLowerCase().endsWith('.png');
         return {
           name: f.name,
-          path: f.path,
+          path: (f as any).path,
           file: f,
           previewUrl: isPng ? URL.createObjectURL(f) : null,
           isProcessingPreview: false,
-          status: 'idle', // 'idle' | 'processing' | 'success' | 'error'
-          errorMsg: ''
+          status: 'idle',
+          errorMsg: null
         };
       });
       return [...prev, ...fileObjects];
     });
   };
 
-  const removeFile = (pathToRemove) => {
+  const removeFile = (pathToRemove: string) => {
     const fileToRemove = files.find(f => f.path === pathToRemove);
     if (fileToRemove?.previewUrl && fileToRemove.previewUrl.startsWith('blob:')) {
       URL.revokeObjectURL(fileToRemove.previewUrl);
@@ -70,7 +81,6 @@ export function EpsPreviewGenerator() {
     setFiles([]);
   };
 
-  // Handle EPS previews asynchronously
   useEffect(() => {
     const processPreviews = async () => {
       const epsFilesWithoutPreview = files.filter(
@@ -116,18 +126,18 @@ export function EpsPreviewGenerator() {
   }, [files]);
 
   const handleSelectOutputFolder = async () => {
-    if (!window.electronAPI?.selectFolder) return;
-    const result = await window.electronAPI.selectFolder();
+    if (!(window as any).electronAPI?.selectFolder) return;
+    const result = await (window as any).electronAPI.selectFolder();
     if (result && !result.canceled && result.filePaths && result.filePaths.length > 0) {
       setOutputFolder(result.filePaths[0]);
     }
   };
 
-  const generatePreviews = async (forceAll = false) => {
+  const generatePreviews = async (forceAll: boolean = false) => {
     setIsProcessing(true);
     isCancelledRef.current = false;
     
-    const targetFiles = forceAll ? files.map(f => ({ ...f, status: 'idle', errorMsg: null })) : files;
+    const targetFiles = forceAll ? files.map(f => ({ ...f, status: 'idle' as const, errorMsg: null })) : files;
     if (forceAll) {
       setFiles(targetFiles);
     }
@@ -140,11 +150,11 @@ export function EpsPreviewGenerator() {
       setFiles(prev => prev.map(f => f.path === file.path ? { ...f, status: 'processing' } : f));
 
       try {
-        if (!window.electronAPI?.generateEpsJpg) {
+        if (!(window as any).electronAPI?.generateEpsJpg) {
           throw new Error('Electron API not found. Are you running in the desktop app?');
         }
 
-        const result = await window.electronAPI.generateEpsJpg(file.path, addWhiteBg, outputExt, outputFolder);
+        const result = await (window as any).electronAPI.generateEpsJpg(file.path, addWhiteBg, outputExt, outputFolder);
         
         if (isCancelledRef.current) break;
 
@@ -153,7 +163,7 @@ export function EpsPreviewGenerator() {
         } else {
           throw new Error(result.error || 'Failed to generate JPG');
         }
-      } catch (err) {
+      } catch (err: any) {
         if (!isCancelledRef.current) {
           setFiles(prev => prev.map(f => f.path === file.path ? { ...f, status: 'error', errorMsg: err.message } : f));
         }
@@ -278,7 +288,7 @@ export function EpsPreviewGenerator() {
                 <div 
                   tabIndex={isProcessing ? -1 : 0}
                   onBlur={(e) => {
-                    if (!e.currentTarget.contains(e.relatedTarget)) {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
                       setIsFormatOpen(false);
                     }
                   }}
@@ -508,7 +518,7 @@ export function EpsPreviewGenerator() {
                     {file.status === 'processing' && <Loader2 className="w-4 h-4 animate-spin color-primary" />}
                     {file.status === 'success' && <CheckCircle style={{ width: "1rem", height: "1rem", color: "var(--success)" }} />}
                     {file.status === 'error' && (
-                      <div title={file.errorMsg} style={{ display: "flex", alignItems: "center", gap: "0.25rem", color: "var(--danger)" }}>
+                      <div title={file.errorMsg || 'Error'} style={{ display: "flex", alignItems: "center", gap: "0.25rem", color: "var(--danger)" }}>
                         <AlertCircle style={{ width: "1rem", height: "1rem" }} />
                         <span style={{ fontSize: "0.75rem", fontWeight: 600 }}>Failed</span>
                       </div>

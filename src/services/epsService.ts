@@ -10,27 +10,39 @@
  *    We extract this and send it as text context to Gemini!
  */
 
-const readAsArrayBuffer = (file) =>
+export interface EpsProcessResult {
+  base64: string;
+  mimeType: string;
+  dataUrl: string;
+  isPlaceholder: boolean;
+  extractedTextContext?: string | null;
+}
+
+export interface EpsProcessOptions {
+  fastOnly?: boolean;
+}
+
+const readAsArrayBuffer = (file: File | Blob): Promise<ArrayBuffer> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsArrayBuffer(file);
-    reader.onload = () => resolve(reader.result);
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
     reader.onerror = reject;
   });
 
-const readAsText = (file) =>
+const readAsText = (file: Blob): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
     // Read first 1MB to ensure we capture XMP metadata, swatches, and layer names
     const blob = file.slice(0, 1048576);
     reader.readAsText(blob, 'ascii');
-    reader.onload = () => resolve(reader.result);
+    reader.onload = () => resolve(reader.result as string);
     reader.onerror = reject;
   });
 
 // --- Image Extraction Methods ---
 
-function extractJpegFromBuffer(buffer) {
+function extractJpegFromBuffer(buffer: ArrayBuffer): Blob | null {
   const bytes = new Uint8Array(buffer);
   let start = -1;
   for (let i = 0; i < bytes.length - 2; i++) {
@@ -53,16 +65,11 @@ function extractJpegFromBuffer(buffer) {
   return new Blob([jpegBytes], { type: 'image/jpeg' });
 }
 
-async function extractDosBinaryEpsPreview(file) {
+async function extractDosBinaryEpsPreview(file: File): Promise<{ type: 'jpeg' | 'tiff', data: ArrayBuffer } | null> {
   try {
     // Read only the first 32 bytes to parse the DOS binary header (Instant, zero memory bloat)
     const headerBlob = file.slice(0, 32);
-    const headerBuffer = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsArrayBuffer(headerBlob);
-    });
+    const headerBuffer = await readAsArrayBuffer(headerBlob);
     
     const bytes = new Uint8Array(headerBuffer);
     const magic = [0xC5, 0xD0, 0xD3, 0xC6];
@@ -70,7 +77,7 @@ async function extractDosBinaryEpsPreview(file) {
       return null;
     }
     
-    const readUint32LE = (offset) =>
+    const readUint32LE = (offset: number) =>
       bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24);
 
     const tiffOffset = readUint32LE(12);
@@ -79,18 +86,13 @@ async function extractDosBinaryEpsPreview(file) {
     if (tiffOffset > 0 && tiffLength > 0 && tiffOffset + tiffLength <= file.size) {
       // Read ONLY the preview chunk, avoiding reading the 50MB+ vector data
       const previewBlob = file.slice(tiffOffset, tiffOffset + tiffLength);
-      const previewBuffer = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsArrayBuffer(previewBlob);
-      });
+      const previewBuffer = await readAsArrayBuffer(previewBlob);
       
       const previewBytes = new Uint8Array(previewBuffer);
       if (previewBytes[0] === 0xFF && previewBytes[1] === 0xD8) {
-        return { type: 'jpeg', data: previewBuffer }; // Pass pure ArrayBuffer
+        return { type: 'jpeg', data: previewBuffer }; 
       }
-      return { type: 'tiff', data: previewBuffer }; // Pass pure ArrayBuffer
+      return { type: 'tiff', data: previewBuffer };
     }
     return null;
   } catch (err) {
@@ -99,7 +101,7 @@ async function extractDosBinaryEpsPreview(file) {
   }
 }
 
-async function convertTiffToPng(tiffBuffer) {
+async function convertTiffToPng(tiffBuffer: ArrayBuffer): Promise<EpsProcessResult | null> {
   try {
     // 1. Desktop App Mode (Electron) - Try Sharp C++ (Fastest)
     if (window.electronAPI && window.electronAPI.decodeTiff) {
@@ -115,7 +117,7 @@ async function convertTiffToPng(tiffBuffer) {
     }
     
     // 2. Main Thread UTIF.js Decoding (Fast and reliable for embedded EPS TIFFs)
-    if (!window.UTIF) {
+    if (!(window as any).UTIF) {
       console.warn("[EPS] UTIF library not found on window object.");
       return null;
     }
@@ -123,12 +125,12 @@ async function convertTiffToPng(tiffBuffer) {
     // Yield control to the UI event loop for 10ms to keep clicks responsive
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    const ifds = window.UTIF.decode(tiffBuffer);
+    const ifds = (window as any).UTIF.decode(tiffBuffer);
     if (!ifds || ifds.length === 0) {
       throw new Error("No TIFF image layers found");
     }
-    window.UTIF.decodeImage(tiffBuffer, ifds[0]);
-    const rgba = window.UTIF.toRGBA8(ifds[0]);
+    (window as any).UTIF.decodeImage(tiffBuffer, ifds[0]);
+    const rgba = (window as any).UTIF.toRGBA8(ifds[0]);
     const width = ifds[0].width;
     const height = ifds[0].height;
 
@@ -136,6 +138,8 @@ async function convertTiffToPng(tiffBuffer) {
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    
     const imgData = new ImageData(new Uint8ClampedArray(rgba), width, height);
     ctx.putImageData(imgData, 0, 0);
 
@@ -153,7 +157,7 @@ async function convertTiffToPng(tiffBuffer) {
   }
 }
 
-async function blobToPngBase64(blob) {
+async function blobToPngBase64(blob: Blob): Promise<EpsProcessResult | null> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(blob);
     const img = new Image();
@@ -162,6 +166,10 @@ async function blobToPngBase64(blob) {
       canvas.width = img.naturalWidth || 512;
       canvas.height = img.naturalHeight || 512;
       const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(null);
+        return;
+      }
       ctx.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
       const dataUrl = canvas.toDataURL('image/png');
@@ -183,14 +191,9 @@ async function blobToPngBase64(blob) {
 
 // --- Deep Text Extraction (The Magic!) ---
 
-/**
- * Extracts XMP metadata, layer names, swatches, and embedded text strings
- * from the raw EPS file text to give Gemini contextual clues.
- */
-function extractEpsTextContext(epsText) {
-  let contextParts = [];
+function extractEpsTextContext(epsText: string): string {
+  let contextParts: string[] = [];
 
-  // 1. Extract XMP Metadata Title/Description (using fast, safe index search)
   const xmpStart = epsText.indexOf('<x:xmpmeta');
   const xmpEnd = epsText.indexOf('</x:xmpmeta>');
   if (xmpStart !== -1 && xmpEnd !== -1 && xmpEnd > xmpStart) {
@@ -213,26 +216,22 @@ function extractEpsTextContext(epsText) {
     }
   }
 
-  // 2. Extract layers, swatches, document title, and Tj text line-by-line
   const lines = epsText.split(/\r?\n/);
-  const layers = [];
-  const swatches = [];
-  const textStrings = [];
+  const layers: string[] = [];
+  const swatches: string[] = [];
+  const textStrings: string[] = [];
   let docTitle = "";
 
   for (let line of lines) {
-    // Skip binary block lines to prevent RegExp catastrophic backtracking (lockup) on massive lines
     if (line.length > 1000) continue;
     
     line = line.trim();
     if (!line) continue;
 
-    // %%Title: document title
     if (line.startsWith('%%Title:')) {
       docTitle = line.replace('%%Title:', '').trim();
     }
 
-    // Layer name: e.g. %AI5_BeginLayer: ...
     if (line.includes('%AI5_BeginLayer')) {
       const matchQuote = line.match(/"([^"]+)"/);
       if (matchQuote) {
@@ -245,7 +244,6 @@ function extractEpsTextContext(epsText) {
       }
     }
 
-    // Swatches: e.g. %AI5_Begin_NonPrintable: ...
     if (line.includes('%AI5_Begin_NonPrintable')) {
       const matchQuote = line.match(/"([^"]+)"/);
       if (matchQuote) {
@@ -258,7 +256,6 @@ function extractEpsTextContext(epsText) {
       }
     }
 
-    // Tj text: e.g. (text) Tj
     if (textStrings.length < 10) {
       const tjMatch = line.match(/\(([^)]+)\)\s+Tj/);
       if (tjMatch) {
@@ -288,13 +285,13 @@ function extractEpsTextContext(epsText) {
   return contextParts.join('\n');
 }
 
-
 // --- Placeholder rendering ---
-function renderEpsPlaceholder(fileName) {
+function renderEpsPlaceholder(fileName: string): EpsProcessResult {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 512;
   const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error("Canvas context failed");
 
   const grad = ctx.createLinearGradient(0, 0, 512, 512);
   grad.addColorStop(0, '#1e1b4b');
@@ -331,29 +328,28 @@ function renderEpsPlaceholder(fileName) {
   };
 }
 
-// Concurrency lock for EPS processing to prevent system hang
 let activeEpsProcesses = 0;
 const MAX_CONCURRENT_EPS = 1;
-const epsQueue = [];
+const epsQueue: (() => void)[] = [];
 
-async function acquireEpsLock() {
+async function acquireEpsLock(): Promise<void> {
   if (activeEpsProcesses < MAX_CONCURRENT_EPS) {
     activeEpsProcesses++;
     return Promise.resolve();
   }
-  return new Promise(resolve => epsQueue.push(resolve));
+  return new Promise(resolve => epsQueue.push(resolve as () => void));
 }
 
 function releaseEpsLock() {
   if (epsQueue.length > 0) {
     const next = epsQueue.shift();
-    next();
+    if (next) next();
   } else {
     activeEpsProcesses--;
   }
 }
 
-export async function processEpsFile(file, options = {}) {
+export async function processEpsFile(file: File, options: EpsProcessOptions = {}): Promise<EpsProcessResult> {
   console.log(`[EPS Lock] Attempting to acquire lock for: ${file.name}`);
   await acquireEpsLock();
   console.log(`[EPS Lock] Lock ACQUIRED for: ${file.name}`);
@@ -365,12 +361,11 @@ export async function processEpsFile(file, options = {}) {
   }
 }
 
-async function _processEpsFile(file, options = {}) {
+async function _processEpsFile(file: File, options: EpsProcessOptions = {}): Promise<EpsProcessResult> {
   try {
     console.log(`[EPS] Starting processing of file: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
     
-    // 1. Always extract text context first (fast, first 1MB slice)
-    let textContext = null;
+    let textContext: string | null = null;
     try {
       console.log(`[EPS] Slicing first 1MB for text context...`);
       const textChunk = file.slice(0, 1048576);
@@ -382,7 +377,6 @@ async function _processEpsFile(file, options = {}) {
       console.warn('[EPS] Non-fatal: Could not extract deep text context.', err);
     }
 
-    // 2. Attempt super-fast DOS binary preview extraction (TIFF or JPEG) first (milliseconds)
     try {
       console.log(`[EPS] Checking if file has built-in DOS binary preview...`);
       const preview = await extractDosBinaryEpsPreview(file);
@@ -424,7 +418,6 @@ async function _processEpsFile(file, options = {}) {
       console.warn('[EPS] Fast binary preview extraction failed, falling back:', err);
     }
 
-    // If fastOnly is true, skip Ghostscript and return placeholder immediately!
     if (options.fastOnly) {
       console.log('[EPS] fastOnly mode active. Returning placeholder without Ghostscript.');
       const placeholder = renderEpsPlaceholder(file.name);
@@ -432,11 +425,10 @@ async function _processEpsFile(file, options = {}) {
       return placeholder;
     }
 
-    // 3. Desktop App Mode (Electron) - Fallback to Ghostscript if binary preview is missing
     if (window.electronAPI) {
       console.log('[EPS] Running in Electron. Spawning Native Ghostscript...');
       
-      const filePath = file.path; 
+      const filePath = (file as any).path; 
       if (!filePath) {
         console.error('[EPS] filePath is missing on File object!');
         throw new Error("File path is missing. Drag and drop the file directly.");
@@ -447,7 +439,7 @@ async function _processEpsFile(file, options = {}) {
         const result = await window.electronAPI.processEps(filePath);
         console.log(`[EPS] Native Ghostscript finished. Success: ${result?.success}`);
         
-        if (result && result.success) {
+        if (result && result.success && result.base64 && result.mimeType) {
           return {
             base64: result.base64,
             mimeType: result.mimeType,
@@ -466,19 +458,18 @@ async function _processEpsFile(file, options = {}) {
       }
     }
 
-    // 4. Web Browser Mode (Fallback) - Pure Client-Side Placeholder
     console.log('[EPS] Web Browser fallback mode. Rendering canvas placeholder...');
     const placeholder = renderEpsPlaceholder(file.name);
     placeholder.extractedTextContext = textContext || "No readable context found inside this EPS.";
     return placeholder;
 
-  } catch (err) {
+  } catch (err: any) {
     console.error('[EPS] Processing failed critically:', err);
     throw new Error('Failed to process EPS file: ' + err.message);
   }
 }
 
-export function isEpsFile(file) {
+export function isEpsFile(file: File): boolean {
   if (!file) return false;
   if (file.type === 'application/postscript' ||
       file.type === 'application/eps' ||

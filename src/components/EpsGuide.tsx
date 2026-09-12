@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Download, ChevronDown, ChevronUp, FileCode2, Image as ImageIcon, ArrowRight, Terminal } from "lucide-react";
 
 // --- The Adobe Illustrator Script (runs inside Illustrator via File > Scripts > Other Script) ---
@@ -55,7 +55,7 @@ if (docs.length === 0) {
 }`;
 
 export function EpsGuide() {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState<boolean>(false);
 
   const downloadScript = () => {
     const blob = new Blob([ILLUSTRATOR_SCRIPT], { type: "text/plain;charset=utf-8;" });
@@ -180,7 +180,15 @@ export function EpsGuide() {
   );
 }
 
-function Step({ number, icon, title, desc, highlight }) {
+interface StepProps {
+  number: string;
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  highlight?: boolean;
+}
+
+function Step({ number, icon, title, desc, highlight }: StepProps) {
   return (
     <div style={{
       display: "flex",

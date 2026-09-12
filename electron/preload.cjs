@@ -4,7 +4,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   decodeTiff: (tiffBuffer) => ipcRenderer.invoke('decode-tiff', tiffBuffer),
   processEps: (filePath) => ipcRenderer.invoke('process-eps', filePath),
   removeBgLocal: (filePath) => ipcRenderer.invoke('remove-bg-local', filePath),
-  removeBgApi: (filePath, apiKey) => ipcRenderer.invoke('remove-bg-api', filePath, apiKey),
   removeBgHf: (filePath, token) => ipcRenderer.invoke('remove-bg-hf', filePath, token),
   removeBgRecraft: (filePath, token) => ipcRenderer.invoke('remove-bg-recraft', filePath, token),
   saveKey: (provider, key, index) => ipcRenderer.invoke('save-key', provider, key, index),

@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Helmet, HelmetProvider } from 'react-helmet-async';
-import { Upload, Download, Trash2, Loader2, Sparkles, Image as ImageIcon, KeyRound, RefreshCw } from 'lucide-react';
-import { removeBackgroundViaRemoveBgProxy, removeBackgroundViaLocalServer } from '../../services/removeBgProxy.js';
-import { saveKeySecurely, getKeySecurely } from '../../services/secureStorage.js';
+import { Upload, Download, Trash2, Loader2, Sparkles, Image as ImageIcon, RefreshCw } from 'lucide-react';
+import { removeBackgroundViaLocalServer } from '../../services/removeBgProxy.js';
 
 /* ─── Light Glassmorphism Tokens ──────────────────────────── */
 const GLASS_BG      = 'rgba(255, 255, 255, 0.62)';
@@ -17,23 +16,7 @@ export const BackgroundRemover = () => {
   const [processedUrl, setProcessedUrl] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [mode, setMode] = useState('local'); // 'local' | 'api'
-  const [apiKey, setApiKey] = useState('');
   const fileInputRef = useRef(null);
-
-  // Load keys on mount
-  useEffect(() => {
-    const loadKeys = async () => {
-        const secureApi = await getKeySecurely('removebg');
-      if (secureApi) {
-        setApiKey(secureApi);
-      } else {
-        const storedApi = localStorage.getItem('removebg_api_key');
-        if (storedApi) setApiKey(storedApi);
-      }
-    };
-    loadKeys();
-  }, []);
 
   // Cleanup blob URLs on unmount
   useEffect(() => {
@@ -43,19 +26,13 @@ export const BackgroundRemover = () => {
     };
   }, [originalUrl, processedUrl]);
 
-  const persistApiKey = async (val) => {
-    setApiKey(val);
-    localStorage.setItem('removebg_api_key', val);
-    await saveKeySecurely('removebg', val);
-  };
-
   const schemaMarkup = {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
     name: 'MetadataPro AI Background Remover',
     applicationCategory: 'UtilitiesApplication',
     operatingSystem: 'Web',
-    description: 'Premium online and offline background remover.',
+    description: 'Premium offline background remover.',
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' }
   };
 
@@ -83,16 +60,7 @@ export const BackgroundRemover = () => {
     }, 800);
 
     try {
-      let resultBlob;
-      if (mode === 'local') {
-        resultBlob = await removeBackgroundViaLocalServer(originalFile);
-      } else {
-        const trimmed = apiKey.trim();
-        if (!trimmed) {
-          throw new Error("Please enter your remove.bg API key.");
-        }
-        resultBlob = await removeBackgroundViaRemoveBgProxy(originalFile, trimmed);
-      }
+      const resultBlob = await removeBackgroundViaLocalServer(originalFile);
       
       clearInterval(interval);
       setProgress(1.0);
@@ -145,50 +113,17 @@ export const BackgroundRemover = () => {
           <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-1)' }}>Mode:</span>
           
           <button
-            onClick={() => setMode('local')}
             style={{
               padding: '6px 14px', borderRadius: '8px',
-              border: mode === 'local' ? '1px solid var(--primary)' : `1px solid ${FIELD_BORDER}`,
-              background: mode === 'local' ? 'var(--primary)' : FIELD_BG,
-              color: mode === 'local' ? 'white' : 'var(--text-1)',
-              fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem',
+              border: '1px solid var(--primary)',
+              background: 'var(--primary)',
+              color: 'white',
+              fontWeight: 600, cursor: 'default', fontSize: '0.8rem',
               display: 'flex', alignItems: 'center', gap: '6px',
-              transition: 'all 0.2s'
             }}
           >
             <Sparkles size={14} /> Local Engine (Offline)
           </button>
-
-          <button
-            onClick={() => setMode('api')}
-            style={{
-              padding: '6px 14px', borderRadius: '8px',
-              border: mode === 'api' ? '1px solid var(--primary)' : `1px solid ${FIELD_BORDER}`,
-              background: mode === 'api' ? 'var(--primary)' : FIELD_BG,
-              color: mode === 'api' ? 'white' : 'var(--text-1)',
-              fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem',
-              display: 'flex', alignItems: 'center', gap: '6px',
-              transition: 'all 0.2s'
-            }}
-          >
-            <Sparkles size={14} /> remove.bg API (Premium)
-          </button>
-
-          {/* Dynamic Settings Inputs */}
-          {mode === 'api' && (
-            <input
-              type="password"
-              placeholder="remove.bg API Key"
-              value={apiKey}
-              onChange={(e) => persistApiKey(e.target.value)}
-              style={{
-                padding: '6px 12px', borderRadius: '8px',
-                border: `1px solid ${FIELD_BORDER}`, background: FIELD_BG,
-                color: 'var(--text-1)',
-                fontSize: '0.8rem', minWidth: '220px', outline: 'none'
-              }}
-            />
-          )}
         </div>
 
         <div style={{
@@ -349,14 +284,6 @@ export const BackgroundRemover = () => {
                   </>
                 )}
               </div>
-            )}
-            
-            {originalUrl && (
-              <p style={{
-                marginTop: '16px', fontSize: '0.8rem', color: 'var(--text-3)', textAlign: 'center', width: '100%'
-              }}>
-                Tip: For perfect background removal of images with watermarks or fine details, use remove.bg API (Premium) mode above.
-              </p>
             )}
           </div>
         </div>

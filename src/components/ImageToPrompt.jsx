@@ -84,6 +84,8 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
 
   const removeImage = (id) => {
     setImages((prev) => {
+      const img = prev.find(i => i.id === id);
+      if (img?.preview?.startsWith('blob:')) URL.revokeObjectURL(img.preview);
       const filtered = prev.filter((img) => img.id !== id);
       if (filtered.length === 0) {
         abortRef.current = true;
@@ -96,6 +98,9 @@ export function ImageToPrompt({ apiKeys, apiProvider, promptSettings, setPromptS
 
   const clearAll = () => {
     abortRef.current = true;
+    images.forEach(img => {
+      if (img.preview?.startsWith('blob:')) URL.revokeObjectURL(img.preview);
+    });
     setImages([]);
     setIsProcessing(false);
     setProgress(0);

@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     };
   },
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
-  generateEpsJpg: (filePath, addWhiteBgToPng) => ipcRenderer.invoke('generate-eps-jpg', filePath, addWhiteBgToPng),
+  generateEpsJpg: (filePath, addWhiteBgToPng, outputExt, outputFolder) => ipcRenderer.invoke('generate-eps-jpg', filePath, addWhiteBgToPng, outputExt, outputFolder),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFiles: (options) => ipcRenderer.invoke('select-files', options),
   saveFile: (filePath, bufferArray) => ipcRenderer.invoke('save-file', filePath, bufferArray),

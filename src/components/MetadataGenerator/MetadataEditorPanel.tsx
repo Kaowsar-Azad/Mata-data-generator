@@ -83,7 +83,7 @@ export function MetadataEditorPanel({
           </div>
           <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.25rem', alignItems: 'center' }}>
             <StatusBadge status={img.status} progress={img.upscaleProgress} upscaleModel={img.upscaleModel} />
-            {img.embeddingStatus && img.embeddingStatus !== 'none' && (
+            {img.embeddingStatus && img.embeddingStatus !== 'none' && img.status === 'done' && (
               <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '1px 6px', borderRadius: '4px', background: img.embeddingStatus === 'success' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', color: img.embeddingStatus === 'success' ? '#22c55e' : '#ef4444' }}>
                 {img.embeddingStatus === 'success' ? 'Embedded' : img.embeddingStatus}
               </span>
@@ -163,7 +163,7 @@ export function MetadataEditorPanel({
             <div className="premium-indicator-spinner" />
             <ShieldAlert className="w-2.5 h-2.5 premium-indicator-inner" />
           </div>
-          <span>Scanning for Policy Violations...</span>
+          <span>Generating metadata & policy check with AI...</span>
         </div>
       )}
 

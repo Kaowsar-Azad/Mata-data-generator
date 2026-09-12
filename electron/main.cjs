@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const sharp = require('sharp');
+sharp.cache(false); // Disable sharp cache to prevent memory leaks and file locks
 const { Transform } = require('stream');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegStatic = require('ffmpeg-static');
@@ -64,7 +65,10 @@ if (!isDev) {
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
-app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,TimerThrottlingForBackgroundTabs,StopNonTimersInBackground');
+
+// Raise V8 heap limit to 4GB so large batches (200+ images) don't OOM-crash the renderer
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -82,6 +86,30 @@ function createWindow() {
     autoHideMenuBar: true,
   });
 
+  // ── Renderer Crash Auto-Recovery ───────────────────────────────────────────
+  // When the renderer process dies (OOM, GPU crash, etc.), Electron shows a blank
+  // white page. This handler auto-reloads the window so the user never gets stuck.
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    fileLog('[CRITICAL] Renderer process gone! Reason:', details.reason, 'Exit code:', details.exitCode);
+    if (!isQuitting) {
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          fileLog('[RECOVERY] Auto-reloading window after renderer crash...');
+          mainWindow.reload();
+        }
+      }, 1000);
+    }
+  });
+
+  mainWindow.on('unresponsive', () => {
+    fileLog('[WARNING] Window became unresponsive — possible heavy processing or deadlock');
+  });
+
+  mainWindow.on('responsive', () => {
+    fileLog('[INFO] Window became responsive again');
+  });
+  // ──────────────────────────────────────────────────────────────────────────────
+
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
@@ -92,8 +120,8 @@ function createWindow() {
 app.whenReady().then(() => {
   // Boost process priority so Windows scheduler gives full CPU time even when minimized
   try {
-    os.setPriority(process.pid, os.constants.priority.PRIORITY_ABOVE_NORMAL);
-    fileLog('[System] Process priority boosted to ABOVE_NORMAL for unrestricted background processing');
+    os.setPriority(process.pid, os.constants.priority.PRIORITY_HIGH);
+    fileLog('[System] Process priority boosted to HIGH for unrestricted background processing (Bypasses Win 11 Efficiency Mode)');
   } catch (e) {
     fileLog('[System setPriority error]', e);
   }
@@ -177,7 +205,7 @@ async function findGhostscript() {
 // IPC Handler for processing EPS natively
 ipcMain.handle('decode-tiff', async (event, tiffBuffer) => {
   try {
-    const pngBuffer = await sharp(Buffer.from(tiffBuffer)).png().toBuffer();
+    const pngBuffer = await sharp(Buffer.from(tiffBuffer), { limitInputPixels: false }).png().toBuffer();
     return {
       base64: pngBuffer.toString('base64'),
       mimeType: 'image/png',
@@ -201,6 +229,7 @@ ipcMain.handle('process-eps', async (event, inputPath) => {
 
     const args = [
       '-dSAFER', '-dBATCH', '-dNOPAUSE', '-dNOPROMPT', '-dEPSCrop',
+      `-dNumRenderingThreads=${Math.max(1, os.cpus().length - 1)}`,
       '-sDEVICE=png16m', '-r50', 
       `-sOutputFile=${outputPath}`, inputPath
     ];
@@ -281,7 +310,7 @@ ipcMain.handle('get-image-dimensions', async (event, filePath) => {
     if (!fs.existsSync(filePath)) {
       throw new Error(`File not found: ${filePath}`);
     }
-    const metadata = await sharp(filePath).metadata();
+    const metadata = await sharp(filePath, { limitInputPixels: false }).metadata();
     return { width: metadata.width, height: metadata.height };
   } catch (err) {
     fileLog('[get-image-dimensions] Failed:', err.message);
@@ -389,35 +418,121 @@ ipcMain.handle('extract-video-frame', async (event, videoPath) => {
 });
 
 // IPC Handler for generating high-res JPG from EPS or PNG
-ipcMain.handle('generate-eps-jpg', async (event, inputPath, addWhiteBgToPng = true, outputExt = '.jpg') => {
+ipcMain.handle('generate-eps-jpg', async (event, inputPath, addWhiteBgToPng = true, outputExt = '.jpg', outputFolder = null) => {
   try {
     const parsedPath = path.parse(inputPath);
     const finalExt = outputExt.startsWith('.') ? outputExt : `.${outputExt}`;
     const outputName = `${parsedPath.name}${finalExt}`;
-    const outputPath = path.join(parsedPath.dir, outputName);
+    
+    let targetDir = parsedPath.dir;
+    if (outputFolder) {
+      targetDir = outputFolder;
+    } else {
+      targetDir = path.join(parsedPath.dir, 'Converted Files');
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+    }
+    
+    const outputPath = path.join(targetDir, outputName);
     const ext = parsedPath.ext.toLowerCase();
 
-    const processWithSharp = async (srcPath, destPath) => {
-      const meta = await sharp(srcPath).metadata();
-      await sharp({
-        create: {
-          width: meta.width,
-          height: meta.height,
-          channels: 3,
-          background: { r: 255, g: 255, b: 255 }
+    // Helper to extract and embed metadata
+    const copyMetadata = async (src, dest) => {
+      try {
+        const exiftool = await getExifTool();
+        const sourceTags = await exiftool.read(src);
+        const title = sourceTags.Title || sourceTags.ObjectName || sourceTags.Headline || '';
+        const description = sourceTags.Description || sourceTags.CaptionAbstract || sourceTags.ImageDescription || '';
+        const keywords = sourceTags.Keywords || sourceTags.Subject || [];
+        
+        if (title || description || (keywords && keywords.length > 0)) {
+          const writeTags = {
+            "Title": title,
+            "Description": description,
+            "Keywords": keywords,
+            "IPTC:ObjectName": title,
+            "IPTC:Caption-Abstract": description,
+            "IPTC:Keywords": keywords,
+            "XMP-dc:Title": title,
+            "XMP-dc:Description": description,
+            "XMP-dc:Subject": keywords
+          };
+          await exiftool.write(dest, writeTags, ["-overwrite_original"]);
+          
+          // Cleanup _original if created
+          if (fs.existsSync(dest + '_original')) fs.unlinkSync(dest + '_original');
         }
-      })
-      .composite([{ input: srcPath, blend: 'over' }])
-      .jpeg({ quality: 100 })
-      .toFile(destPath);
+      } catch (err) {
+        fileLog('[generate-eps-jpg] Failed to copy metadata:', err);
+      }
     };
 
-    if (ext === '.png') {
-      if (addWhiteBgToPng) {
-        await processWithSharp(inputPath, outputPath);
+    const processWithSharp = async (srcPath, destPath, forceWhiteBg) => {
+      if (forceWhiteBg || finalExt === '.jpg' || finalExt === '.jpeg') {
+        const s = sharp(srcPath, { limitInputPixels: false })
+          .flatten({ background: { r: 255, g: 255, b: 255 } });
+        
+        if (finalExt === '.png') {
+          await s.png().toFile(destPath);
+        } else {
+          await s.jpeg({ quality: 100 }).toFile(destPath);
+        }
       } else {
-        await sharp(inputPath).jpeg({ quality: 100 }).toFile(outputPath);
+        // Output is PNG and no white bg requested, just convert or copy
+        await sharp(srcPath, { limitInputPixels: false }).png().toFile(destPath);
       }
+    };
+
+    if (ext === '.heic' || ext === '.heif') {
+      try {
+        const { Worker } = require('worker_threads');
+        await new Promise((resolve, reject) => {
+          const workerCode = `
+            const { parentPort, workerData } = require('worker_threads');
+            const fs = require('fs');
+            const heicConvert = require('heic-convert');
+            (async () => {
+              try {
+                const inputBuffer = fs.readFileSync(workerData.inputPath);
+                const outputBuffer = await heicConvert({
+                  buffer: inputBuffer,
+                  format: '${finalExt === '.png' ? 'PNG' : 'JPEG'}',
+                  quality: 1
+                });
+                fs.writeFileSync(workerData.outputPath, outputBuffer);
+                parentPort.postMessage({ success: true });
+              } catch (err) {
+                parentPort.postMessage({ success: false, error: err.message });
+              }
+            })();
+          `;
+          
+          const worker = new Worker(workerCode, { 
+            eval: true,
+            workerData: { inputPath, outputPath }
+          });
+
+          worker.on('message', (msg) => {
+            if (msg.success) resolve();
+            else reject(new Error(msg.error));
+          });
+          worker.on('error', reject);
+          worker.on('exit', (code) => {
+            if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
+          });
+        });
+
+        await copyMetadata(inputPath, outputPath);
+        return { success: true, outputPath };
+      } catch (err) {
+        throw new Error(`Failed to convert HEIC: ${err.message}`);
+      }
+    }
+
+    if (ext === '.png') {
+      await processWithSharp(inputPath, outputPath, addWhiteBgToPng);
+      await copyMetadata(inputPath, outputPath);
       return { success: true, outputPath };
     }
 
@@ -427,12 +542,22 @@ ipcMain.handle('generate-eps-jpg', async (event, inputPath, addWhiteBgToPng = tr
       throw new Error('Ghostscript not found on this system. Please install Ghostscript.');
     }
 
-    const tempPngPath = path.join(os.tmpdir(), `temp_eps_res_${Date.now()}.png`);
+    let gsDevice = 'pngalpha';
+    if (finalExt === '.jpg' || finalExt === '.jpeg') {
+      gsDevice = 'jpeg';
+    } else if (finalExt === '.png' && addWhiteBgToPng) {
+      gsDevice = 'png16m';
+    }
+
     const args = [
       '-dSAFER', '-dBATCH', '-dNOPAUSE', '-dNOPROMPT', '-dEPSCrop',
-      '-sDEVICE=pngalpha', '-r400', '-dTextAlphaBits=4', '-dGraphicsAlphaBits=4',
-      `-sOutputFile=${tempPngPath}`, inputPath
+      `-dNumRenderingThreads=${Math.max(1, os.cpus().length - 1)}`,
+      `-sDEVICE=${gsDevice}`
     ];
+    if (gsDevice === 'jpeg') {
+      args.push('-dJPEGQ=100');
+    }
+    args.push('-r300', '-dTextAlphaBits=4', '-dGraphicsAlphaBits=4', `-sOutputFile=${outputPath}`, inputPath);
 
     const bundledBinDir2 = path.join(app.isPackaged ? process.resourcesPath : __dirname, '..', 'bin');
     const gsLibPath2 = `${path.join(bundledBinDir2, 'win_graphics_proc', 'lib')};${path.join(bundledBinDir2, 'win_graphics_proc', 'Resource', 'Init')}`;
@@ -445,28 +570,23 @@ ipcMain.handle('generate-eps-jpg', async (event, inputPath, addWhiteBgToPng = tr
     return new Promise((resolve, reject) => {
       const gsProc = spawn(gsCmd, args, { env: gsEnv2 });
       
-      // Safety timeout of 45 seconds
       const timeoutId = setTimeout(() => {
-        try {
-          gsProc.kill();
-        } catch (e) {}
+        try { gsProc.kill(); } catch (e) {}
         reject(new Error('Ghostscript rendering timed out (45 seconds limit reached).'));
       }, 45000);
 
-      // CRITICAL: Consume stdout and stderr to prevent OS pipe buffers from filling up and hanging the process
       let errOutput = '';
-      gsProc.stdout.on('data', () => {}); // ignore stdout but consume it
+      gsProc.stdout.on('data', () => {}); 
       gsProc.stderr.on('data', (data) => errOutput += data.toString());
 
       gsProc.on('close', async (code) => {
         clearTimeout(timeoutId);
-        if (code === 0 && fs.existsSync(tempPngPath)) {
+        if (code === 0 && fs.existsSync(outputPath)) {
           try {
-            await processWithSharp(tempPngPath, outputPath);
-            fs.unlinkSync(tempPngPath);
+            await copyMetadata(inputPath, outputPath);
             resolve({ success: true, outputPath });
           } catch (err) {
-            reject(new Error(`Failed to process temp PNG: ${err.message}`));
+            reject(new Error(`Failed to copy metadata: ${err.message}`));
           }
         } else {
           reject(new Error(`Ghostscript failed with code ${code}. Error: ${errOutput}`));
@@ -494,7 +614,7 @@ ipcMain.handle('remove-bg-local', async (event, inputPath) => {
     }
     
     // Get original metadata
-    const origMeta = await sharp(inputPath).metadata();
+    const origMeta = await sharp(inputPath, { limitInputPixels: false }).metadata();
     const mimeType = origMeta.format ? `image/${origMeta.format}` : 'image/png';
     
     console.log('[IPC remove-bg-local] Spawning standalone background removal process in Electron CJS...');
@@ -522,14 +642,14 @@ ipcMain.handle('remove-bg-local', async (event, inputPath) => {
     try { fs.unlinkSync(outMaskPath); } catch (_) {}
     
     // 2. Prepare mask (Stable way)
-    const mask = await sharp(maskBuffer)
+    const mask = await sharp(maskBuffer, { limitInputPixels: false })
       .resize(origMeta.width, origMeta.height)
       .grayscale()
       .png()
       .toBuffer();
 
     // 3. Composite
-    const finalBuffer = await sharp(inputPath)
+    const finalBuffer = await sharp(inputPath, { limitInputPixels: false })
       .ensureAlpha()
       .composite([{
         input: mask,
@@ -579,10 +699,10 @@ ipcMain.handle('remove-bg-api', async (event, inputPath, apiKey) => {
     console.log('[IPC remove-bg-api] Processing high-fidelity (stable mode)...');
     
     // 1. Get original dimensions
-    const origMeta = await sharp(buf).metadata();
+    const origMeta = await sharp(buf, { limitInputPixels: false }).metadata();
     
     // 2. Prepare mask with gamma to fix fringes safely
-    const mask = await sharp(removeBgBuffer)
+    const mask = await sharp(removeBgBuffer, { limitInputPixels: false })
       .resize(origMeta.width, origMeta.height, { fit: 'fill' })
       .ensureAlpha()
       .gamma(3)
@@ -590,7 +710,7 @@ ipcMain.handle('remove-bg-api', async (event, inputPath, apiKey) => {
       .toBuffer();
 
     // 3. Composite
-    const finalBuffer = await sharp(buf)
+    const finalBuffer = await sharp(buf, { limitInputPixels: false })
       .ensureAlpha()
       .composite([{
         input: mask,
@@ -644,10 +764,10 @@ ipcMain.handle('remove-bg-hf', async (event, inputPath, token) => {
     console.log('[IPC remove-bg-hf] Restoring original quality...');
     
     // 1. Get original dimensions
-    const origMeta = await sharp(buf).metadata();
+    const origMeta = await sharp(buf, { limitInputPixels: false }).metadata();
     
     // 2. Prepare mask
-    const mask = await sharp(hfBuffer)
+    const mask = await sharp(hfBuffer, { limitInputPixels: false })
       .resize(origMeta.width, origMeta.height, { fit: 'fill' })
       .ensureAlpha()
       .gamma(3)
@@ -655,7 +775,7 @@ ipcMain.handle('remove-bg-hf', async (event, inputPath, token) => {
       .toBuffer();
 
     // 3. Apply to original
-    const finalBuffer = await sharp(buf)
+    const finalBuffer = await sharp(buf, { limitInputPixels: false })
       .ensureAlpha()
       .composite([{
         input: mask,

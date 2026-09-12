@@ -10,11 +10,11 @@ const sharp = require('sharp');
 async function upscaleLocalHighFidelitySharp(inputPath, outputPath, scale, outputFormat, fileLog) {
   fileLog('[Mata AI Sharp Fallback] ' + path.basename(inputPath) + ' -> ' + scale + 'x');
 
-  const meta = await sharp(inputPath).metadata();
+  const meta = await sharp(inputPath, { limitInputPixels: false }).metadata();
   const targetW = Math.round(meta.width  * scale);
   const targetH = Math.round(meta.height * scale);
 
-  let pipeline = sharp(inputPath)
+  let pipeline = sharp(inputPath, { limitInputPixels: false })
     .resize(targetW, targetH, {
       kernel: sharp.kernel.lanczos3,
       fastShrinkOnLoad: false,
@@ -311,11 +311,11 @@ function setupMataAi(ipcMain, fileLog) {
                   // NCNN only created the wrong format. Convert it to requested format.
                   fileLog('[upscale-local-ncnn] NCNN ignored extension, converting ' + ext + ' to ' + outputFormat + '...');
                   if (outputFormat === 'jpg' || outputFormat === 'jpeg') {
-                    await sharp(altPath).jpeg({ quality: 95 }).toFile(outputPath);
+                    await sharp(altPath, { limitInputPixels: false }).jpeg({ quality: 95 }).toFile(outputPath);
                   } else if (outputFormat === 'webp') {
-                    await sharp(altPath).webp({ quality: 95 }).toFile(outputPath);
+                    await sharp(altPath, { limitInputPixels: false }).webp({ quality: 95 }).toFile(outputPath);
                   } else {
-                    await sharp(altPath).png({ compressionLevel: 6 }).toFile(outputPath);
+                    await sharp(altPath, { limitInputPixels: false }).png({ compressionLevel: 6 }).toFile(outputPath);
                   }
                   fs.unlinkSync(altPath);
                   fileCreated = true;
@@ -336,7 +336,7 @@ function setupMataAi(ipcMain, fileLog) {
               if (header.toString('ascii') === 'RIFF' && (outputFormat === 'jpg' || outputFormat === 'jpeg')) {
                 fileLog('[upscale-local-ncnn] Detected RIFF/WebP -> converting to JPG...');
                 const tmpP = outputPath + '.riff.tmp';
-                await sharp(outputPath).jpeg({ quality: 95 }).toFile(tmpP);
+                await sharp(outputPath, { limitInputPixels: false }).jpeg({ quality: 95 }).toFile(tmpP);
                 fs.unlinkSync(outputPath);
                 fs.renameSync(tmpP, outputPath);
                 fileLog('[upscale-local-ncnn] RIFF->JPG done.');
@@ -344,19 +344,19 @@ function setupMataAi(ipcMain, fileLog) {
             } catch (_) {}
             // Target scale dimension adjustment (e.g. RealSR running at 4x for 2x target, or Custom 6x/8x)
             try {
-              const inMeta = await sharp(inputPath).metadata();
+              const inMeta = await sharp(inputPath, { limitInputPixels: false }).metadata();
               const targetW = Math.round(inMeta.width * scale);
               const targetH = Math.round(inMeta.height * scale);
-              const outMeta = await sharp(outputPath).metadata();
+              const outMeta = await sharp(outputPath, { limitInputPixels: false }).metadata();
               if (Math.abs(outMeta.width - targetW) > 2 || Math.abs(outMeta.height - targetH) > 2) {
                 fileLog('[upscale-local-ncnn] Dimension adjustment to target: ' + outMeta.width + 'x' + outMeta.height + ' -> ' + targetW + 'x' + targetH);
                 const tmpResize = outputPath + '.res.tmp';
                 if (outputFormat === 'png') {
-                  await sharp(outputPath).resize(targetW, targetH, { kernel: sharp.kernel.lanczos3 }).png({ compressionLevel: 6 }).toFile(tmpResize);
+                  await sharp(outputPath, { limitInputPixels: false }).resize(targetW, targetH, { kernel: sharp.kernel.lanczos3 }).png({ compressionLevel: 6 }).toFile(tmpResize);
                 } else if (outputFormat === 'webp') {
-                  await sharp(outputPath).resize(targetW, targetH, { kernel: sharp.kernel.lanczos3 }).webp({ quality: 95 }).toFile(tmpResize);
+                  await sharp(outputPath, { limitInputPixels: false }).resize(targetW, targetH, { kernel: sharp.kernel.lanczos3 }).webp({ quality: 95 }).toFile(tmpResize);
                 } else {
-                  await sharp(outputPath).resize(targetW, targetH, { kernel: sharp.kernel.lanczos3 }).jpeg({ quality: 95 }).toFile(tmpResize);
+                  await sharp(outputPath, { limitInputPixels: false }).resize(targetW, targetH, { kernel: sharp.kernel.lanczos3 }).jpeg({ quality: 95 }).toFile(tmpResize);
                 }
                 fs.unlinkSync(outputPath);
                 fs.renameSync(tmpResize, outputPath);

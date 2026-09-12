@@ -143,7 +143,7 @@ const MetadataCard = memo(({
               <div className="premium-indicator-spinner" />
               <ShieldAlert className="w-2.5 h-2.5 premium-indicator-inner" />
             </div>
-            <span>Scanning for Policy Violations...</span>
+            <span>Generating metadata & policy check with {activeProviderName} AI...</span>
           </div>
         )}
         {img.status === "extracting" && (
@@ -165,7 +165,7 @@ const MetadataCard = memo(({
           </div>
         )}
         
-        {img.embeddingStatus && img.embeddingStatus !== 'none' && (
+        {img.embeddingStatus && img.embeddingStatus !== 'none' && img.status === 'done' && (
           <div className={`mt-3 p-2 rounded text-xs flex items-center gap-2 ${
             img.embeddingStatus === 'pending' ? 'bg-slate-500/10 text-slate-400 font-medium'
             : img.embeddingStatus === 'embedding' ? 'bg-indigo-500/10 text-indigo-400'

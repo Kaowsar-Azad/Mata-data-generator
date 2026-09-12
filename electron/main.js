@@ -23,7 +23,10 @@ let mainWindow;
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
-app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,TimerThrottlingForBackgroundTabs,StopNonTimersInBackground');
+
+// Raise V8 heap limit to 4GB so large batches (200+ images) don't OOM-crash the renderer
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -40,6 +43,26 @@ function createWindow() {
     autoHideMenuBar: true,
   });
 
+  // ── Renderer Crash Auto-Recovery ───────────────────────────────────────────
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    fileLog('[CRITICAL] Renderer process gone! Reason:', details.reason, 'Exit code:', details.exitCode);
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        fileLog('[RECOVERY] Auto-reloading window after renderer crash...');
+        mainWindow.reload();
+      }
+    }, 1000);
+  });
+
+  mainWindow.on('unresponsive', () => {
+    fileLog('[WARNING] Window became unresponsive');
+  });
+
+  mainWindow.on('responsive', () => {
+    fileLog('[INFO] Window became responsive again');
+  });
+  // ──────────────────────────────────────────────────────────────────────────────
+
   const isDev = !app.isPackaged;
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
@@ -51,8 +74,8 @@ function createWindow() {
 app.whenReady().then(() => {
   // Boost process priority so Windows scheduler gives full CPU time even when minimized
   try {
-    os.setPriority(process.pid, os.constants.priority.PRIORITY_ABOVE_NORMAL);
-    fileLog('[System] Process priority boosted to ABOVE_NORMAL for unrestricted background processing');
+    os.setPriority(process.pid, os.constants.priority.PRIORITY_HIGH);
+    fileLog('[System] Process priority boosted to HIGH for unrestricted background processing (Bypasses Win 11 Efficiency Mode)');
   } catch (e) {
     fileLog('[System setPriority error]', e);
   }

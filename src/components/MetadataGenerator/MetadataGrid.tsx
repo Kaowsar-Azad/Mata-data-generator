@@ -134,7 +134,7 @@ const MetadataGridRow = memo(({
 
 
           {/* Embedding Status */}
-          {img.embeddingStatus && img.embeddingStatus !== 'none' && (
+          {img.embeddingStatus && img.embeddingStatus !== 'none' && img.status === 'done' && (
             <div
               className={`grid-embed-chip ${
                 img.embeddingStatus === 'pending' ? 'bg-slate-500/10 text-slate-400' :

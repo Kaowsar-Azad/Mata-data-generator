@@ -40,7 +40,7 @@ import {
   Crown
 } from "lucide-react";
 
-import { generateMetadata, analyzeImageSecurity } from "../../services/geminiService";
+import { generateMetadata } from "../../services/geminiService";
 
 import uploadIcon from "../../assets/icons/upload.png";
 import downloadIcon from "../../assets/icons/download.png";
@@ -96,6 +96,36 @@ const resizeImageToBase64Worker = (file: any, maxSize = 1024) => {
       reject(err);
     }
   });
+};
+
+/**
+ * Converts a base64 string + mimeType into a lightweight Blob URL.
+ * Blob URLs are ~50 bytes in V8 heap (vs 200-500KB for inline base64 data URLs),
+ * preventing OOM crashes during large batch processing.
+ */
+const base64ToBlobUrl = (base64: string, mimeType: string = 'image/jpeg'): string => {
+  try {
+    const byteChars = atob(base64);
+    const byteArray = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) {
+      byteArray[i] = byteChars.charCodeAt(i);
+    }
+    const blob = new Blob([byteArray], { type: mimeType });
+    return URL.createObjectURL(blob);
+  } catch (e) {
+    // Fallback: return inline data URL if blob conversion fails
+    return `data:${mimeType};base64,${base64}`;
+  }
+};
+
+/**
+ * Safely revokes a blob URL preview to free memory.
+ * No-ops for non-blob URLs (inline data URLs, placeholders, etc.).
+ */
+const safeRevokePreview = (preview: string | null | undefined) => {
+  if (preview && preview.startsWith('blob:')) {
+    try { URL.revokeObjectURL(preview); } catch (_) {}
+  }
 };
 
 const PolicyViolationThumbnail = ({ img }: any) => {
@@ -217,6 +247,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   apiProviderRef.current = apiProvider;
   const [viewMode, setViewMode] = useState('card');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isRetryingGeneration, setIsRetryingGeneration] = useState(false);
+  const [isRetryingFTP, setIsRetryingFTP] = useState(false);
   const cancelRef = useRef(false);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   const [autoEmbed, setAutoEmbed] = useState(() => localStorage.getItem("autoEmbed") === "true");
@@ -247,12 +279,22 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     isComplete: boolean;
   } | null>(null);
   const [autoUpscale, setAutoUpscale] = useState(() => localStorage.getItem("autoUpscale") === "true");
+  const autoUpscaleRef = useRef(autoUpscale);
+  autoUpscaleRef.current = autoUpscale;
+
   const [upscaleScale, setUpscaleScale] = useState(() => Math.min(parseInt(localStorage.getItem("upscaleScale")) || 2, 4));
+  const upscaleScaleRef = useRef(upscaleScale);
+  upscaleScaleRef.current = upscaleScale;
+
   const [upscaleEngine, setUpscaleEngine] = useState(() => {
     let val = localStorage.getItem("upscaleEngine");
     if (val === "mata_ai" || val === "auto_detect") val = "balanced";
     return val || "balanced";
   });
+  const upscaleEngineRef = useRef(upscaleEngine);
+  upscaleEngineRef.current = upscaleEngine;
+
+  const processBatchRef = useRef<any>(null);
   const [engineDropdownOpen, setEngineDropdownOpen] = useState(false);
   const engineDropdownRef = useRef<any>(null);
   const [hardwareTier, setHardwareTier] = useState('low-end');
@@ -412,6 +454,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     const isChecked = e.target.checked;
     if (!isChecked) {
       setAutoUpscale(false);
+      autoUpscaleRef.current = false;
       return;
     }
 
@@ -422,12 +465,15 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       if (normalFilesCount === 0) {
         showToast("Auto Upscale does not work on EPS files.", "warning");
         setAutoUpscale(false);
+        autoUpscaleRef.current = false;
       } else {
         showToast(`${normalFilesCount} files will be upscaled. ${epsFilesCount} EPS files will be skipped.`, "info");
         setAutoUpscale(true);
+        autoUpscaleRef.current = true;
       }
     } else {
       setAutoUpscale(true);
+      autoUpscaleRef.current = true;
     }
   };
 
@@ -683,7 +729,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           setImages((prev: any) =>
             prev.map((item: any) =>
               (item as any).id === entry.id
-                ? { ...item, epsData, preview: epsData.dataUrl || 'placeholder-error' }
+                ? { ...item, epsData, preview: epsData.dataUrl ? base64ToBlobUrl(epsData.base64, epsData.mimeType || 'image/png') : 'placeholder-error' }
                 : item
             )
           );
@@ -724,7 +770,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               setImages((prev: any) =>
                 prev.map((item: any) =>
                   (item as any).id === entry.id
-                    ? { ...item, preview: `data:image/jpeg;base64,${frameResult.base64}` }
+                    ? { ...item, preview: base64ToBlobUrl(frameResult.base64, 'image/jpeg') }
                     : item
                 )
               );
@@ -791,7 +837,11 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     
     // Automatically trigger reprocessing ONLY for this specific approved file
     setTimeout(() => {
-      processBatch(false, id);
+      if (processBatchRef.current) {
+        processBatchRef.current(false, id);
+      } else {
+        processBatch(false, id);
+      }
     }, 50);
   }, []);
 
@@ -830,11 +880,21 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     if (activeJobId && window.electronAPI?.cancelFtp) {
       window.electronAPI.cancelFtp(activeJobId).catch(console.error);
     }
-    setImages(prev => prev.map(img => 
-      (img.status === 'processing' || img.status === 'extracting' || img.status === 'upscaling' || img.status === 'upscale_queued' || img.status === 'error') 
-      ? { ...img, status: 'pending', error: undefined } 
-      : img
-    ));
+    setImages(prev => prev.map(img => {
+      const isUnfinished = img.status === 'processing' || img.status === 'extracting' || img.status === 'upscaling' || img.status === 'upscale_queued' || img.status === 'error';
+      if (isUnfinished) {
+        return { 
+          ...img, 
+          status: 'pending', 
+          error: undefined,
+          embeddingStatus: (img.embeddingStatus === 'pending' || img.embeddingStatus === 'embedding') ? 'none' : img.embeddingStatus
+        };
+      }
+      if (img.status !== 'done' && (img.embeddingStatus === 'pending' || img.embeddingStatus === 'embedding')) {
+        return { ...img, embeddingStatus: 'none', embeddingError: null };
+      }
+      return img;
+    }));
   };
 
   const resizeImageToBase64 = (file: any, maxSize = 1024) => resizeImageToBase64Worker(file, maxSize);
@@ -958,12 +1018,14 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   };
 
   const processBatch = async (onlyErrors = false, targetId: any = null) => {
+    processBatchRef.current = processBatch;
     if (apiKeys.length === 0) {
       const pName = Array.isArray(apiProvider) ? apiProvider.join(", ") : apiProvider;
       showToast(`Please add at least one API key for ${pName} first.`, "error");
       return;
     }
 
+    if (onlyErrors) setIsRetryingGeneration(true);
     setIsProcessing(true);
     setProgress(0);
     cancelRef.current = false;
@@ -1080,9 +1142,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
       }
       if (cancelRef.current) break;
 
+      const isScanActive = !!promptSettingsRef.current?.securityScanEnabled && !img.ignorePolicy;
       setImages((prev: any) =>
         prev.map((item: any) =>
-          (item as any).id === img.id ? { ...item, status: "processing" } : item
+          (item as any).id === img.id ? { ...item, status: isScanActive ? "scanning" : "processing" } : item
         )
       );
 
@@ -1090,8 +1153,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
         try {
             if (cancelRef.current) return;
             const currentTaskIndex = globalTaskCounter++;
-            const policyKeys = getRotatedKeys(apiKeysRef.current, currentTaskIndex);
-            const metadataKeys = getRotatedKeys(apiKeysRef.current, currentTaskIndex + 1);
+            const metadataKeys = getRotatedKeys(apiKeysRef.current, currentTaskIndex);
 
             if (!imagesRef.current.some((i: any) => i.id === img.id)) {
               throw new Error("Image was removed");
@@ -1123,7 +1185,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               setImages((prev: any) =>
                 prev.map((item: any) =>
                   (item as any).id === img.id
-                    ? { ...item, preview: `data:image/jpeg;base64,${frameResult.base64}` }
+                    ? { ...item, preview: base64ToBlobUrl(frameResult.base64, 'image/jpeg'), status: isScanActive ? "scanning" : "processing" }
                     : item
                 )
               );
@@ -1143,7 +1205,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 setImages((prev: any) =>
                   prev.map((item: any) =>
                     (item as any).id === img.id
-                      ? { ...item, epsData, preview: epsData.dataUrl }
+                      ? { ...item, epsData, preview: epsData.dataUrl ? base64ToBlobUrl(epsData.base64, epsData.mimeType || 'image/png') : item.preview }
                       : item
                   )
                 );
@@ -1154,58 +1216,23 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             }
 
             const currentProvider = apiProviderRef.current || "gemini";
-            const isCombinedScan = Array.isArray(currentProvider) 
-              ? (currentProvider.includes("groq")) 
-              : (currentProvider === "groq");
 
             if (cancelRef.current) return;
-            // For Groq, safety/trademark scan is combined into single metadata call to reduce API usage by 50%
-            if (promptSettingsRef.current?.securityScanEnabled && !img.ignorePolicy) {
-              if (isCombinedScan) {
-                setImages((prev: any) =>
-                  prev.map((item: any) =>
-                    (item as any).id === img.id
-                      ? { ...item, status: "scanning" }
-                      : item
-                  )
-                );
-              } else {
-                setImages((prev: any) =>
-                  prev.map((item: any) =>
-                    (item as any).id === img.id
-                      ? { ...item, status: "scanning" }
-                      : item
-                  )
-                );
-                const securityRes = await analyzeImageSecurity(
-                  base64,
-                  mimeType,
-                  policyKeys,
-                  currentProvider
-                );
-                if (!securityRes.isSafe) {
-                  setImages((prev: any) =>
-                    prev.map((item: any) =>
-                      (item as any).id === img.id
-                        ? { ...item, status: "policy_warning", result: { policyWarning: securityRes.reason, policyReason: securityRes.reason } }
-                        : item
-                    )
-                  );
-                  if (!cancelRef.current) {
-                    successCount++;
-                    processed++;
-                    updateProgress();
-                  }
-                  return; // Halt pipeline gracefully
-                }
-                setImages((prev: any) =>
-                  prev.map((item: any) =>
-                    (item as any).id === img.id
-                      ? { ...item, status: "processing" }
-                      : item
-                  )
-                );
-              }
+            
+            // Piracy & Copyright scan is now combined into the single metadata call to reduce API usage by 50%
+            let promptSettingsObj = { ...promptSettingsRef.current };
+            
+            if (isScanActive) {
+              const extraPolicy = `
+Check for the following issues:
+1. Watermarks, signatures, or dates indicating ownership by a specific photographer/agency (e.g., "© 2024 John Doe", "Shutterstock", "Getty Images"). Note: General typography, event titles, or template text (like "2026 Soccer Tournament") are perfectly FINE and should NOT be flagged.
+2. Recognizable celebrities, public figures, or famous sports teams/athletes (e.g., Mark Zuckerberg, Elon Musk, Messi).
+3. Explicit, offensive, excessively violent, or NSFW content.
+If ANY of these policy violations are found, mark it as unsafe and provide a short, specific reason in the policyWarning field.`;
+
+              promptSettingsObj.customInstruction = promptSettingsObj.customInstruction 
+                ? promptSettingsObj.customInstruction + "\n" + extraPolicy
+                : extraPolicy;
             }
 
             const fileInfo = {
@@ -1214,7 +1241,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               isPlaceholder: isPlaceholder,
               fileName: img.file?.name,
               extractedTextContext: img.epsData?.extractedTextContext || null,
-              promptSettings: promptSettingsRef.current,
+              promptSettings: promptSettingsObj,
               skipPolicyScan: img.ignorePolicy || !promptSettingsRef.current?.securityScanEnabled,
             };
 
@@ -1264,15 +1291,18 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               metadata = filterMetadataKeywords(metadata, autoRemoveYellowRef.current, autoRemoveRedRef.current);
             }
 
-            const activeScale = autoUpscale ? upscaleScale : (autoEmbedRef.current ? embedScale : 2);
-            const activeEngine = autoUpscale ? upscaleEngine : (autoEmbedRef.current ? embedEngine : 'balanced');
+            const isAutoUpscaleActive = !!autoUpscaleRef.current;
+            const activeScale = isAutoUpscaleActive ? upscaleScaleRef.current : (autoEmbedRef.current ? embedScale : 2);
+            const activeEngine = isAutoUpscaleActive ? upscaleEngineRef.current : (autoEmbedRef.current ? embedEngine : 'balanced');
             const targetPath = img.visualFile?.path || (!img.isEps && !img.isVideo ? img.file?.path : null);
-            const needsUpscale = (autoUpscale && window.electronAPI && targetPath && !img.isVideo && !img.isEps);
+            const needsUpscale = (isAutoUpscaleActive && window.electronAPI && targetPath && !img.isVideo && !img.isEps);
+
+            if (cancelRef.current) return;
 
             setImages((prev: any) =>
               prev.map((item: any) =>
                 (item as any).id === img.id
-                  ? { ...item, result: metadata, status: needsUpscale ? "upscale_queued" : "done" }
+                  ? { ...item, result: metadata, initialKeywords: metadata?.keywords, status: needsUpscale ? "upscale_queued" : "done" }
                   : item
               )
             );
@@ -1285,7 +1315,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                 if (!imagesRef.current.some((i: any) => i.id === img.id)) {
                   throw new Error("Image was removed");
                 }
-            if (needsUpscale) {
+            if (needsUpscale && autoUpscaleRef.current) {
               try {
                 setImages((prev: any) =>
                   prev.map((item: any) =>
@@ -1378,6 +1408,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                           };
                         }
                         if (arrayBuffer) {
+                          safeRevokePreview(item.preview);
                           const blob = new Blob([arrayBuffer], { type: upscaledMimeType });
                           updatedItem.preview = URL.createObjectURL(blob);
                         }
@@ -1403,7 +1434,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
               );
             }
 
-            if (autoEmbedRef.current && window.electronAPI && !onlyErrors) {
+            if (!cancelRef.current && autoEmbedRef.current && window.electronAPI && !onlyErrors) {
               const doneImg = {
                 ...img,
                 status: "done",
@@ -1454,7 +1485,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           }
         };
 
-        if (needsUpscale) {
+        if (needsUpscale && autoUpscaleRef.current) {
           upscaleQueue.push(postMetadataTask);
           runUpscaleQueue();
         } else {
@@ -1537,20 +1568,22 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     
     } finally {
       setIsProcessing(false);
+      if (onlyErrors) setIsRetryingGeneration(false);
     }
   };
   
   const embedMetadataToFiles = async (imagesToProcess?: any[], forceUpload = false, skipAdobeUpload = false, isManualAction = false) => {
     setShowPermissionModal(false);
-    if (!window.electronAPI) return;
+    if (!window.electronAPI || cancelRef.current) return;
     
+    if (isRetry) setIsRetryingFTP(true);
     setEmbeddingCount(prev => prev + 1);
     
     try {
       const activeFtpConfigs = ftpConfigs.filter(c => c.enabled);
       
       const currentImages = (Array.isArray(imagesToProcess) 
-        ? imagesToProcess 
+        ? imagesToProcess.filter(img => (img.status === "done" || img.result) && img.result) 
         : imagesRef.current.filter(img => img.status === "done" && img.result))
         .filter(img => img.embeddingStatus === "none" || img.embeddingStatus === "error")
         .filter(img => {
@@ -1621,7 +1654,10 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
 
       const processSingleImage = async (img: any) => {
         try {
-          if (cancelRef.current) return;
+          if (cancelRef.current) {
+            queueStatusUpdate(img.id, { embeddingStatus: "none" });
+            return;
+          }
           if (!imagesRef.current.some((i: any) => i.id === img.id)) return;
 
           // Transition this specific item to active embedding
@@ -1877,6 +1913,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
     } finally {
       setEmbeddingCount(prev => Math.max(0, prev - 1));
       setUploadBatchIds([]);
+      if (isRetry) setIsRetryingFTP(false);
     }
   };
   
@@ -2023,6 +2060,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             newImages[matchIdx] = {
               ...newImages[matchIdx],
               status: 'done',
+              initialKeywords: keywords || newImages[matchIdx].result?.keywords || '',
               result: {
                 ...(newImages[matchIdx].result || {}),
                 title: title || newImages[matchIdx].result?.title || '',
@@ -2690,6 +2728,62 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
   const localEmbedErrorCount = embeddingErrorCount - ftpErrorCount;
   const policyViolationCount = images.filter((i) => !i.ignorePolicy && (i.result?.policyWarning || (i.result?.policyReason && i.result.policyReason.trim().length > 0) || i.status === "policy_warning")).length;
 
+  // ── Unified Pipeline Progress Calculations ─────────────────────────────────
+  const totalBatchCount = images.length;
+  const totalPipelineErrors = images.filter((i) => {
+    if (i.status === "error") return true;
+    if (autoEmbed && i.embeddingStatus === "error") return true;
+    return false;
+  }).length;
+
+  const hasStartedBatch = images.some((i) => 
+    i.status !== "pending" || i.result !== null || i.embeddingStatus !== "none"
+  );
+
+  const effectiveSuccessCount = autoEmbed 
+    ? allDoneCount 
+    : (autoUpscale 
+        ? images.filter((i) => i.status === "done" && (i.upscaleProgress !== undefined || i.upscaleModel || i.isEps || i.isVideo)).length 
+        : metadataDoneCount);
+
+  let unifiedPercent = 0;
+  let unifiedSuccessPercent = 0;
+  let unifiedErrorPercent = 0;
+
+  if (totalBatchCount > 0 && hasStartedBatch) {
+    if (effectiveSuccessCount === totalBatchCount && totalPipelineErrors === 0) {
+      unifiedPercent = 100;
+      unifiedSuccessPercent = 100;
+      unifiedErrorPercent = 0;
+    } else {
+      const rawPct = Math.floor((effectiveSuccessCount / totalBatchCount) * 100);
+      unifiedPercent = Math.min(99, Math.max(0, rawPct));
+      unifiedSuccessPercent = (effectiveSuccessCount / totalBatchCount) * 100;
+      unifiedErrorPercent = (totalPipelineErrors / totalBatchCount) * 100;
+    }
+  }
+
+  const getUnifiedProgressLabel = () => {
+    if (!hasStartedBatch) {
+      return `Ready (${totalBatchCount} files)`;
+    }
+    if (isEmbedding && !isProcessing) {
+      return `Syncing with FTP (${embeddingSuccessCount} of ${totalBatchCount} files)`;
+    }
+    if (isProcessing) {
+      return progressStats.isRetry 
+        ? `Retrying (${effectiveSuccessCount + totalPipelineErrors} of ${totalBatchCount} files)` 
+        : `Processing (${effectiveSuccessCount + totalPipelineErrors} of ${totalBatchCount} files)`;
+    }
+    if (effectiveSuccessCount === totalBatchCount && totalPipelineErrors === 0) {
+      return `Batch Complete (${effectiveSuccessCount} of ${totalBatchCount} files)`;
+    }
+    if (totalPipelineErrors > 0) {
+      return `Batch Finished (${effectiveSuccessCount} of ${totalBatchCount} succeeded, ${totalPipelineErrors} failed)`;
+    }
+    return `Batch Summary (${effectiveSuccessCount} of ${totalBatchCount} files)`;
+  };
+
   return (
     <div className="space-y-6">
       {/* Upload Zone */}
@@ -2756,8 +2850,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             disabled={isProcessing}
             onClick={() => processBatch(true)}
           >
-            {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            {isProcessing ? 'Retrying...' : 'Retry Generation'}
+            {isRetryingGeneration ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {isRetryingGeneration ? 'Retrying...' : 'Retry Generation'}
           </button>
         </div>
       )}
@@ -2782,8 +2876,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             disabled={isEmbedding}
             onClick={() => retryEmbedAndUpload()}
           >
-            {isEmbedding ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            {isEmbedding ? 'Retrying...' : 'Retry FTP Upload'}
+            {isRetryingFTP ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {isRetryingFTP ? 'Retrying...' : 'Retry FTP Upload'}
           </button>
         </div>
       )}
@@ -2971,8 +3065,8 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                       disabled={isEmbedding}
                       onClick={() => retryEmbedAndUpload()}
                     >
-                      {isEmbedding ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                      {isEmbedding ? 'Retrying...' : 'Retry Failed'}
+                      {isRetryingFTP ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                      {isRetryingFTP ? 'Retrying...' : 'Retry Failed'}
                     </button>
                   )}
                   <button 
@@ -3008,9 +3102,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '0.82rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500, flexWrap: 'wrap' }}>
               <span style={{ color: 'var(--text-1)' }}>
-                {isProcessing
-                  ? (progressStats.isRetry ? `Retrying (${progressStats.processed} of ${progressStats.total} files)` : `Processing (${progressStats.processed} of ${progressStats.total} files)`)
-                  : (progressStats.isRetry ? `Retry Summary (${progressStats.processed} of ${progressStats.total} files)` : `Batch Summary (${progressStats.processed} of ${progressStats.total} files)`)}
+                {getUnifiedProgressLabel()}
               </span>
               <>
                 <span style={{ color: '#06b6d4', background: 'transparent', border: '1px solid rgba(6, 182, 212, 0.35)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
@@ -3035,15 +3127,15 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
                   </span>
                 )}
               </>
-              {progressStats.error > 0 && (
+              {totalPipelineErrors > 0 && (
                 <span style={{ color: '#ef4444', fontSize: '0.75rem', background: 'rgba(239, 68, 68, 0.12)', padding: '2px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}>
-                  ✕ {progressStats.error} Failed ({Math.round(progressStats.errorPercent)}%)
+                  ✕ {totalPipelineErrors} Failed ({Math.max(1, Math.round(unifiedErrorPercent))}%)
                 </span>
               )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ fontWeight: 700, color: 'var(--text-2)', fontSize: '0.85rem' }}>
-                {progressStats.percent}%
+              <div style={{ fontWeight: 700, color: unifiedPercent === 100 ? '#10b981' : 'var(--text-2)', fontSize: '0.85rem' }}>
+                {unifiedPercent}%
               </div>
             </div>
           </div>
@@ -3051,7 +3143,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             {/* Success Segment (Cyan/Green Gradient) */}
             <div
               style={{
-                width: `${progressStats.successPercent}%`,
+                width: `${unifiedSuccessPercent}%`,
                 height: '100%',
                 background: 'linear-gradient(90deg, #3b82f6, #10b981)',
                 transition: 'width 0.3s ease'
@@ -3060,7 +3152,7 @@ export function ImageWorkflow({ apiKeys, apiProvider, promptSettings, setPromptS
             {/* Error Segment (Red/Crimson) */}
             <div
               style={{
-                width: `${progressStats.errorPercent}%`,
+                width: `${unifiedErrorPercent}%`,
                 height: '100%',
                 background: 'linear-gradient(90deg, #ef4444, #dc2626)',
                 transition: 'width 0.3s ease'

@@ -35,6 +35,14 @@ export const BackgroundRemover = () => {
     loadKeys();
   }, []);
 
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (originalUrl) URL.revokeObjectURL(originalUrl);
+      if (processedUrl) URL.revokeObjectURL(processedUrl);
+    };
+  }, [originalUrl, processedUrl]);
+
   const persistApiKey = async (val) => {
     setApiKey(val);
     localStorage.setItem('removebg_api_key', val);
@@ -56,7 +64,9 @@ export const BackgroundRemover = () => {
     if (!file) return;
     
     setOriginalFile(file);
+    if (originalUrl) URL.revokeObjectURL(originalUrl);
     setOriginalUrl(URL.createObjectURL(file));
+    if (processedUrl) URL.revokeObjectURL(processedUrl);
     setProcessedUrl(null);
     setProgress(0);
   };
@@ -86,6 +96,7 @@ export const BackgroundRemover = () => {
       
       clearInterval(interval);
       setProgress(1.0);
+      if (processedUrl) URL.revokeObjectURL(processedUrl);
       setProcessedUrl(URL.createObjectURL(resultBlob));
     } catch (err) {
       clearInterval(interval);

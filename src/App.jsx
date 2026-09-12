@@ -348,7 +348,7 @@ function App() {
                 { id: 'metadata', icon: Zap, label: 'Metadata Generator', color: '#8b5cf6' },
                 { id: 'promptengine', icon: Wand2, label: 'Prompt Generator', color: '#14b8a6' },
                 { id: 'prompt', icon: ImageIcon, label: 'Image to Prompt', color: '#ec4899' },
-                { id: 'epspreview', icon: Camera, label: 'Auto EPS Preview', color: '#10b981' },
+                { id: 'epspreview', icon: Camera, label: 'Image Converter', color: '#10b981' },
                 { id: 'removebg', icon: Eraser, label: 'Background Remover', color: '#ef4444' },
                 { id: 'vector', icon: Box, label: 'Vector Magic', color: '#f59e0b' },
                 { id: 'upscale', icon: Maximize, label: 'Image Upscaler', color: '#3b82f6' },

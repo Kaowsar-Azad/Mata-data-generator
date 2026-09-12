@@ -28,11 +28,27 @@ export function MetaField({
   const [isInputFocused, setIsInputFocused] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const initialKeywordsRef = useRef(img?.lastEmbeddedKeywords || img?.initialKeywords || value);
+  const prevIdRef = useRef(img?.id);
+  const initialKeywordsRef = useRef<string | null>(
+    img?.lastEmbeddedKeywords || img?.initialKeywords || (value && value.trim() ? value.trim() : null)
+  );
 
   useEffect(() => {
-    initialKeywordsRef.current = img?.lastEmbeddedKeywords || img?.initialKeywords || value;
-  }, [img?.id, img?.lastEmbeddedKeywords]);
+    if (prevIdRef.current !== img?.id) {
+      prevIdRef.current = img?.id;
+      initialKeywordsRef.current = img?.lastEmbeddedKeywords || img?.initialKeywords || (value && value.trim() ? value.trim() : null);
+    } else if (img?.lastEmbeddedKeywords) {
+      initialKeywordsRef.current = img.lastEmbeddedKeywords;
+    } else if (img?.initialKeywords) {
+      initialKeywordsRef.current = img.initialKeywords;
+    } else if (value && value.trim() && initialKeywordsRef.current === null) {
+      initialKeywordsRef.current = value.trim();
+    }
+  }, [img?.id, img?.lastEmbeddedKeywords, img?.initialKeywords, value]);
+
+  if (initialKeywordsRef.current === null && value && value.trim()) {
+    initialKeywordsRef.current = value.trim();
+  }
 
   // Per-file ranking status:
   // If generated with ranking ON, the file permanently keeps its colors even if global button is toggled OFF.
@@ -48,10 +64,12 @@ export function MetaField({
     Object.keys(img.result.keywordScores).length > 0
   );
 
-  const baselineKeywords = img?.lastEmbeddedKeywords || initialKeywordsRef.current || '';
+  const baselineKeywords = img?.lastEmbeddedKeywords || img?.initialKeywords || initialKeywordsRef.current || '';
   const currentKeywordsStr = (value || '').trim();
   const hasKeywordChanges = Boolean(
     isKeywords &&
+    baselineKeywords.trim() !== '' &&
+    currentKeywordsStr !== '' &&
     currentKeywordsStr !== baselineKeywords.trim()
   );
 
@@ -70,7 +88,7 @@ export function MetaField({
       } else if (typeof onEmbedSingle === 'function') {
         await onEmbedSingle(img?.id, value);
       }
-      initialKeywordsRef.current = value;
+      initialKeywordsRef.current = (value || '').trim();
       setJustEmbedded(true);
       setTimeout(() => {
         setJustEmbedded(false);
@@ -87,7 +105,7 @@ export function MetaField({
     setIsUploadingFtp(true);
     try {
       await onUploadSingleFtp(img?.id, value);
-      initialKeywordsRef.current = value;
+      initialKeywordsRef.current = (value || '').trim();
       setJustUploadedFtp(true);
       setTimeout(() => {
         setJustUploadedFtp(false);

@@ -275,45 +275,29 @@ export const getBasePlatformName = (platform: string): string => {
   return `${platform.replace(/\s+/g, '_').toLowerCase()}_metadata`;
 };
 
-export const getUniqueCSVFilename = async (baseName: string, images: any[]): Promise<{ fileName: string; dir: string }> => {
-  // Find directory of loaded images if in Electron
-  const firstWithPath = images.find((img) => img.file?.path || img.filePath);
-  const imgFilePath = firstWithPath ? (firstWithPath.file?.path || firstWithPath.filePath) : '';
-  const dir = imgFilePath ? imgFilePath.replace(/[\/\\][^\/\\]+$/, '') : '';
-  
-  const userMatch = imgFilePath ? imgFilePath.match(/^[a-zA-Z]:[\\\/]Users[\\\/][^\\\/]+/) : null;
-  const downloadsDir = userMatch ? `${userMatch[0]}\\Downloads` : '';
+export const getUniqueCSVFilename = async (baseName: string, targetDir?: string): Promise<{ fileName: string; dir: string }> => {
+  const dir = targetDir || '';
 
-  const dirsToCheck = [dir, downloadsDir].filter(Boolean);
-
-  if (typeof window !== 'undefined' && (window as any).electronAPI?.checkFileExists && dirsToCheck.length > 0) {
+  if (dir && typeof window !== 'undefined' && (window as any).electronAPI?.checkFileExists) {
     try {
       let counter = 0;
       while (counter < 1000) {
         const testName = counter === 0 ? `${baseName}.csv` : `${baseName}_${counter}.csv`;
-        let exists = false;
-        for (const d of dirsToCheck) {
-          const fullPath = `${d}\\${testName}`;
-          const res = await (window as any).electronAPI.checkFileExists(fullPath);
-          if (res?.exists) {
-            exists = true;
-            break;
-          }
+        const fullPath = `${dir}\\${testName}`;
+        const res = await (window as any).electronAPI.checkFileExists(fullPath);
+        if (!res?.exists) {
           // On first check, also check if alternate shorter name exists (e.g. adobe_stock.csv)
           if (counter === 0) {
             const shortBase = baseName.replace(/_metadata$/, '');
             if (shortBase !== baseName) {
-              const altPath = `${d}\\${shortBase}.csv`;
+              const altPath = `${dir}\\${shortBase}.csv`;
               const altRes = await (window as any).electronAPI.checkFileExists(altPath);
               if (altRes?.exists) {
-                exists = true;
-                break;
+                counter++;
+                continue;
               }
             }
           }
-        }
-
-        if (!exists) {
           return { fileName: testName, dir };
         }
         counter++;
@@ -453,34 +437,42 @@ export const downloadCSV = async (targetPlatform: string, images: any[], promptS
 
   const platform = targetPlatform || promptSettings?.exportPlatform || 'General';
   const basePlatformName = getBasePlatformName(platform);
-  const { fileName, dir } = await getUniqueCSVFilename(basePlatformName, images);
 
-  let savedFilePath: string | null = null;
+  // 1. Electron Desktop App: Prompt user to choose destination folder
+  if (typeof window !== 'undefined' && (window as any).electronAPI?.selectFolder && (window as any).electronAPI?.saveFile) {
+    const chosenFolder = await (window as any).electronAPI.selectFolder();
+    if (!chosenFolder) {
+      // User cancelled folder picker
+      return null;
+    }
 
-  // If in Electron and image directory is known, save directly into that folder too
-  if (dir && typeof window !== 'undefined' && (window as any).electronAPI?.saveFile) {
+    const { fileName } = await getUniqueCSVFilename(basePlatformName, chosenFolder);
+    const saveTarget = `${chosenFolder}\\${fileName}`;
+    const encoder = new TextEncoder();
+    const encoded = encoder.encode(content);
+
     try {
-      const saveTarget = `${dir}\\${fileName}`;
-      const encoder = new TextEncoder();
-      const encoded = encoder.encode(content);
       await (window as any).electronAPI.saveFile(saveTarget, encoded);
-      savedFilePath = saveTarget;
-      console.log(`[CSV] Auto-saved directly to: ${saveTarget}`);
+      console.log(`[CSV] Saved directly to user-selected folder: ${saveTarget}`);
 
       // Register in active CSV registry so future embeds can update it automatically
       registerActiveCsv({
         filePath: saveTarget,
         fileName,
-        dir,
+        dir: chosenFolder,
         platform,
         timestamp: Date.now()
       });
-    } catch (err) {
-      console.warn('[CSV] Direct file save to folder failed:', err);
+
+      return { success: true, fileName, dir: chosenFolder, filePath: saveTarget };
+    } catch (err: any) {
+      console.error('[CSV] Direct file save to folder failed:', err);
+      return { success: false, fileName, dir: chosenFolder, filePath: null, error: err?.message };
     }
   }
 
-  // Trigger download via anchor element
+  // 2. Web Browser Fallback (Anchor element download)
+  const { fileName } = await getUniqueCSVFilename(basePlatformName);
   const blob = new Blob([content], { type: `text/csv;charset=utf-8;` });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -495,7 +487,7 @@ export const downloadCSV = async (targetPlatform: string, images: any[], promptS
     URL.revokeObjectURL(url);
   }, 1000);
 
-  return { success: true, fileName, dir, filePath: savedFilePath };
+  return { success: true, fileName, dir: '', filePath: null };
 };
 
 export const syncActiveCsvFiles = async (images: any[], promptSettings?: any): Promise<{ success: boolean; updatedFiles: string[] }> => {
